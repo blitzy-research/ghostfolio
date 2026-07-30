@@ -92,6 +92,7 @@
     "@simplewebauthn/server": "13.2.2",
     "ai": "4.3.16",
     "alphavantage": "2.2.0",
+    "angular-gridster2": "21.0.1",
     "big.js": "7.0.1",
     "bootstrap": "4.6.2",
     "bull": "4.16.5",
