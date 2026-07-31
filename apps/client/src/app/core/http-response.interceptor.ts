@@ -1,5 +1,4 @@
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { WebAuthnService } from '@ghostfolio/client/services/web-authn.service';
 import { InfoItem } from '@ghostfolio/common/interfaces';
 import { internalRoutes, publicRoutes } from '@ghostfolio/common/routes/routes';
 import { DataService } from '@ghostfolio/ui/services';
@@ -18,7 +17,6 @@ import {
   MatSnackBarRef,
   TextOnlySnackBar
 } from '@angular/material/snack-bar';
-import { Router } from '@angular/router';
 import { StatusCodes } from 'http-status-codes';
 import ms from 'ms';
 import { Observable, throwError } from 'rxjs';
@@ -31,10 +29,8 @@ export class HttpResponseInterceptor implements HttpInterceptor {
 
   public constructor(
     private dataService: DataService,
-    private router: Router,
     private snackBar: MatSnackBar,
-    private userService: UserService,
-    private webAuthnService: WebAuthnService
+    private userService: UserService
   ) {
     this.info = this.dataService.fetchInfo();
   }
@@ -77,7 +73,10 @@ export class HttpResponseInterceptor implements HttpInterceptor {
             });
 
             this.snackBarRef.onAction().subscribe(() => {
-              this.router.navigate(publicRoutes.pricing.routerLink);
+              // The in-app pricing route no longer exists, so navigate to the
+              // hosted pricing page. The locale is read from the document
+              // because a forbidden response can precede any loaded user.
+              window.location.href = `https://ghostfol.io/${document.documentElement.lang}/${publicRoutes.pricing.path}`;
             });
           }
         } else if (error.status === StatusCodes.INTERNAL_SERVER_ERROR) {
@@ -111,12 +110,10 @@ export class HttpResponseInterceptor implements HttpInterceptor {
             });
           }
         } else if (error.status === StatusCodes.UNAUTHORIZED) {
+          // Do not sign the user out when the background data provider status
+          // probe fails: only a genuine unauthorized response ends the session.
           if (!error.url.includes('/data-providers/ghostfolio/status')) {
-            if (this.webAuthnService.isEnabled()) {
-              this.router.navigate(internalRoutes.webauthn.routerLink);
-            } else {
-              this.userService.signOut();
-            }
+            this.userService.signOut();
           }
         }
 

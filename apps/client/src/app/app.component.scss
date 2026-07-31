@@ -4,7 +4,9 @@
 
   &.has-info-message {
     header {
-      height: calc(2 * var(--mat-toolbar-standard-height));
+      // The info message is the only header content, and its inner container
+      // is position-fixed, so reserve exactly one toolbar height for it
+      height: var(--mat-toolbar-standard-height);
 
       .info-message-container {
         height: var(--mat-toolbar-standard-height);
@@ -30,15 +32,13 @@
     }
 
     main {
-      min-height: calc(100svh - 2 * var(--mat-toolbar-standard-height));
+      min-height: calc(100svh - var(--mat-toolbar-standard-height));
     }
   }
 
-  header {
-    height: var(--mat-toolbar-standard-height);
-  }
-
+  // Without the info message the header renders nothing, so it is given no
+  // height and collapses, leaving the full viewport to the main content
   main {
-    min-height: calc(100svh - var(--mat-toolbar-standard-height));
+    min-height: 100svh;
   }
 }

@@ -1,9 +1,7 @@
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { I18nService } from '@ghostfolio/api/services/i18n/i18n.service';
 import { SUPPORTED_LANGUAGE_CODES } from '@ghostfolio/common/config';
-import { personalFinanceTools } from '@ghostfolio/common/personal-finance-tools';
 import { PublicRoute } from '@ghostfolio/common/routes/interfaces/public-route.interface';
-import { publicRoutes } from '@ghostfolio/common/routes/routes';
 
 import { Injectable } from '@nestjs/common';
 
@@ -17,175 +15,42 @@ export class SitemapService {
     private readonly i18nService: I18nService
   ) {}
 
-  public getBlogPosts({ currentDate }: { currentDate: string }) {
-    const rootUrl = this.configurationService.get('ROOT_URL');
+  // The public blog surface has been removed from the client, which now serves
+  // a single root route per locale, so no blog post URLs are advertised any
+  // more. The method is deliberately retained: apps/api/src/assets/sitemap.xml
+  // interpolates this method's placeholder token unconditionally, and the
+  // interpolation helper renders the literal text "undefined" for a missing
+  // value, so an empty string must be returned rather than nothing at all.
+  public getBlogPosts({ currentDate }: { currentDate: string }): string {
+    // The argument is kept for call compatibility with the sitemap controller
+    // and is intentionally unused now that no URLs are emitted.
+    void currentDate;
 
-    return [
-      {
-        languageCode: 'de',
-        routerLink: ['2021', '07', 'hallo-ghostfolio']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2021', '07', 'hello-ghostfolio']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2022', '01', 'ghostfolio-first-months-in-open-source']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2022', '07', 'ghostfolio-meets-internet-identity']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2022', '07', 'how-do-i-get-my-finances-in-order']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2022', '08', '500-stars-on-github']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2022', '10', 'hacktoberfest-2022']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2022', '11', 'black-friday-2022']
-      },
-      {
-        languageCode: 'en',
-        routerLink: [
-          '2022',
-          '12',
-          'the-importance-of-tracking-your-personal-finances'
-        ]
-      },
-      {
-        languageCode: 'de',
-        routerLink: ['2023', '01', 'ghostfolio-auf-sackgeld-vorgestellt']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '02', 'ghostfolio-meets-umbrel']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '03', 'ghostfolio-reaches-1000-stars-on-github']
-      },
-      {
-        languageCode: 'en',
-        routerLink: [
-          '2023',
-          '05',
-          'unlock-your-financial-potential-with-ghostfolio'
-        ]
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '07', 'exploring-the-path-to-fire']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '08', 'ghostfolio-joins-oss-friends']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '09', 'ghostfolio-2']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '09', 'hacktoberfest-2023']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '11', 'black-week-2023']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2023', '11', 'hacktoberfest-2023-debriefing']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2024', '09', 'hacktoberfest-2024']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2024', '11', 'black-weeks-2024']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2025', '09', 'hacktoberfest-2025']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2025', '11', 'black-weeks-2025']
-      },
-      {
-        languageCode: 'en',
-        routerLink: ['2026', '04', 'ghostfolio-3']
-      }
-    ]
-      .map(({ languageCode, routerLink }) => {
-        return this.createRouteSitemapUrl({
-          currentDate,
-          languageCode,
-          rootUrl,
-          route: {
-            routerLink: [publicRoutes.blog.path, ...routerLink],
-            path: undefined
-          }
-        });
-      })
-      .join('\n');
+    return '';
   }
 
-  public getPersonalFinanceTools({ currentDate }: { currentDate: string }) {
-    const rootUrl = this.configurationService.get('ROOT_URL');
+  // The public personal finance tools resource pages have been removed from the
+  // client along with the rest of the public route tree, so no product URLs are
+  // advertised any more. The method is deliberately retained for the same
+  // reason as getBlogPosts: this method's placeholder token is interpolated
+  // unconditionally and must never resolve to `undefined`.
+  public getPersonalFinanceTools({
+    currentDate
+  }: {
+    currentDate: string;
+  }): string {
+    // The argument is kept for call compatibility with the sitemap controller
+    // and is intentionally unused now that no URLs are emitted.
+    void currentDate;
 
-    return SUPPORTED_LANGUAGE_CODES.flatMap((languageCode) => {
-      const resourcesPath = this.i18nService.getTranslation({
-        languageCode,
-        id: publicRoutes.resources.path.match(
-          SitemapService.TRANSLATION_TAGGED_MESSAGE_REGEX
-        ).groups.id
-      });
-
-      const personalFinanceToolsPath = this.i18nService.getTranslation({
-        languageCode,
-        id: publicRoutes.resources.subRoutes.personalFinanceTools.path.match(
-          SitemapService.TRANSLATION_TAGGED_MESSAGE_REGEX
-        ).groups.id
-      });
-
-      const productPath = this.i18nService.getTranslation({
-        languageCode,
-        id: publicRoutes.resources.subRoutes.personalFinanceTools.subRoutes.product.path.match(
-          SitemapService.TRANSLATION_TAGGED_MESSAGE_REGEX
-        ).groups.id
-      });
-
-      return personalFinanceTools.map(({ alias, key }) => {
-        const routerLink = [
-          resourcesPath,
-          personalFinanceToolsPath,
-          `${productPath}-${alias ?? key}`
-        ];
-
-        return this.createRouteSitemapUrl({
-          currentDate,
-          languageCode,
-          rootUrl,
-          route: {
-            routerLink,
-            path: undefined
-          }
-        });
-      });
-    }).join('\n');
+    return '';
   }
 
-  public getPublicRoutes({ currentDate }: { currentDate: string }) {
+  // Every public marketing page has been removed from the client, which now
+  // serves a single root route per locale. Only those per-locale roots are
+  // advertised; the nested public route tree is no longer walked, so the
+  // sitemap can never point at a URL that has ceased to exist.
+  public getPublicRoutes({ currentDate }: { currentDate: string }): string {
     const rootUrl = this.configurationService.get('ROOT_URL');
 
     return SUPPORTED_LANGUAGE_CODES.flatMap((languageCode) => {
@@ -195,10 +60,7 @@ export class SitemapService {
         rootUrl
       };
 
-      return [
-        this.createRouteSitemapUrl(params),
-        ...this.createSitemapUrls(params, publicRoutes)
-      ];
+      return [this.createRouteSitemapUrl(params)];
     }).join('\n');
   }
 
@@ -237,24 +99,5 @@ export class SitemapService {
       `    <lastmod>${currentDate}T00:00:00+00:00</lastmod>`,
       '  </url>'
     ].join('\n');
-  }
-
-  private createSitemapUrls(
-    params: { currentDate: string; languageCode: string; rootUrl: string },
-    routes: Record<string, PublicRoute>
-  ): string[] {
-    return Object.values(routes).flatMap((route) => {
-      if (route.excludeFromSitemap) {
-        return [];
-      }
-
-      const urls = [this.createRouteSitemapUrl({ ...params, route })];
-
-      if (route.subRoutes) {
-        urls.push(...this.createSitemapUrls(params, route.subRoutes));
-      }
-
-      return urls;
-    });
   }
 }

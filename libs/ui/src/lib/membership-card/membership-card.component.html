@@ -2,7 +2,8 @@
   <div class="card-container" [ngClass]="{ premium: name === 'Premium' }">
     <a
       class="card-item d-flex flex-column justify-content-between p-4"
-      [routerLink]="routerLinkPricing"
+      target="_blank"
+      [href]="pricingUrl"
     >
       @if (hover3d) {
         @for (zone of [1, 2, 3, 4, 5, 6, 7, 8, 9]; track zone) {

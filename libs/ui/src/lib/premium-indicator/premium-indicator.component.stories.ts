@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { RouterTestingModule } from '@angular/router/testing';
+import '@angular/localize/init';
 import { moduleMetadata } from '@storybook/angular';
 import type { Meta, StoryObj } from '@storybook/angular';
 
@@ -10,7 +10,7 @@ export default {
   component: GfPremiumIndicatorComponent,
   decorators: [
     moduleMetadata({
-      imports: [CommonModule, RouterTestingModule]
+      imports: [CommonModule]
     })
   ]
 } as Meta<GfPremiumIndicatorComponent>;

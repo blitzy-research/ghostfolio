@@ -259,32 +259,40 @@ model Tag {
 }
 
 model User {
-  accessesGet   Access[]        @relation("accessGet")
-  accessesGive  Access[]        @relation("accessGive")
-  accessToken   String?
-  accounts      Account[]
-  activities    Order[]
-  analytics     Analytics?
-  apiKeys       ApiKey[]
-  authChallenge String?
-  authDevices   AuthDevice[]
-  createdAt     DateTime        @default(now())
-  id            String          @id @default(uuid())
-  provider      Provider        @default(ANONYMOUS)
-  role          Role            @default(USER)
-  settings      Settings?
-  subscriptions Subscription[]
-  tags          Tag[]
-  thirdPartyId  String?
-  updatedAt     DateTime        @updatedAt
-  watchlist     SymbolProfile[] @relation("UserWatchlist")
-  SymbolProfile SymbolProfile[]
+  accessesGet     Access[]             @relation("accessGet")
+  accessesGive    Access[]             @relation("accessGive")
+  accessToken     String?
+  accounts        Account[]
+  activities      Order[]
+  analytics       Analytics?
+  apiKeys         ApiKey[]
+  authChallenge   String?
+  authDevices     AuthDevice[]
+  createdAt       DateTime             @default(now())
+  dashboardLayout UserDashboardLayout?
+  id              String               @id @default(uuid())
+  provider        Provider             @default(ANONYMOUS)
+  role            Role                 @default(USER)
+  settings        Settings?
+  subscriptions   Subscription[]
+  tags            Tag[]
+  thirdPartyId    String?
+  updatedAt       DateTime             @updatedAt
+  watchlist       SymbolProfile[]      @relation("UserWatchlist")
+  SymbolProfile   SymbolProfile[]
 
   @@index([accessToken])
   @@index([createdAt])
   @@index([provider])
   @@index([role])
   @@index([thirdPartyId])
+}
+
+model UserDashboardLayout {
+  layoutData Json?
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId     String   @id
 }
 
 enum AccessPermission {

@@ -458,15 +458,7 @@
               >
             }
             @if (data.hasPermissionToAccessAdminControl) {
-              <a
-                mat-stroked-button
-                [queryParams]="{
-                  assetProfileDialog: true,
-                  dataSource: SymbolProfile?.dataSource,
-                  symbol: SymbolProfile?.symbol
-                }"
-                [routerLink]="routerLinkAdminControlMarketData"
-                (click)="onClose()"
+              <a mat-stroked-button (click)="onOpenAssetProfileDialog()"
                 ><ion-icon class="mr-1" name="create-outline" /><span i18n
                   >Manage Asset Profile</span
                 >...</a

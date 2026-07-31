@@ -7,14 +7,13 @@ import {
   Component,
   Input
 } from '@angular/core';
-import { RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { diamondOutline } from 'ionicons/icons';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, IonIcon, RouterModule],
+  imports: [CommonModule, IonIcon],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-premium-indicator',
   styleUrls: ['./premium-indicator.component.scss'],
@@ -23,7 +22,7 @@ import { diamondOutline } from 'ionicons/icons';
 export class GfPremiumIndicatorComponent {
   @Input() enableLink = true;
 
-  public routerLinkPricing = publicRoutes.pricing.routerLink;
+  public pricingUrl = `https://ghostfol.io/${document.documentElement.lang}/${publicRoutes.pricing.path}`;
 
   public constructor() {
     addIcons({ diamondOutline });
