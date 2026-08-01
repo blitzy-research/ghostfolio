@@ -4,7 +4,7 @@
       <div class="info-message-inner-container position-fixed w-100">
         <div class="align-items-center d-flex h-100 justify-content-center">
           @if (canCreateAccount) {
-            <a class="text-center" [routerLink]="routerLinkRegister">
+            <div class="text-center">
               <div
                 class="cursor-pointer d-inline-block info-message"
                 (click)="onCreateAccount()"
@@ -12,7 +12,7 @@
                 <span i18n>You are using the Live Demo.</span>
                 <span class="a ml-2 p-1" i18n>Create Account</span>
               </div>
-            </a>
+            </div>
           }
           @if (!canCreateAccount && user?.systemMessage) {
             <div
@@ -26,28 +26,8 @@
       </div>
     </div>
   }
-
-  <gf-header
-    class="position-fixed w-100"
-    [currentRoute]="currentRoute"
-    [deviceType]="deviceType"
-    [hasPermissionToChangeDateRange]="hasPermissionToChangeDateRange"
-    [hasPermissionToChangeFilters]="hasPermissionToChangeFilters"
-    [hasPromotion]="hasPromotion"
-    [hasTabs]="hasTabs"
-    [info]="info"
-    [pageTitle]="pageTitle"
-    [user]="user"
-    (signOut)="onSignOut()"
-  />
 </header>
 
 <main role="main">
   <router-outlet />
 </main>
-
-@if (showFooter) {
-  <footer class="justify-content-center overflow-hidden w-100">
-    <gf-footer class="py-4" [info]="info" [user]="user" />
-  </footer>
-}

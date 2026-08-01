@@ -1,6 +1,7 @@
 @use '@angular/material' as mat;
 
 @import './styles/bootstrap';
+@import './styles/gridster';
 @import './styles/table';
 @import './styles/variables';
 
@@ -239,6 +240,10 @@ body {
       }
     }
 
+    .gf-gridster {
+      @include gf-gridster(true);
+    }
+
     .gf-table {
       @include gf-table(true);
     }
@@ -356,6 +361,10 @@ ngx-skeleton-loader {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.gf-gridster {
+  @include gf-gridster;
 }
 
 .gf-pointer-events-none {

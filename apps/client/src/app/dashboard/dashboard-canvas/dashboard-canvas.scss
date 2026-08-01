@@ -1,0 +1,111 @@
+/*
+ * Component-scoped stylesheet for GfDashboardCanvasComponent — the single
+ * canvas that replaces the route-per-screen navigation shell.
+ *
+ * RULE 7: every Material 3 value here is `var(--mat-sys-<token>, <fallback>)`.
+ * This is functional, not cosmetic. The workspace themes through the legacy
+ * `mat.define-theme()` + `mat.all-component-themes()` path, so the
+ * `--mat-sys-*` layer is never populated at runtime: a fallback-less reference
+ * resolves to nothing and the browser discards the whole declaration, making
+ * the fallback the half that actually paints. The token half is forward
+ * compatibility for a future `mat.theme()` migration (out of scope). Every name
+ * used is one of Angular Material 21.2.5's 175 canonical `--mat-sys-*` names.
+ *
+ * OWNS: page-shell band sizing, the catalog drawer element and its width
+ * behaviour, the scrolling canvas region, and the band sizing of the three
+ * root-route states. Nothing else is canvas-local.
+ *
+ * DELIBERATELY ABSENT
+ * - Every grid-engine selector. Those components render unencapsulated with
+ *   inline hardcoded colours, so their overrides live in the peer-owned global
+ *   partial under `apps/client/src/styles/`, scoped under a host class to
+ *   out-specify them; a component stylesheet cannot reach them at all. Default
+ *   gray in the canvas means that partial is not yet invoked or the host class
+ *   is missing — reported upstream, never patched by raising specificity here.
+ * - Any interaction transition on the moving/resizing state: the engine zeroes
+ *   it so a dragged card tracks the pointer frame-synchronously.
+ * - Cell minimums; the 2x2 floor is enforced by `itemValidateCallback` in
+ *   `dashboard-canvas.config.ts`, never in CSS.
+ * - `display` / `flex-direction` on `:host`: the global `page` class the host
+ *   carries supplies both plus `overflow-y`, and redeclaring them is an
+ *   equal-specificity fight decided by stylesheet injection order.
+ * - The floating catalog trigger's placement and the class that clears it, plus
+ *   the surfaces of the catalog panel, control bar, empty-state card and
+ *   sign-in card — all owned elsewhere and only consumed here.
+ * - Media queries (responsive support is excluded by directive and enforced in
+ *   the grid configuration) and any scrim: a side drawer renders no backdrop,
+ *   and an overlay would swallow the native drag events that drop a module.
+ *
+ * Spacing comes from Bootstrap utility classes in the template, per the
+ * repository-wide convention; no padding or margin is declared here.
+ */
+
+:host {
+  // Painted on the host as well as on the scrolling region so the shell's page
+  // padding around the drawer host reads as canvas, not app background.
+  background: var(--mat-sys-surface-container-low, #fafafa);
+  color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+
+  // Flex items shrink by default; pin the control bar to its natural height.
+  gf-dashboard-toolbar {
+    flex: 0 0 auto;
+  }
+
+  // Takes the height left below the control bar. `min-height: 0` clears a flex
+  // item's automatic minimum size, which would otherwise refuse to shrink below
+  // its content and give the page shell a second scrollbar.
+  mat-sidenav-container {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /*
+   * BLITZY [SHAPE]: the drawer's shape token resolves to the theme's large
+   * corner while the catalog rounds its leading edge to the medium corner;
+   * matching it stops a drawer-coloured wedge showing outside the catalog's
+   * arc. Width stays library-owned through the drawer's component width token,
+   * so no fixed pixel or viewport width appears here — `max-width` is only a
+   * structural clamp against the drawer host's hidden overflow.
+   */
+  mat-sidenav {
+    border-end-start-radius: var(--mat-sys-corner-medium, 4px);
+    border-start-start-radius: var(--mat-sys-corner-medium, 4px);
+    max-width: 100%;
+  }
+
+  /*
+   * The drawer's content element ships transparent, so the canvas surface is
+   * painted here; without it the area around the modules would show the app
+   * background and seam against the canvas colour the global partial paints.
+   * `scroll-padding-block` reserves a band one control-bar high at each edge of
+   * the scrollport so a module revealed by the engine's scroll-into-view call
+   * does not land flush against it — the `0` fallback makes it a strict no-op
+   * when the property is undefined.
+   */
+  mat-sidenav-content {
+    background: var(--mat-sys-surface-container-low, #fafafa);
+    color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    scroll-padding-block: var(--mat-toolbar-standard-height, 0);
+  }
+
+  // The unauthenticated and empty-layout states stand in for the canvas in the
+  // same band, so they claim the same share of the remaining height.
+  gf-empty-canvas-state,
+  gf-sign-in-prompt {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
+// The shell toggles `theme-dark` / `theme-light` on the document's `body`, so
+// this mirror restates only the properties whose value genuinely differs.
+// Corner radius and the scroll rhythm are theme-invariant and never repeated.
+:host-context(.theme-dark) {
+  background: var(--mat-sys-surface-container-low, #1f1f1f);
+  color: var(--mat-sys-on-surface, #ffffff);
+
+  mat-sidenav-content {
+    background: var(--mat-sys-surface-container-low, #1f1f1f);
+    color: var(--mat-sys-on-surface, #ffffff);
+  }
+}

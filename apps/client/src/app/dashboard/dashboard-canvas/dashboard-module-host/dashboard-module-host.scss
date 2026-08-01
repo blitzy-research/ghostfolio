@@ -1,0 +1,199 @@
+// Component-scoped chrome for `GfDashboardModuleHostComponent` — the card that
+// wraps every module placed on the dashboard canvas. Two blocks, `:host` then
+// `:host-context(.theme-dark)` with dark restating only what differs, after
+// `components/header/header.component.scss`; none of that file's values carry
+// over.
+//
+// WHY EVERY VALUE PAIRS A TOKEN WITH A HARDCODED FALLBACK
+// This workspace themes Material through the legacy `mat.define-theme()` +
+// `mat.all-component-themes()` path and never calls `mat.theme()`, so the
+// Material Design 3 *system* token layer is unpopulated: a reference written
+// without a fallback resolves to the guaranteed-invalid value and the browser
+// discards the entire declaration. The fallback paints today; the token is
+// forward compatibility. Material's own outlined-card rule proves the point —
+// its corner radius falls back to an unqualified system-token reference this
+// application never defines, so that declaration is dropped and the card
+// carries no radius until the one below restores it. Token names come from the
+// 175-name `--mat-sys-*` vocabulary of Angular Material 21.2.5; every fallback
+// traces to a value `styles.scss` publishes.
+//
+// SELECTOR OWNERSHIP — WHAT THIS FILE DELIBERATELY LEAVES ALONE
+// Every element the grid engine renders itself is declared
+// `ViewEncapsulation.None` with hardcoded inline styles, so those selectors are
+// unreachable from an encapsulated stylesheet and belong solely to the global
+// `styles/gridster.scss` partial. None is restated here — a second owner of the
+// same rule makes the next regression untraceable. The sole exception is the
+// body wrapper below, and only because it is this template's own element.
+//
+// Drag elevation is likewise not owned here: it could only attach to the
+// engine's move and resize state classes, and the library already draws a
+// shadow matching the `--mat-sys-level3` fallback, so omitting it is a visual
+// no-op rather than a gap. Those same classes are where the engine zeroes its
+// cell easing to keep a dragged module frame-synchronous with the pointer, so
+// nothing below reintroduces easing, motion, or a compositor or paint hint.
+// Cell minimums are enforced by the engine's `itemValidateCallback`, never by a
+// CSS size floor that could contradict a size the engine already committed.
+// Geometry and positioning belong to the canvas and box spacing to Bootstrap
+// utilities in the template; there are no responsive variants, by design.
+
+:host {
+  // A custom element is inline by default, which would collapse the card's box
+  // model inside its grid cell. Height is relative to that cell — the engine
+  // sizes it from `fixedRowHeight` multiplied by the module's row span — so no
+  // viewport unit is meaningful here.
+  box-sizing: border-box;
+  display: block;
+  height: 100%;
+
+  // The visible module surface. Angular compiles this to
+  // `mat-card[_ngcontent-*]`, which already outranks the generated class rules
+  // Material ships for the card, so no importance escalation is needed. A flex
+  // column direction and `border-box` are intentionally absent: Material's own
+  // card base rule already sets both, and restating them would author layout
+  // this file does not own.
+  mat-card {
+    background: var(--mat-sys-surface-container, #ffffff);
+
+    /* BLITZY [LAYOUT]: card outline removed per the grid-chrome specification,
+       overriding Material's 1px outlined-card default. The grid cell that hosts
+       this card already carries a tokenised 1px border from the global grid
+       partial, so keeping the card's own outline would paint a doubled 2px
+       boundary. `none` is one of the few literals the design system admits. */
+    border: none;
+
+    // Restores the radius Material drops, as explained above. The grid cell
+    // clips its content, so the rounded corners are honoured inside it.
+    border-radius: var(--mat-sys-corner-medium, 4px);
+
+    // Declared once here and inherited by the header title, because Material
+    // defines a title colour property for the card's subtitle only and never
+    // for the title itself, leaving the title nothing of its own to override.
+    color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+
+    height: 100%;
+  }
+
+  // The module header band: drag affordance, title and overflow menu. Material
+  // pads its header `16px 16px 0`, which is both asymmetric and far too generous
+  // for the smallest permitted module — two rows at `fixedRowHeight: 80` leave
+  // roughly 160px in total, so the chrome has to stay slim enough to leave a
+  // usable body. The replacement is a modest symmetric `rem` pair.
+  mat-card-header {
+    // Material makes the header a flex row but leaves items stretched; centring
+    // them is what lets the handle, the title and the menu button share one
+    // baseline. Declared here rather than left to a utility class so the band
+    // reads correctly regardless of which utilities the template carries.
+    align-items: center;
+    border-block-end: 1px solid
+      var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
+    // `gap` rather than sibling margins, and rather than a Bootstrap utility —
+    // the 4.6 utility subset this application imports has no gap helper.
+    gap: 0.5rem;
+    padding-block: 0.5rem;
+    padding-inline: 0.75rem;
+  }
+
+  // Module name. Material derives the title's metrics from card-level custom
+  // properties whose unset members fall back to unqualified system-token
+  // references and are therefore discarded, so the type declared here is
+  // load-bearing rather than cosmetic. The colour is inherited from the card
+  // above, Material defining a title colour property for the subtitle only.
+  // The three truncation declarations keep a long name from pushing the overflow
+  // menu out of the card, and they are interdependent: clipping the box is what
+  // drives its automatic flex minimum in the inline axis to zero, which is why no
+  // explicit size floor is declared here. Removing the clip would restore that
+  // minimum to the full unwrapped string and eject the trailing menu outside the
+  // card, so all three belong together.
+  mat-card-title {
+    font: var(
+      --mat-sys-title-small,
+      500 0.875rem/1.25rem var(--font-family-sans-serif)
+    );
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // The drag affordance named by `draggable.dragHandleClass` in the grid
+  // configuration, which is how the engine knows a pointer press on it starts a
+  // move. Styled in this component because it is this template's own element.
+  // `cursor` and `user-select` are behavioural rather than design-system
+  // values: they advertise the drag origin and stop a drag from degrading into
+  // a text selection.
+  .gf-dashboard-module-drag-handle {
+    /* BLITZY [A11Y]: the grab target resolves below the 44x44px recommendation.
+       The specification caps module chrome so the smallest permitted module keeps
+       a usable body, so the compact target is implemented as specified and
+       flagged for designer review rather than silently enlarged. */
+    color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+    cursor: move;
+    // Widens the grab target around the glyph without competing with the title
+    // for header width.
+    display: inline-flex;
+    padding: 0.25rem;
+    user-select: none;
+
+    // Strengthened to the secondary-text step on pointer entry and on keyboard
+    // focus. `:focus-visible` rather than `:focus`, so the ring-equivalent
+    // emphasis is shown to keyboard users and not on a pointer press.
+    &:focus-visible,
+    &:hover {
+      color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    }
+  }
+
+  // The module body — this template's own wrapper, carrying the class the grid
+  // configuration names in `draggable.ignoreContentClass` so a press inside it
+  // never starts a drag and interactive module content stays usable. Layout
+  // only, with no colour of its own: it inherits the card surface and text
+  // colour. `flex: 1 1 auto` claims whatever height the header leaves, and
+  // `overflow: auto` keeps an over-tall module scrolling inside its own cell
+  // rather than spilling across the canvas. No size floor is needed to make
+  // that work — a scroll container's automatic flex minimum is already zero, so
+  // the region shrinks below its content unaided.
+  .gridster-item-content {
+    flex: 1 1 auto;
+    overflow: auto;
+  }
+
+  // De-emphasised copy inside the card — used by the notice shown when a module
+  // fails to resolve. A colour step only; the notice is positioned with
+  // Bootstrap utilities in the template and carries no panel of its own.
+  .secondary-text {
+    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+  }
+}
+
+// Dark mirror. `.theme-light` / `.theme-dark` are toggled on the document body,
+// outside this component, which is exactly what `:host-context()` addresses.
+// Only genuinely differing values are restated — the corner radius, the header
+// type and the omitted elevation are identical across both themes and are
+// deliberately not repeated. The card surface is the Material Design 3
+// surface-container step, intentionally lighter than the theme's own legacy
+// dark card colour so the module reads as a raised container above the canvas.
+:host-context(.theme-dark) {
+  mat-card {
+    background: var(--mat-sys-surface-container, #262626);
+    color: var(--mat-sys-on-surface, #ffffff);
+  }
+
+  mat-card-header {
+    border-block-end-color: var(
+      --mat-sys-outline-variant,
+      rgba(255, 255, 255, 0.12)
+    );
+  }
+
+  .gf-dashboard-module-drag-handle {
+    color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
+
+    &:focus-visible,
+    &:hover {
+      color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+    }
+  }
+
+  .secondary-text {
+    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+}

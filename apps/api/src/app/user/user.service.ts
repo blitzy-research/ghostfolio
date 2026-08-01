@@ -661,6 +661,12 @@ export class UserService {
       });
     } catch {}
 
+    try {
+      await this.prismaService.userDashboardLayout.delete({
+        where: { userId: where.id }
+      });
+    } catch {}
+
     return this.prismaService.user.delete({
       where
     });
