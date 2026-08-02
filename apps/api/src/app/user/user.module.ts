@@ -18,7 +18,7 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 
 @Module({
-  controllers: [UserDashboardLayoutController, UserController],
+  controllers: [UserController, UserDashboardLayoutController],
   exports: [UserService],
   imports: [
     ActivitiesModule,

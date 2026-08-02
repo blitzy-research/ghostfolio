@@ -19,6 +19,12 @@ export default {
       }
     ]
   },
-  transformIgnorePatterns: ['node_modules/(?!.*.mjs$)'],
+  // `@ionic/angular/standalone` re-exports `@ionic/core`, which ships plain
+  // `.js` ES modules rather than `.mjs`, so those packages have to be
+  // transformed as well or every spec that transitively imports an Ionicon
+  // fails to parse.
+  transformIgnorePatterns: [
+    'node_modules/(?!(.*\\.mjs$|@ionic|@stencil|ionicons))'
+  ],
   preset: '../../jest.preset.js'
 };

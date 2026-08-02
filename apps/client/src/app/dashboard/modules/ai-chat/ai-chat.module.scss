@@ -40,6 +40,23 @@
     outline-offset: -2px;
   }
 
+  // Angular Material pins these buttons to a fixed `height`, so at the module's
+  // three-column minimum footprint a footer label that wraps to two lines
+  // overhangs the button's own border. Keeping the themed height as a floor and
+  // letting the box grow contains the wrapped label, and leaves the rendered
+  // size untouched wherever the label still fits on one line. The floor is read
+  // from each variant's own component token, whose fallback is the Angular
+  // Material default.
+  .mat-mdc-button {
+    block-size: auto;
+    min-block-size: var(--mat-button-text-container-height, 2.5rem);
+  }
+
+  .mat-mdc-outlined-button {
+    block-size: auto;
+    min-block-size: var(--mat-button-outlined-container-height, 2.5rem);
+  }
+
   // The generated prompt. `pre-wrap` preserves the markdown holdings table the
   // API builds while still wrapping; `overflow-wrap` breaks unbroken symbol
   // runs that would otherwise force sideways scrolling; `min-height: 0` lets

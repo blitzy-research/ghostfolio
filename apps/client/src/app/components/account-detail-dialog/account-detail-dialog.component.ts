@@ -1,6 +1,8 @@
 import { GfInvestmentChartComponent } from '@ghostfolio/client/components/investment-chart/investment-chart.component';
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { CreateAccountBalanceDto } from '@ghostfolio/common/dtos';
 import { DATE_FORMAT, downloadAsFile } from '@ghostfolio/common/helper';
 import {
@@ -11,7 +13,6 @@ import {
   User
 } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { GfAccountBalancesComponent } from '@ghostfolio/ui/account-balances';
 import { GfActivitiesTableComponent } from '@ghostfolio/ui/activities-table';
 import { GfDialogFooterComponent } from '@ghostfolio/ui/dialog-footer';
@@ -105,6 +106,7 @@ export class GfAccountDetailDialogComponent implements OnInit {
   protected readonly data = inject<AccountDetailDialogParams>(MAT_DIALOG_DATA);
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
+  private readonly dashboardIntentService = inject(DashboardIntentService);
   private readonly dataService = inject(DataService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialogRef =
@@ -136,12 +138,18 @@ export class GfAccountDetailDialogComponent implements OnInit {
   }
 
   protected onCloneActivity(aActivity: Activity) {
-    this.router.navigate(
-      internalRoutes.portfolio.subRoutes.activities.routerLink,
-      {
-        queryParams: { activityId: aActivity.id, createDialog: true }
-      }
-    );
+    // The activities screen no longer has a URL of its own, so ask the canvas
+    // to surface the activities module instead of navigating to it. The dialog
+    // payload stays on the current route, keeping the entry point
+    // route-agnostic.
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
+
+    this.router.navigate([], {
+      queryParams: { activityId: aActivity.id, createDialog: true },
+      queryParamsHandling: 'merge'
+    });
 
     this.dialogRef.close();
   }
@@ -198,12 +206,17 @@ export class GfAccountDetailDialogComponent implements OnInit {
   }
 
   protected onUpdateActivity(aActivity: Activity) {
-    this.router.navigate(
-      internalRoutes.portfolio.subRoutes.activities.routerLink,
-      {
-        queryParams: { activityId: aActivity.id, editDialog: true }
-      }
-    );
+    // Same reveal-then-merge sequence as cloning: the intent surfaces the
+    // activities module and the unchanged query parameters open the edit dialog
+    // there, without a screen change.
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
+
+    this.router.navigate([], {
+      queryParams: { activityId: aActivity.id, editDialog: true },
+      queryParamsHandling: 'merge'
+    });
 
     this.dialogRef.close();
   }
