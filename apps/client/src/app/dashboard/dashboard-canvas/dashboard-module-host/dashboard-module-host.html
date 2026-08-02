@@ -1,0 +1,189 @@
+<!--
+  Module chrome for `GfDashboardModuleHostComponent`: the card drawn around one
+  module placed on the dashboard canvas. It renders the frame and nothing else -
+  the module itself is resolved at runtime and mounted into the body region at
+  the bottom of this file.
+
+  WHAT THIS TEMPLATE IS DELIBERATELY UNABLE TO DO
+  It names no module. The component class arrives solely through the registry's
+  lazy resolution thunk and is instantiated by `NgComponentOutlet`, so all
+  registered modules receive byte-identical chrome and none is special-cased -
+  not the administration modules, not the assistant. Nothing below reads or
+  writes a position or a span, because placement is grid state and grid state is
+  the single source of truth; that is why no cell coordinate, no size and no
+  declared minimum appears here, the minimums being enforced by the grid
+  engine's own item validation callback. Nothing below can reach a layout write
+  either: the remove action emits an output and stops there, leaving the canvas
+  as the sole origin of a persisted change. And there is no navigation of any
+  kind, since the URL no longer selects a screen.
+
+  TWO CLASS NAMES BELOW ARE STRING CONTRACTS - read before editing
+  Exactly two classes here are matched by string at runtime by the grid engine,
+  against `draggable.dragHandleClass` and `draggable.ignoreContentClass` in the
+  canvas grid configuration: the sole class on the header affordance, and the
+  sole class on the body wrapper. Each is written once in this file and nowhere
+  else in it, including in this comment, so that the markup stays the single
+  place either spelling exists and the two can never drift apart. Copy them from
+  the grid configuration rather than retyping them, because a typo in either
+  compiles and lints perfectly cleanly and then fails silently: mis-spell the
+  handle class and the module quietly stops being draggable; mis-spell the
+  wrapper class and a press anywhere inside the module starts a drag, making
+  every button, field and scroll region the module contains unusable.
+
+  Placement matters exactly as much as spelling: the handle sits OUTSIDE the
+  body wrapper and everything interactive sits INSIDE it. That single division
+  is what lets a user press a control within a module without moving the module.
+
+  THE BODY WRAPPER IS A PLAIN ELEMENT, NOT `mat-card-content`
+  Material gives its card content element `padding: 0 16px` through a
+  runtime-injected rule that outranks the global spacing utilities. Module
+  bodies own their own insets and the stylesheet beside this file assigns the
+  wrapper layout only - a flexible height and its own scroll region - so an
+  inherited 16px gutter would be spacing nobody declared and nobody could
+  override from here. The wrapper is therefore an ordinary element carrying the
+  contract class, which is also what makes it this component's own to style.
+
+  WHAT IS OWNED ELSEWHERE, AND SO ABSENT HERE
+  The resize affordances are rendered by the grid engine itself and only ever
+  themed, from the global grid stylesheet; no handle markup, wrapper or handle
+  class is authored here. Every colour, radius, border and type value likewise
+  lives in `dashboard-module-host.scss` as a Material 3 system token with a
+  fallback, so this template carries no inline style and no style binding at
+  all. Spacing and alignment come from Bootstrap utilities, except between the
+  header items, where the stylesheet uses a `gap` that a sibling margin here
+  would double. There are no breakpoint utilities and no responsive variants, by
+  design.
+
+  TRANSLATION
+  The module name is already translated where the shared module metadata
+  declares it, so it is interpolated verbatim: marking it again would mint a
+  translation unit holding nothing but a placeholder. The failure notice reuses
+  an existing source message character-for-character and therefore inherits its
+  twelve existing translations at no cost. Every other visible string here is
+  static and marked, and none carries a custom identifier, which is what keeps
+  the reused message merging into the unit that already exists.
+
+  COMPONENT CONTRACT - this template requires `definition`, `resolvedComponent`,
+  `hasLoadError` and `onRemove()`; it imports `MatCardModule`,
+  `MatButtonModule`, `MatMenuModule`, `NgComponentOutlet`,
+  `NgxSkeletonLoaderModule` and `CUSTOM_ELEMENTS_SCHEMA`, and registers the
+  `ellipsisHorizontal`, `reorderTwoOutline` and `trashOutline` glyphs.
+-->
+<mat-card appearance="outlined">
+  <mat-card-header>
+    <!--
+      The drag origin. Focusable because the stylesheets beside this file and in
+      the global grid partial both give this class a `:focus-visible`
+      treatment, which is unreachable on an element outside the tab order; the
+      tab stop also lets assistive technology discover that the module can be
+      moved. Deliberately not a button and given no button role: dragging is a
+      pointer gesture with no keyboard equivalent, so an activation affordance
+      would promise something pressing it never delivers. The glyph is hidden
+      from assistive technology because the element it sits in is already
+      named.
+    -->
+    <span
+      aria-label="Drag to move module"
+      class="gf-dashboard-module-drag-handle"
+      i18n-aria-label
+      i18n-title
+      tabindex="0"
+      title="Drag to move module"
+    >
+      <ion-icon aria-hidden="true" name="reorder-two-outline" />
+    </span>
+
+    <!--
+      The title is nested one level rather than sitting directly in the header,
+      and the nesting is load-bearing twice over. `MatCardHeader` projects any
+      direct title child into a wrapper of its own that it emits ahead of
+      everything else, which would silently reorder this row and float the
+      handle to the right of the name; a title one level down is invisible to
+      that selector and stays exactly where it is authored. That wrapper is also
+      an unstyled block, so as a flex item it refuses to shrink below its widest
+      line - the reason a two-column module would otherwise carry an untruncated
+      name and push its own actions clean outside the card. The clipped overflow
+      here is what earns the shrink: a flex item whose overflow is visible is
+      floored at its content's minimum width, and a name that never wraps has no
+      minimum smaller than its full line, so the ellipsis the stylesheet beside
+      this file declares could never fire without it.
+
+      `mb-0` drops the trailing margin the global card stylesheet gives every
+      card title. That margin is right where a title sits above card content and
+      wrong on a single row, where it lifts the name off the centre line the
+      handle and the overflow trigger share.
+    -->
+    <div class="overflow-hidden">
+      <mat-card-title class="mb-0 text-truncate">{{
+        definition.name
+      }}</mat-card-title>
+    </div>
+
+    <!--
+      Claims the width left over by the title so the overflow trigger settles
+      against the trailing edge of the card at every module width.
+    -->
+    <span class="gf-spacer"></span>
+
+    <button
+      aria-label="Module actions"
+      i18n-aria-label
+      mat-icon-button
+      [matMenuTriggerFor]="moduleActionsMenu"
+      (click)="$event.stopPropagation()"
+    >
+      <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
+    </button>
+    <!--
+      Opens toward the module's interior, so the panel stays on screen even for
+      a module sitting against the right edge of the canvas.
+    -->
+    <mat-menu #moduleActionsMenu="matMenu" xPosition="before">
+      <button mat-menu-item (click)="onRemove()">
+        <span class="align-items-center d-flex">
+          <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
+          <span i18n>Remove</span>
+        </span>
+      </button>
+    </mat-menu>
+  </mat-card-header>
+
+  <div class="gridster-item-content">
+    @if (resolvedComponent) {
+      <!--
+        The resolved module, mounted without inputs: the feature components
+        these modules host take none, so the adaptation is purely structural
+        and no injector, module factory or projected content is supplied
+        either.
+      -->
+      <ng-container [ngComponentOutlet]="resolvedComponent" />
+    } @else if (hasLoadError) {
+      <!--
+        The module's chunk could not be fetched. Text only, in the
+        de-emphasised colour step, with no icon and no panel: the sentence
+        carries the meaning on its own, so nothing here depends on colour to be
+        understood. It is not wrapped in a live region, because a region
+        created together with its content is announced inconsistently, and the
+        alternative - a persistent region around the whole body - would also
+        announce every internal update of a module that loaded successfully.
+      -->
+      <div class="p-3 secondary-text text-center" i18n>
+        Oops! Something went wrong.
+      </div>
+    } @else {
+      <!--
+        Resolution is still in flight. One block filling the body, so the
+        module appears without a layout jump and short cells are not overflowed
+        by a fixed placeholder height.
+      -->
+      <ngx-skeleton-loader
+        animation="pulse"
+        class="h-100 p-3"
+        [theme]="{
+          height: '100%',
+          width: '100%'
+        }"
+      />
+    }
+  </div>
+</mat-card>

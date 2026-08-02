@@ -1,0 +1,32 @@
+:host {
+  display: block;
+
+  // Trailing-edge placement for the add-account floating action button.
+  //
+  // The global stylesheet pins that button to a fixed bottom-right corner only
+  // through a rule gated on the page-scale shell class, which this component's
+  // host deliberately no longer carries: page-scale chrome must not repeat
+  // inside a grid cell that already supplies a bounded, scrollable box. With
+  // the gate unmet the button receives no positioning at all and drops to the
+  // leading edge of the content column, 632px away from the trailing edge it
+  // used to occupy (measured in Chrome), reading as a stray tile rather than an
+  // action. The one declaration below restores that alignment.
+  //
+  // An auto margin, deliberately, and not a positioned box: it moves nothing
+  // but the inline-axis offset, leaves the button's wrapper untouched, and
+  // keeps the button in normal flow, so it cannot overlap module content at any
+  // permitted cell size. Both positioned alternatives measured worse. `fixed`
+  // resolves against the grid cell's transformed containing block, which is an
+  // implementation detail of the engine's positioning mode rather than a
+  // contract. `absolute` overlapped the last table row at every cell size,
+  // shortened this component's own box by the 56px it removed from flow, which
+  // dragged the button back up into that row, had its corners clipped by the
+  // cell's hidden overflow, and surrendered roughly a third of its hit area to
+  // the engine's resize handles, so a click near the corner resized the module
+  // instead of adding an account.
+  //
+  // No breakpoint accompanies it: canvas layout is non-responsive by design.
+  [mat-fab] {
+    margin-inline-start: auto;
+  }
+}

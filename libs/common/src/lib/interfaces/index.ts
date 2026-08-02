@@ -14,6 +14,7 @@ import type { AssetProfileIdentifier } from './asset-profile-identifier.interfac
 import type { BenchmarkProperty } from './benchmark-property.interface';
 import type { Benchmark } from './benchmark.interface';
 import type { Coupon } from './coupon.interface';
+import type { DashboardModuleLayoutItem } from './dashboard-module-layout-item.interface';
 import type { DataProviderInfo } from './data-provider-info.interface';
 import type { EnhancedSymbolProfile } from './enhanced-symbol-profile.interface';
 import type { FilterGroup } from './filter-group.interface';
@@ -92,6 +93,7 @@ import type { SymbolMetrics } from './symbol-metrics.interface';
 import type { SystemMessage } from './system-message.interface';
 import type { TabConfiguration } from './tab-configuration.interface';
 import type { ToggleOption } from './toggle-option.interface';
+import type { UserDashboardLayout } from './user-dashboard-layout.interface';
 import type { UserItem } from './user-item.interface';
 import type { UserSettings } from './user-settings.interface';
 import type { User } from './user.interface';
@@ -129,6 +131,7 @@ export {
   BenchmarkResponse,
   Coupon,
   CreateStripeCheckoutSessionResponse,
+  DashboardModuleLayoutItem,
   DataEnhancerHealthResponse,
   DataProviderGhostfolioAssetProfileResponse,
   DataProviderGhostfolioStatusResponse,
@@ -187,6 +190,7 @@ export {
   TabConfiguration,
   ToggleOption,
   User,
+  UserDashboardLayout,
   UserItem,
   UserSettings,
   WatchlistResponse,

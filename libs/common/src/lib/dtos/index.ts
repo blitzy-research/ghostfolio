@@ -9,6 +9,7 @@ import { CreateOrderDto } from './create-order.dto';
 import { CreatePlatformDto } from './create-platform.dto';
 import { CreateTagDto } from './create-tag.dto';
 import { CreateWatchlistItemDto } from './create-watchlist-item.dto';
+import { DashboardModuleLayoutItemDto } from './dashboard-module-layout-item.dto';
 import { DeleteOwnUserDto } from './delete-own-user.dto';
 import { TransferBalanceDto } from './transfer-balance.dto';
 import { UpdateAccessDto } from './update-access.dto';
@@ -21,6 +22,7 @@ import { UpdateOwnAccessTokenDto } from './update-own-access-token.dto';
 import { UpdatePlatformDto } from './update-platform.dto';
 import { UpdatePropertyDto } from './update-property.dto';
 import { UpdateTagDto } from './update-tag.dto';
+import { UpdateUserDashboardLayoutDto } from './update-user-dashboard-layout.dto';
 import { UpdateUserSettingDto } from './update-user-setting.dto';
 
 export {
@@ -35,6 +37,7 @@ export {
   CreatePlatformDto,
   CreateTagDto,
   CreateWatchlistItemDto,
+  DashboardModuleLayoutItemDto,
   DeleteOwnUserDto,
   TransferBalanceDto,
   UpdateAccessDto,
@@ -47,5 +50,6 @@ export {
   UpdatePlatformDto,
   UpdatePropertyDto,
   UpdateTagDto,
+  UpdateUserDashboardLayoutDto,
   UpdateUserSettingDto
 };
