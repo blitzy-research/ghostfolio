@@ -1,0 +1,38 @@
+<div class="row">
+  <div class="col">
+    <gf-accounts-table
+      [accounts]="accounts"
+      [activitiesCount]="activitiesCount"
+      [baseCurrency]="user?.settings?.baseCurrency"
+      [locale]="user?.settings?.locale"
+      [showActions]="
+        !hasImpersonationId &&
+        hasPermissionToUpdateAccount &&
+        !user.settings.isRestrictedView
+      "
+      [totalBalanceInBaseCurrency]="totalBalanceInBaseCurrency"
+      [totalValueInBaseCurrency]="totalValueInBaseCurrency"
+      (accountDeleted)="onDeleteAccount($event)"
+      (accountToUpdate)="onUpdateAccount($event)"
+      (transferBalance)="onTransferBalance()"
+    />
+  </div>
+</div>
+
+@if (
+  !hasImpersonationId &&
+  hasPermissionToCreateAccount &&
+  !user.settings.isRestrictedView
+) {
+  <div class="fab-container">
+    <a
+      class="align-items-center d-flex justify-content-center"
+      color="primary"
+      mat-fab
+      [queryParams]="{ createDialog: true, dialogModule: 'accounts' }"
+      [routerLink]="[]"
+    >
+      <ion-icon name="add-outline" size="large" />
+    </a>
+  </div>
+}

@@ -1,7 +1,11 @@
+import {
+  DashboardModule,
+  DashboardModuleType,
+  dashboardModules,
+  isDashboardModulePermitted
+} from '@ghostfolio/common/dashboard';
 import { getAssetProfileIdentifier } from '@ghostfolio/common/helper';
 import { Filter, PortfolioPosition, User } from '@ghostfolio/common/interfaces';
-import { InternalRoute } from '@ghostfolio/common/routes/interfaces/internal-route.interface';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { AccountWithPlatform, DateRange } from '@ghostfolio/common/types';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 
@@ -40,7 +44,6 @@ import {
   closeOutline,
   searchOutline
 } from 'ionicons/icons';
-import { isFunction } from 'lodash';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { EMPTY, Observable, merge, of } from 'rxjs';
 import {
@@ -643,8 +646,8 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
             return {
               id,
               name,
-              routerLink: internalRoutes.accounts.routerLink,
-              mode: SearchMode.ACCOUNT as const
+              mode: SearchMode.ACCOUNT as const,
+              moduleType: DashboardModuleType.ACCOUNTS
             };
           });
         }),
@@ -722,32 +725,25 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
   private searchQuickLinks(aSearchTerm: string): SearchResultItem[] {
     const searchTerm = aSearchTerm.toLowerCase();
 
-    const allRoutes = Object.values<InternalRoute>(internalRoutes)
-      .filter(({ excludeFromAssistant }) => {
-        if (isFunction(excludeFromAssistant)) {
-          return excludeFromAssistant(this.user);
-        }
+    const availableModules = Object.values<DashboardModule>(
+      dashboardModules
+    ).filter((dashboardModule) => {
+      return isDashboardModulePermitted(
+        dashboardModule,
+        this.user?.permissions
+      );
+    });
 
-        return !excludeFromAssistant;
-      })
-      .reduce<InternalRoute[]>((acc, route) => {
-        acc.push(route);
-        if (route.subRoutes) {
-          acc.push(...Object.values(route.subRoutes));
-        }
-        return acc;
-      }, []);
-
-    const fuse = new Fuse(allRoutes, {
-      keys: ['title'],
+    const fuse = new Fuse(availableModules, {
+      keys: ['name'],
       threshold: 0.3
     });
 
-    return fuse.search(searchTerm).map(({ item: { routerLink, title } }) => {
+    return fuse.search(searchTerm).map(({ item: { moduleType, name } }) => {
       return {
-        routerLink,
-        mode: SearchMode.QUICK_LINK as const,
-        name: title
+        moduleType,
+        name,
+        mode: SearchMode.QUICK_LINK as const
       };
     });
   }

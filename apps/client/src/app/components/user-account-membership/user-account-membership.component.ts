@@ -20,7 +20,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { RouterModule } from '@angular/router';
 import ms, { StringValue } from 'ms';
 import { EMPTY } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -32,8 +31,7 @@ import { catchError } from 'rxjs/operators';
     GfMembershipCardComponent,
     GfPremiumIndicatorComponent,
     MatButtonModule,
-    MatCardModule,
-    RouterModule
+    MatCardModule
   ],
   selector: 'gf-user-account-membership',
   styleUrls: ['./user-account-membership.scss'],
@@ -50,7 +48,7 @@ export class GfUserAccountMembershipComponent {
   public hasPermissionToUpdateUserSettings: boolean;
   public price: number;
   public priceId: string;
-  public routerLinkPricing = publicRoutes.pricing.routerLink;
+  public pricingUrl: string;
   public trySubscriptionMail =
     'mailto:hi@ghostfol.io?Subject=Ghostfolio Premium Trial&body=Hello%0D%0DI am interested in Ghostfolio Premium. Can you please send me a coupon code to try it for some time?%0D%0DKind regards';
   public user: User;
@@ -81,6 +79,10 @@ export class GfUserAccountMembershipComponent {
           this.defaultDateFormat = getDateFormatString(
             this.user.settings.locale
           );
+
+          const languageCode = this.user.settings.language;
+
+          this.pricingUrl = `https://ghostfol.io/${languageCode}/${publicRoutes.pricing.path}`;
 
           this.hasPermissionToCreateApiKey = hasPermission(
             this.user.permissions,

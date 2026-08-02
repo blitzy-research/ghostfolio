@@ -77,8 +77,13 @@ export class GfAssistantListItemComponent
 
       this.routerLink = [];
     } else if (this.item?.mode === SearchMode.QUICK_LINK) {
+      // The URL no longer selects a screen, so a quick link stays on the
+      // current route: the empty command array is the established route-free
+      // form already used by the holding branch above. Revealing the module the
+      // item names is the consumer's responsibility, reached through the click
+      // output rather than through navigation.
       this.queryParams = {};
-      this.routerLink = this.item.routerLink;
+      this.routerLink = [];
     }
   }
 

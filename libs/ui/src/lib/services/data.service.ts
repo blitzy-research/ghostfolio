@@ -14,6 +14,7 @@ import {
   UpdateOwnAccessTokenDto,
   UpdatePropertyDto,
   UpdateTagDto,
+  UpdateUserDashboardLayoutDto,
   UpdateUserSettingDto
 } from '@ghostfolio/common/dtos';
 import { DATE_FORMAT } from '@ghostfolio/common/helper';
@@ -53,6 +54,7 @@ import {
   PublicPortfolioResponse,
   SymbolItem,
   User,
+  UserDashboardLayout,
   UserItem,
   WatchlistResponse
 } from '@ghostfolio/common/interfaces';
@@ -758,6 +760,10 @@ export class DataService {
     return this.http.get<Tag[]>('/api/v1/tags');
   }
 
+  public fetchUserDashboardLayout() {
+    return this.http.get<UserDashboardLayout | null>('/api/v1/user/layout');
+  }
+
   public fetchWatchlist() {
     return this.http.get<WatchlistResponse>('/api/v1/watchlist');
   }
@@ -766,6 +772,10 @@ export class DataService {
     return this.http.post<OAuthResponse>('/api/v1/auth/anonymous', {
       accessToken
     });
+  }
+
+  public patchUserDashboardLayout(aData: UpdateUserDashboardLayoutDto) {
+    return this.http.patch<UserDashboardLayout>('/api/v1/user/layout', aData);
   }
 
   public postAccess(aAccess: CreateAccessDto) {

@@ -90,13 +90,11 @@ export class AuthController {
       response.redirect(
         `${this.configurationService.get(
           'ROOT_URL'
-        )}/${DEFAULT_LANGUAGE_CODE}/auth/${jwt}`
+        )}/${DEFAULT_LANGUAGE_CODE}/?jwt=${jwt}`
       );
     } else {
       response.redirect(
-        `${this.configurationService.get(
-          'ROOT_URL'
-        )}/${DEFAULT_LANGUAGE_CODE}/auth`
+        `${this.configurationService.get('ROOT_URL')}/${DEFAULT_LANGUAGE_CODE}/`
       );
     }
   }
@@ -123,13 +121,11 @@ export class AuthController {
       response.redirect(
         `${this.configurationService.get(
           'ROOT_URL'
-        )}/${DEFAULT_LANGUAGE_CODE}/auth/${jwt}`
+        )}/${DEFAULT_LANGUAGE_CODE}/?jwt=${jwt}`
       );
     } else {
       response.redirect(
-        `${this.configurationService.get(
-          'ROOT_URL'
-        )}/${DEFAULT_LANGUAGE_CODE}/auth`
+        `${this.configurationService.get('ROOT_URL')}/${DEFAULT_LANGUAGE_CODE}/`
       );
     }
   }

@@ -1,3 +1,4 @@
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { AssetProfileIdentifier } from '@ghostfolio/common/interfaces';
 import { AccountWithValue, DateRange } from '@ghostfolio/common/types';
 
@@ -8,7 +9,7 @@ export interface AccountSearchResultItem extends Pick<
   'id' | 'name'
 > {
   mode: SearchMode.ACCOUNT;
-  routerLink: string[];
+  moduleType: DashboardModuleType;
 }
 
 export interface AssetSearchResultItem extends AssetProfileIdentifier {
@@ -25,8 +26,8 @@ export interface DateRangeOption {
 
 export interface QuickLinkSearchResultItem {
   mode: SearchMode.QUICK_LINK;
+  moduleType: DashboardModuleType;
   name: string;
-  routerLink: string[];
 }
 
 export type SearchResultItem =
