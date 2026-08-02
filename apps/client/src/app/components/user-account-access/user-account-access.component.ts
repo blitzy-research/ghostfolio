@@ -1,5 +1,6 @@
 import { GfAccessTableComponent } from '@ghostfolio/client/components/access-table/access-table.component';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { CreateAccessDto } from '@ghostfolio/common/dtos';
 import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import { Access, User } from '@ghostfolio/common/interfaces';
@@ -112,6 +113,15 @@ export class GfUserAccountAccessComponent implements OnInit {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
+        // On the single-canvas shell every module observes the same query
+        // parameters, so the generic dialog flags are only honoured when the
+        // producer explicitly addressed this module. Bailing out first makes
+        // the handler fail-safe: an unqualified `createDialog` or `editDialog`
+        // emitted by any other module opens nothing here.
+        if (params['dialogModule'] !== DashboardModuleType.ACCOUNT_ACCESS) {
+          return;
+        }
+
         if (params['createDialog']) {
           this.openCreateAccessDialog();
         } else if (params['editDialog'] && params['accessId']) {
@@ -175,7 +185,11 @@ export class GfUserAccountAccessComponent implements OnInit {
 
   public onUpdateAccess(aId: string) {
     this.router.navigate([], {
-      queryParams: { accessId: aId, editDialog: true }
+      queryParams: {
+        accessId: aId,
+        dialogModule: DashboardModuleType.ACCOUNT_ACCESS,
+        editDialog: true
+      }
     });
   }
 

@@ -1,7 +1,11 @@
 @use '@angular/material' as mat;
+// Included through Sass's module API rather than `@import` so that adding this
+// partial introduces no further `@import` deprecation site. The partial defines
+// a single mixin and emits no top-level CSS, so it has nothing to inherit from
+// the legacy import cascade below, which is pre-existing and left untouched.
+@use './styles/gridster' as gridster;
 
 @import './styles/bootstrap';
-@import './styles/gridster';
 @import './styles/table';
 @import './styles/variables';
 
@@ -241,7 +245,7 @@ body {
     }
 
     .gf-gridster {
-      @include gf-gridster(true);
+      @include gridster.gf-gridster(true);
     }
 
     .gf-table {
@@ -363,8 +367,21 @@ ngx-skeleton-loader {
   cursor: pointer;
 }
 
+// The single genuinely floating control on the canvas: the module catalog
+// trigger. It gets a class of its own rather than reusing `.fab-container`,
+// which every feature leaf also carries — sharing that class is precisely what
+// stacked five buttons on one coordinate. The coordinates are the ones
+// `.fab-container` used to declare, so the affordance lands where it always has,
+// and `.has-fab` remains the companion class that clears content beneath it.
+.gf-dashboard-catalog-trigger {
+  bottom: 2rem;
+  position: fixed;
+  right: 2rem;
+  z-index: 999;
+}
+
 .gf-gridster {
-  @include gf-gridster;
+  @include gridster.gf-gridster;
 }
 
 .gf-pointer-events-none {
@@ -516,11 +533,25 @@ ngx-skeleton-loader {
   padding-bottom: env(safe-area-inset-bottom);
   padding-bottom: constant(safe-area-inset-bottom);
 
+  // Module-local floating action buttons stay in normal flow.
+  //
+  // This class is carried by five separate feature leaves (activities,
+  // watchlist, admin market data, account access and accounts), and on the
+  // single canvas all of them are mounted at once inside this shell. Pinning the
+  // wrapper to a fixed viewport coordinate therefore stacked every one of those
+  // buttons — and the catalog trigger with them — on the same bottom-right spot,
+  // where only the topmost was reachable. A leaf stylesheet could not undo it
+  // either, because the fixed box is the wrapper, not the button.
+  //
+  // Trailing alignment in flow keeps each button's original reading position
+  // while scoping it to its own module's bounded, independently scrolling box,
+  // so it cannot overlap module content or a neighbouring module at any
+  // permitted cell size. The genuinely floating control — the catalog trigger —
+  // has its own class, `.gf-dashboard-catalog-trigger`, and keeps the fixed
+  // coordinates that used to live here.
   .fab-container {
-    bottom: 2rem;
-    position: fixed;
-    right: 2rem;
-    z-index: 999;
+    display: flex;
+    justify-content: flex-end;
   }
 
   &:not(.has-tabs) {

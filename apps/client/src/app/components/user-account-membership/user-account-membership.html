@@ -58,13 +58,14 @@
                 </a>
               }
               @if (hasPermissionToUpdateUserSettings) {
-                <a
+                <button
                   class="mx-1"
-                  i18n
                   mat-stroked-button
+                  type="button"
                   (click)="onRedeemCoupon()"
-                  >Redeem Coupon</a
                 >
+                  <ng-container i18n>Redeem Coupon</ng-container>
+                </button>
               }
             </div>
           </div>

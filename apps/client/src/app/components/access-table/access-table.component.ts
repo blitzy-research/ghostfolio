@@ -90,7 +90,7 @@ export class GfAccessTableComponent {
   protected getPublicUrl(aId: string) {
     const languageCode = this.user().settings.language;
 
-    return `${this.baseUrl}/${languageCode}/?accessId=${aId}`;
+    return `${this.baseUrl}/${languageCode}/?accessId=${encodeURIComponent(aId)}`;
   }
 
   protected onCopyUrlToClipboard(aId: string) {

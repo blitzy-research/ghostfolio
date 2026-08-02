@@ -16,11 +16,33 @@
           height: var(--mat-toolbar-standard-height);
           z-index: 999;
 
+          // The create-account banner is a real <button> so it is reachable by
+          // Tab and activates on Enter/Space. The user-agent button chrome is
+          // neutralised back to the banner's plain-text appearance; the `font`
+          // shorthand is deliberately avoided so the size and weight declared
+          // here still apply.
           .info-message {
+            appearance: none;
+            background-color: transparent;
+            border: 0;
             color: rgba(var(--light-primary-text));
+            font-family: inherit;
             font-size: 80%;
             font-weight: 500;
+            letter-spacing: inherit;
+            line-height: inherit;
             max-width: 100%;
+            padding: 0;
+            text-align: inherit;
+
+            // WCAG 2.4.7 and 1.4.11: a focus ring on the brand banner fill has
+            // to clear 3:1. The palette's own contrast colour for this fill,
+            // rgba(0, 0, 0, 0.87), computes 9.27:1, whereas the white used for
+            // the banner label would compute only 1.92:1.
+            &:focus-visible {
+              outline: 2px solid var(--mat-sys-on-primary, rgba(0, 0, 0, 0.87));
+              outline-offset: 2px;
+            }
 
             .a {
               border: 1px solid rgba(var(--light-primary-text));
@@ -31,14 +53,29 @@
       }
     }
 
+    // Banner-adjusted definite block size: exactly one toolbar height is
+    // reserved for the banner above, so the shell still occupies one viewport.
     main {
-      min-height: calc(100svh - var(--mat-toolbar-standard-height));
+      block-size: calc(100svh - var(--mat-toolbar-standard-height));
     }
   }
 
   // Without the info message the header renders nothing, so it is given no
-  // height and collapses, leaving the full viewport to the main content
+  // height and collapses, leaving the full viewport to the main content.
+  //
+  // `block-size` rather than `min-height`: the routed canvas sizes its control
+  // bar, drawer host and root-route states purely from flex growth, and a flex
+  // item only resolves against a container whose block size is definite. With
+  // `min-height` alone the container stays auto-height, the grid never gets a
+  // scrollport, and vertical centring has nothing to centre within.
+  // The routed component itself claims the remaining space from its own
+  // `:host`, which is the only place that can: emulated encapsulation rewrites
+  // a descendant selector here to require this component's `_ngcontent`
+  // attribute, and a router-inserted host element never carries it, so a rule
+  // such as `main > *` would silently never match.
   main {
-    min-height: 100svh;
+    block-size: 100svh;
+    display: flex;
+    flex-direction: column;
   }
 }

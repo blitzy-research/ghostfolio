@@ -1,85 +1,19 @@
 @mixin gf-gridster($darkTheme: false) {
-  // ---------------------------------------------------------------------------
-  // Global grid chrome for angular-gridster2 21.0.1.
-  //
-  // WHY THIS PARTIAL IS GLOBAL RATHER THAN A COMPONENT STYLESHEET
-  // All three components shipped by angular-gridster2 - `gridster`,
-  // `gridster-item` and `gridster-preview` - are declared with
-  // `encapsulation: ViewEncapsulation.None` and carry their CSS as inline
-  // `styles: [...]` metadata; the package ships no stylesheet of its own.
-  // Angular injects that CSS as a `<style>` element in `<head>` the first time
-  // each component renders, which is after the application's global stylesheet.
-  // A component-scoped stylesheet can never reach unencapsulated element
-  // selectors, and the `anyComponentStyle` budget declared in
-  // `apps/client/project.json` (6 kB warning / 10 kB error) rules the approach
-  // out even in principle, so these overrides have to be global.
-  //
-  // WHY EVERY SELECTOR BELOW IS EMITTED FROM INSIDE THIS MIXIN
-  // The library's rules are plain element selectors at specificity (0,0,1) and
-  // (0,1,1). At equal specificity the later rule wins, and the library's rules
-  // are always injected later - so a bare top-level `gridster-item { ... }`
-  // override would silently lose and the grid would keep painting the
-  // library's own gray and white defaults with no Sass, lint or build error
-  // anywhere. `styles.scss` invokes this mixin as
-  // `.gf-gridster { @include gf-gridster; }`, so every selector here compiles
-  // with a `.gf-gridster` ancestor and gains a class, which reliably beats the
-  // library on specificity alone. No importance override is needed, and using
-  // one would only fight the library's own hover and drag-state rules.
-  // Measured specificity, library rule -> the rule emitted here:
-  //   gridster                                        (0,0,1) -> (0,1,1)
-  //   gridster .gridster-column, .gridster-row        (0,1,1) -> (0,2,1)
-  //   gridster-item                                   (0,0,1) -> (0,1,1)
-  //   gridster-item.gridster-item-resizing, -moving   (0,1,1) -> (0,2,1)
-  //   gridster-item:hover ... .handle-se              (0,3,1) -> (0,4,1)
-  //   gridster-preview                                (0,0,1) -> (0,1,1)
-  // The dark invocation is nested inside `body.theme-dark`, which adds a
-  // further class and element, so the dark deltas always override the light
-  // declarations exactly as they do for the neighbouring `gf-table` mixin.
-  //
-  // WHY EVERY VALUE CARRIES A HARDCODED FALLBACK
-  // This application themes through the legacy `mat.define-theme()` plus
-  // `mat.all-component-themes()` path in `styles/theme.scss`, not through
-  // `mat.theme()`. That path emits component-level `--mat-*` tokens but leaves
-  // the Material 3 *system* token layer unpopulated. A system-token reference
-  // written without a fallback therefore resolves to the guaranteed-invalid
-  // value and the browser drops the whole declaration - which is why every
-  // declaration below pairs its token with a hardcoded fallback. The fallback
-  // is what actually paints today, while the token keeps this chrome
-  // forward-compatible with a future `mat.theme()` migration. Every fallback
-  // traces to the palette already published by the `:root` block in
-  // `styles.scss`.
-  //
-  // DELIBERATE OMISSIONS
-  // No breakpoint query: canvas layout is intentionally non-responsive, and the
-  // grid engine enforces that through its `mobileBreakpoint: 0` setting rather
-  // than through CSS. No size floor of any kind on a grid item: minimum cell
-  // dimensions are declared in the module registry and enforced by the engine's
-  // `itemValidateCallback`, which rejects an undersized configuration outright
-  // instead of merely masking it visually. No scrim colour: the module catalog
-  // is a `mode="side"` drawer, because an `over` or `push` drawer renders a
-  // backdrop that would intercept the native HTML5 `dragover` and `drop` events
-  // the grid engine listens for, so no scrim element can exist at runtime.
-  // ---------------------------------------------------------------------------
+  // Gridster creates internal elements without emulated encapsulation and
+  // injects its styles at runtime, so internal chrome overrides are global and
+  // scoped under .gf-gridster for specificity.
+  // Material system tokens require fallbacks because the current theme does not
+  // emit the --mat-sys layer.
 
-  // The grid canvas itself. Library default: `background: gray`.
   gridster {
     background: var(--mat-sys-surface-container-low, #fafafa);
 
-    // Grid guides, revealed by the engine only while a module is being dragged
-    // or resized (`displayGrid: DisplayGrid.OnDragAndResize`). The library
-    // draws them as `1px solid white`; only the colour is a design-system
-    // value, so only the colour is retargeted and the structural width and
-    // style are left exactly as the library set them.
     .gridster-column,
     .gridster-row {
       border-color: var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
     }
   }
 
-  // A placed module. Library default: `background: #fff`, no border, no radius.
-  // The library already sets `box-sizing: border-box`, so the 1px border costs
-  // no layout, and it already sets `overflow: hidden`, so the corner radius
-  // clips the hosted module content.
   gridster-item {
     background: var(--mat-sys-surface-container, #ffffff);
     border: 1px solid var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
@@ -96,30 +30,20 @@
       box-shadow: var(--mat-sys-level3, 0 6px 10px rgba(0, 0, 0, 0.14));
     }
 
-    // The south-east resize affordance is a CSS triangle drawn purely from
-    // borders - zero width and height, a 10px bottom and left border, and every
-    // edge transparent until the pointer enters the item, at which point the
-    // library paints the bottom edge `#ccc`. The bottom edge is the only one
-    // that is ever visible, so it is the only one that carries a design value;
-    // the remaining three keep the transparency the library already gives them,
-    // which is what preserves the triangle. The handle markup and its hit areas
-    // belong to the library and are never authored here - this is purely a
-    // colour override, and it is scoped to `:hover` so the affordance still
-    // appears only on pointer entry.
+    // Gridster draws the southeast handle with borders; override only the
+    // visible bottom edge. The tone is the variant rather than the outline
+    // token so the resize affordance clears the 3:1 non-text minimum.
     &:hover {
       .gridster-item-resizable-handler.handle-se {
-        border-bottom-color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+        border-bottom-color: var(
+          --mat-sys-on-surface-variant,
+          rgba(0, 0, 0, 0.54)
+        );
       }
     }
 
-    // The drag affordance named by `draggable.dragHandleClass` in the grid
-    // configuration. It is themed here rather than in a component stylesheet
-    // because the engine binds its drag listeners through this class on an
-    // element nested inside the unencapsulated `gridster-item`, so the module
-    // header reads consistently no matter which component renders the handle.
-    // `cursor` and `user-select` are behavioural rather than design-system
-    // values: they advertise that the header is the drag origin and stop a
-    // drag from turning into a text selection.
+    // This class must match gridster's dragHandleClass; preserve cursor and
+    // text-selection behavior.
     .gf-dashboard-module-drag-handle {
       color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
       cursor: move;
@@ -136,19 +60,12 @@
     }
   }
 
-  // The drop-zone indicator the engine renders while a module is dragged in
-  // from the catalog or moved on the canvas. Library default:
-  // `background: #00000026`.
   gridster-preview {
     background: var(--mat-sys-primary-container, rgba(54, 207, 204, 0.16));
     border-radius: var(--mat-sys-corner-medium, 4px);
   }
 
   @if $darkTheme {
-    // Dark deltas only, mirroring how `gf-table` re-declares just what
-    // changes. Tokens whose value is identical across the two themes - the
-    // drop-zone fill, the corner radius, the drag elevation and the header
-    // typography - are intentionally not repeated.
     gridster {
       background: var(--mat-sys-surface-container-low, #1f1f1f);
 
@@ -165,7 +82,10 @@
 
       &:hover {
         .gridster-item-resizable-handler.handle-se {
-          border-bottom-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
+          border-bottom-color: var(
+            --mat-sys-on-surface-variant,
+            rgba(255, 255, 255, 0.7)
+          );
         }
       }
 

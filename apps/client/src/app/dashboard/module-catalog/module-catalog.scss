@@ -1,65 +1,13 @@
-// Component stylesheet for `GfModuleCatalogComponent` (`gf-module-catalog`),
-// the searchable module catalog rendered inside the canvas-owned side drawer.
-//
-// SCOPE, deliberately narrow: the catalog host, the panel surface, the pinned
-// search region, the scrolling result region, the catalog's own focus
-// affordance and the supporting copy. Nothing else. The grid engine's
-// unencapsulated chrome belongs to the global grid partial in `styles/`, the
-// row internals to `module-catalog-item/`, and the drawer, its open state, the
-// floating trigger and the panel WIDTH to the canvas. No overlay rule exists
-// here by design: the drawer opens in side mode and renders no overlay layer,
-// so nothing intercepts the native HTML5 `dragover` / `drop` events the grid
-// engine listens for.
-//
-// STYLING HOOKS consumed by `module-catalog.html`:
-//   .catalog-hint      localised click-or-drag affordance copy
-//   .no-results        localised zero-match message
-//   .result-container  the `role="list"` scroll region holding the rows
-//   .search-container  wraps the outlined `mat-form-field`; stays pinned
-// Everything the panel needs unconditionally sits on `:host`, so surface, text
-// colour and column flow stay correct irrespective of which Bootstrap utility
-// classes the template pairs with these hooks.
-//
-// MATERIAL DESIGN 3 TOKEN DISCIPLINE. Every colour and radius is a system-token
-// reference carrying a hardcoded fallback, and that fallback is load-bearing
-// rather than decorative: this workspace themes through the legacy
-// `mat.define-theme()` + `mat.all-component-themes()` path scoped under
-// `.theme-light` / `.theme-dark` (`styles/theme.scss`), which emits
-// component-level `--mat-*` tokens but leaves the `--mat-sys-*` layer
-// unpopulated. A fallback-less reference resolves to nothing and the browser
-// drops the whole declaration, so the fallback is what paints today while the
-// token reference stays forward-compatible with a `mat.theme()` migration.
-//
-// Fallback provenance (light / dark), from `styles.scss` custom properties:
-//   surface     #ffffff / #262626        background-card
-//   text        rgba(0,0,0,.87) / #fff   foreground-text(-dark)
-//   supporting  rgba(0,0,0,.54) /
-//               rgba(255,255,255,.7)     foreground-secondary-text(-dark)
-//   outline     rgba(0,0,0,.12) /
-//               rgba(255,255,255,.12)    dark-dividers / light-dividers
-//   accent      rgba(54,207,204,.16)     primary-500 (#36cfcc)
-//   radius      4px                      dialog container-shape
-//
-// Spacing is absent by design: padding, margin and gap come from the Bootstrap
-// 4.6 utility classes in `module-catalog.html`. So are media queries, viewport
-// units and transitions: the canvas is explicitly non-responsive, dark mode is
-// class-driven rather than query-driven (hence the `:host-context()` mirror
-// below), and omitting motion is the safe default for reduced motion. No
-// geometry appears either: cell dimensions belong to grid state, not here.
+// Material system tokens require fallbacks because the current theme does not
+// emit the --mat-sys layer.
 
 :host {
   background: var(--mat-sys-surface-container, #ffffff);
-  // Leading edge separating the panel from the canvas. Logical properties keep
-  // it correct in both writing directions, and the matching logical corners
-  // round only that same edge.
   border-end-start-radius: var(--mat-sys-corner-medium, 4px);
   border-inline-start: 1px solid
     var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
   border-start-start-radius: var(--mat-sys-corner-medium, 4px);
   color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
-  // Internal column flow only. The drawer owns the width; this host owns the
-  // split between the pinned search region and the scrolling result region,
-  // and clips both to the rounded leading edge.
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -69,9 +17,7 @@
   .catalog-hint,
   .no-results {
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
-    // Neither region is interactive, so suppress the text caret.
     cursor: default;
-    // Localised copy can far exceed the English source in a panel.
     overflow-wrap: break-word;
   }
 
@@ -86,9 +32,8 @@
   .search-container {
     border-block-end: 1px solid
       var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
-    // Pinned at its intrinsic height so the outlined `mat-form-field` is never
-    // clipped. The assistant precedent's fixed height is deliberately not
-    // reused: it wraps a bare input, not an outlined field.
+    // Keep the search region at intrinsic height so the outlined form field is
+    // not clipped.
     flex: 0 0 auto;
 
     // Focus affordance on the catalog's own chrome: a brand-tinted wash marks
@@ -101,15 +46,8 @@
   }
 }
 
-// Dark-theme mirror. `.theme-dark` / `.theme-light` are toggled by the app
-// shell on the document `<body>`, so `:host-context()` is the correct hook and
-// its extra class raises specificity above the light rules. Only surfaces that
-// genuinely differ are repeated; the brand accent and corner radius are
-// theme-independent.
 :host-context(.theme-dark) {
   background: var(--mat-sys-surface-container, #262626);
-  // The full longhand is restated rather than only its `-color` component so
-  // each token reference stays intact on a single line under printWidth 80.
   border-inline-start: 1px solid
     var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
   color: var(--mat-sys-on-surface, #ffffff);

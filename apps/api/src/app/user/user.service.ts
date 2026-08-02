@@ -259,7 +259,6 @@ export class UserService {
         user.settings.settings = {};
       }
     } else if (user) {
-      // Set default settings if needed
       user.settings = {
         settings: {},
         updatedAt: new Date(),
@@ -267,44 +266,36 @@ export class UserService {
       };
     }
 
-    // Set default value for annual interest rate
     if (!(user.settings.settings as UserSettings)?.annualInterestRate) {
       (user.settings.settings as UserSettings).annualInterestRate = 5;
     }
 
-    // Set default value for base currency
     if (!(user.settings.settings as UserSettings)?.baseCurrency) {
       (user.settings.settings as UserSettings).baseCurrency = DEFAULT_CURRENCY;
     }
 
-    // Set default value for date range
     (user.settings.settings as UserSettings).dateRange =
       (user.settings.settings as UserSettings).viewMode === 'ZEN'
         ? 'max'
         : ((user.settings.settings as UserSettings)?.dateRange ?? 'max');
 
-    // Set default value for performance calculation type
     if (!(user.settings.settings as UserSettings)?.performanceCalculationType) {
       (user.settings.settings as UserSettings).performanceCalculationType =
         PerformanceCalculationType.ROAI;
     }
 
-    // Set default value for projected total amount
     if (!(user.settings.settings as UserSettings)?.projectedTotalAmount) {
       (user.settings.settings as UserSettings).projectedTotalAmount = 0;
     }
 
-    // Set default value for safe withdrawal rate
     if (!(user.settings.settings as UserSettings)?.safeWithdrawalRate) {
       (user.settings.settings as UserSettings).safeWithdrawalRate = 0.04;
     }
 
-    // Set default value for savings rate
     if (!(user.settings.settings as UserSettings)?.savingsRate) {
       (user.settings.settings as UserSettings).savingsRate = 0;
     }
 
-    // Set default value for view mode
     if (!(user.settings.settings as UserSettings).viewMode) {
       (user.settings.settings as UserSettings).viewMode = 'DEFAULT';
     }
@@ -431,13 +422,6 @@ export class UserService {
       currentPermissions.push(permissions.updateOwnAccessToken);
     }
 
-    if (!(user.settings.settings as UserSettings).isExperimentalFeatures) {
-      // currentPermissions = without(
-      //   currentPermissions,
-      //   permissions.xyz
-      // );
-    }
-
     if (this.configurationService.get('ENABLE_FEATURE_SUBSCRIPTION')) {
       user.subscription = await this.subscriptionService.getSubscription({
         subscriptions,
@@ -481,10 +465,8 @@ export class UserService {
           permissions.updateMarketDataOfOwnAssetProfile
         );
 
-        // Reset benchmark
         user.settings.settings.benchmark = undefined;
 
-        // Reset holdings view mode
         user.settings.settings.holdingsViewMode = undefined;
       } else if (user.subscription?.type === SubscriptionType.Premium) {
         if (!hasRole(user, Role.DEMO)) {
@@ -499,7 +481,6 @@ export class UserService {
           permissions.deleteOwnUser
         );
 
-        // Reset offer
         user.subscription.offer.coupon = undefined;
         user.subscription.offer.couponId = undefined;
         user.subscription.offer.durationExtension = undefined;
@@ -592,7 +573,7 @@ export class UserService {
             currency: DEFAULT_CURRENCY,
             name: this.i18nService.getTranslation({
               id: 'myAccount',
-              languageCode: DEFAULT_LANGUAGE_CODE // TODO
+              languageCode: DEFAULT_LANGUAGE_CODE
             })
           }
         },

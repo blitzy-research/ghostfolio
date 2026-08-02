@@ -1,61 +1,20 @@
-// Chrome for the AI prompt grid module (`gf-ai-chat-module`).
-//
-// SCOPE — this stylesheet owns only the module's own body content. The card
-// surround, the module title, the drag handle and the overflow/remove menu
-// belong to `gf-dashboard-module-host`, and the grid library's own
-// unencapsulated elements are themed by the dedicated global partial under
-// `apps/client/src/styles/`. Neither is referenced here, so this module depends
-// on nothing in the canvas layer and holds no position or size state — those
-// belong to grid state alone.
-//
-// TOKENS — every themeable value is `var(--mat-sys-<token>, <fallback>)`, and
-// that is a correctness requirement rather than a stylistic one. The client
-// themes through the legacy `mat.define-theme()` + `mat.all-component-themes()`
-// path in `styles/theme.scss` instead of `mat.theme()`, so the Material 3
-// *system* token layer is never populated at runtime: a token reference with no
-// fallback resolves to nothing and the browser discards the whole declaration.
-// The fallback is therefore what paints today, while the token keeps each
-// declaration forward-compatible if the theme later moves to `mat.theme()`.
-// The repository already demonstrates the failure this guards against —
-// `var(--success)` and `var(--danger)` are referenced by three stylesheets yet
-// defined nowhere, so those colours silently never paint.
-//
-// THEMING — `.theme-dark` / `.theme-light` are toggled on `document.body` by
-// `AppComponent.toggleTheme`, i.e. on an ancestor of this host, so
-// `:host-context(.theme-dark)` is the only selector able to match. The dark
-// block re-declares just the properties whose fallback differs; the token half
-// is identical in both blocks, so a populated token layer would resolve each to
-// the same theme-aware value without conflict.
-//
-// SPACING — padding, margin and alignment come from Bootstrap utility classes
-// in `ai-chat.module.html`, as elsewhere in the client (see `assistant.html`),
-// so only themed properties are declared here.
-//
-// DELIBERATE OMISSIONS — no viewport or feature queries, because responsive and
-// mobile support is out of scope for this refactor and is switched off on the
-// canvas itself; hover motion is left out for the same reason, since it could
-// not be guarded by a reduced-motion preference query without introducing one.
-// No Sass dependency, so nothing is added to the existing deprecation warnings.
-// No monospace family on the prompt block: typography is themeable and the only
-// approved font token is `title-small`, so the pre-formatted reading experience
-// comes from `white-space: pre-wrap`. Nothing pierces component encapsulation
-// and no declaration escalates specificity.
-
-/* BLITZY [A11Y]: the `.prompt-container` and `.error-container` edges are
-   decorative surface boundaries, not control or state indicators, so WCAG
-   1.4.11 does not bind them. Their measured ratios are recorded here for
-   designer review rather than auto-corrected, because a system value is never
-   altered to satisfy a threshold. Composited against the adjacent surface:
-   `outline-variant` 1.37:1 light / 1.33:1 dark; `outline` 2.68:1 light /
-   4.86:1 dark. Every text tone clears WCAG AA: primary 16.1:1 light /
-   15.1:1 dark, secondary 4.61:1 light / 8.14:1 dark. Escalate to design if a
-   stronger edge is wanted. */
+// Material system tokens require fallbacks because the current theme does not
+// emit the --mat-sys layer.
 
 :host {
   display: block;
 
   color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   height: 100%;
+
+  // The global stylesheet resets `button:focus`, so keyboard focus needs an
+  // explicit indicator here; `cdk-keyboard-focused` is the CDK's own
+  // keyboard-only marker on the toggle buttons.
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: 2px;
+  }
 
   // Scroll region for the module body. The prompt returned by
   // `GET /api/v1/ai/prompt/:mode` is a long markdown document, so the body
@@ -66,19 +25,19 @@
     overflow: auto;
   }
 
-  // Empty and failed-request state. Carries the stronger `outline` tone rather
-  // than divider-weight `outline-variant` so an inert region reads as
-  // intentional. Colour is never the sole cue: the template pairs this with an
-  // icon and explanatory copy.
   .error-container {
     border: 1px solid var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
   }
 
-  // Supporting copy: the mode explanation and the copy-to-clipboard hint.
   .hint-text {
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+  }
+
+  mat-button-toggle.cdk-keyboard-focused {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: -2px;
   }
 
   // The generated prompt. `pre-wrap` preserves the markdown holdings table the
@@ -95,7 +54,6 @@
     white-space: pre-wrap;
   }
 
-  // Label row for the `analysis` / `portfolio` mode control.
   .prompt-mode-container {
     border-bottom: 1px solid var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
     font: var(
@@ -108,10 +66,12 @@
 :host-context(.theme-dark) {
   color: var(--mat-sys-on-surface, #ffffff);
 
+  a:focus-visible,
+  button:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+
   .content-container {
-    /* BLITZY [COLOR]: dark body surface is #262626 per the reconciled token
-       table, overriding the palette default --palette-background-card-dark
-       (#424242) so the module body sits a step below the canvas. */
     background-color: var(--mat-sys-surface-container, #262626);
   }
 
@@ -122,6 +82,10 @@
 
   .hint-text {
     color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+
+  mat-button-toggle.cdk-keyboard-focused {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
   }
 
   .prompt-container {

@@ -1,58 +1,89 @@
-// Catalog row chrome for GfModuleCatalogItemComponent.
+// Material system tokens require fallbacks because the current theme does not
+// emit the --mat-sys layer.
 //
-// Design-system contract: every colour, border colour and radius below is
-// written as `var(--mat-sys-<token>, <fallback>)`, and the fallback is
-// load-bearing rather than decorative. This workspace themes Angular Material
-// through the legacy `mat.define-theme()` + `mat.all-component-themes()` path
-// scoped under `.theme-light` / `.theme-dark`, which never populates the
-// Material Design 3 system-token layer, so a token reference on its own would
-// resolve to nothing and the browser would discard the whole declaration. The
-// fallback is what paints today; the token lets the row inherit correct system
-// values if the theme is ever migrated to `mat.theme()`. Every fallback is
-// traceable to `apps/client/src/styles.scss`.
-//
-// No box spacing is declared here on purpose: the template supplies it through
-// Bootstrap utility classes, which is the repository-wide convention.
+// The row is both a click target and a native drag source, so every state beyond
+// resting is distinguished by a border colour clearing 3:1 against the row
+// surface (WCAG 2.2 SC 1.4.11); the background steps are secondary cues taken
+// from the palette's own state-layer alphas. Cursor and border style are
+// behavioural rather than themeable, so `grabbing` and `dashed` are literals.
 
 :host {
   display: block;
 
-  // The visible row surface. `mat-card` compiles to `mat-card[_ngcontent-*]`,
-  // which already outranks Material's own `.mat-mdc-card` rules, so plain
-  // element selectors are sufficient and no importance escalation is needed.
   mat-card {
     background-color: var(--mat-sys-surface-container, #ffffff);
-    // Border width and style are structural; only the colour is tokenised.
     border: 1px solid var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
-    // Signals that the row is a native drag source for the dashboard canvas.
     cursor: grab;
+
+    // Declared before the pressed and drag-active rules so the more engaged
+    // state wins the shared properties at equal specificity.
+    &:hover {
+      background-color: var(--mat-sys-surface-container-high, #f5f5f5);
+      border-color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    }
+
+    &:active {
+      background-color: var(--mat-sys-surface-container-highest, #e0e0e0);
+      border-color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+      cursor: grabbing;
+    }
+
+    // Live drag source. The brand fill matches the drop-zone preview the grid
+    // engine paints, and the dashed edge distinguishes the state without
+    // relying on colour alone.
+    &.is-dragging {
+      background-color: var(
+        --mat-sys-primary-container,
+        rgba(54, 207, 204, 0.16)
+      );
+      border-color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+      border-style: dashed;
+      cursor: grabbing;
+    }
   }
 }
 
-// Dark mirror. `.theme-light` / `.theme-dark` are toggled on `document.body`,
-// so `:host-context()` is the correct selector. The surface is intentionally
-// lighter than the theme's own dark card colour so the row reads as an
-// elevated surface above the canvas background.
 :host-context(.theme-dark) {
   mat-card {
     background-color: var(--mat-sys-surface-container, #262626);
     border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
     color: var(--mat-sys-on-surface, #ffffff);
+
+    // Each dark state is restated because the fallback differs and the fallback
+    // is what paints; nesting also lifts these rules above their light
+    // counterparts at equal token names.
+    &:hover {
+      background-color: var(--mat-sys-surface-container-high, #2f2f2f);
+      border-color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+    }
+
+    &:active {
+      background-color: var(--mat-sys-surface-container-highest, #404040);
+      border-color: var(--mat-sys-on-surface, #ffffff);
+    }
+
+    &.is-dragging {
+      background-color: var(
+        --mat-sys-primary-container,
+        rgba(54, 207, 204, 0.16)
+      );
+      border-color: var(--mat-sys-on-surface, #ffffff);
+    }
   }
 }
 
-// Keyboard focus and selection state, driven by the host's `class.has-focus`
-// binding. The fill is brand-derived and therefore identical in both themes,
-// so it is declared exactly once.
-//
-// ORDERING CONTRACT - this rule must stay last. Angular compiles it to
-// `[_nghost-x].has-focus mat-card[_ngcontent-x]` and the dark mirror above to
-// `.theme-dark [_nghost-x] mat-card[_ngcontent-x]`; both carry specificity
-// (0, 3, 1), so source order is the only tiebreak. Hoisting this rule above
-// the dark block would let the dark surface win and leave the focused row
-// visually indistinguishable in dark mode.
+// Keep this rule after the dark-theme block; equal specificity makes source
+// order the focused-state tiebreaker. The catalog owns a roving virtual focus,
+// so `has-focus` is the row's only focus indicator and the outline is what
+// carries it to 3:1 (WCAG 2.2 SC 2.4.11); the brand fill alone does not.
 :host.has-focus mat-card {
   background-color: var(--mat-sys-primary-container, rgba(54, 207, 204, 0.16));
+  outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  outline-offset: 2px;
+}
+
+:host-context(.theme-dark).has-focus mat-card {
+  outline-color: var(--mat-sys-on-surface, #ffffff);
 }

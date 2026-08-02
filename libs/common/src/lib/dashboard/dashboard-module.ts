@@ -2,15 +2,8 @@ import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 
 import { DashboardModuleType } from './enums/dashboard-module-type';
 
-// `libs/common` is evaluated in three very different runtimes: the Angular
-// browser bundle (where `$localize` is installed by the framework), the Node
-// process that runs the NestJS API, and the Node/JSDOM process that runs Jest
-// and the Storybook build. Only the first of those defines `$localize`, so a
-// bare tagged template would throw `$localize is not defined` at module
-// evaluation time in the other two. The guard below is reproduced verbatim
-// from `libs/common/src/lib/routes/routes.ts` so that both shared metadata
-// modules bootstrap identically; outside the browser it installs a pass-through
-// tag that simply interpolates the source message.
+// Node/Jest do not install `$localize`; mirror `routes.ts` with a pass-through
+// tag outside the browser.
 if (typeof window !== 'undefined') {
   import('@angular/localize');
 } else {
@@ -23,28 +16,8 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Framework-free metadata contract for a single dashboard grid module.
- *
- * This is deliberately the *metadata half* of the module registry contract.
- * It is shared kernel code and therefore carries no Angular, no grid-engine
- * and no component references at all:
- *
- * - It is consumed by `libs/ui` (the assistant's quick-link search) and by
- *   `apps/client` (the registry that resolves a persisted `moduleType` to a
- *   component). `libs/ui` may not import `apps/client` — the workspace
- *   enforces that with `@nx/enforce-module-boundaries` at `error` severity —
- *   so the vocabulary both sides agree on has to live here.
- * - The lazy component-resolution thunk is intentionally *absent* from this
- *   contract. Collapsing the former route table removes every existing code
- *   splitting boundary, so the registry has to resolve components lazily in
- *   order to keep the production `initial` bundle inside its budget. A lazy
- *   dynamic import is inherently application-side, so it is contributed by the
- *   app-side registration table, which spreads this metadata and appends its
- *   own resolution thunk.
- *
- * Because that thunk is the only way to obtain a module component, and it
- * exists only inside the registry, ad-hoc insertion of a component into the
- * grid is structurally impossible rather than merely discouraged.
+ * Framework-neutral module metadata; application-side loaders stay outside this
+ * contract to preserve lazy code splitting.
  */
 export interface DashboardModule {
   /**
@@ -62,16 +35,14 @@ export interface DashboardModule {
   defaultItemRows: number;
 
   /**
-   * Smallest column span the module remains usable at. Never below 2: the grid
-   * enforces a 2x2 minimum footprint, and a narrower module would clip the
-   * content it hosts. The grid engine rejects any resize or drop that would
-   * violate this value.
+   * Smallest column span the module remains usable at. Must be at least 2, and
+   * grid policy must enforce it.
    */
   minItemCols: number;
 
   /**
-   * Smallest row span the module remains usable at. Never below 2, for the
-   * same reason as {@link DashboardModule.minItemCols}.
+   * Smallest row span the module remains usable at. Must be at least 2, and
+   * grid policy must enforce it.
    */
   minItemRows: number;
 
@@ -82,61 +53,23 @@ export interface DashboardModule {
   moduleType: DashboardModuleType;
 
   /**
-   * Localized display name shown in the module catalog and in the module
-   * header. Reuses the exact source text of the corresponding legacy route
-   * title so the existing translations are inherited unchanged.
+   * Localized display name; keep source text stable so existing translation IDs
+   * remain reusable.
    */
   name: string;
 
   /**
-   * Optional permission the current user must hold for the module to be
-   * offered in the catalog and rendered on the canvas.
-   *
-   * Only values that already exist in `@ghostfolio/common/permissions` are
-   * used — no new permission constant is introduced by the dashboard. This
-   * field is purely a user-interface exposure gate; the corresponding API
-   * endpoints remain independently guarded server-side. Omit the field
-   * entirely for modules every signed-in user may place.
+   * Optional UI visibility permission. Server endpoints remain independently
+   * guarded.
    */
   permission?: string;
 }
 
 /**
- * The complete, canonical catalog of dashboard module types.
- *
- * This map is the single registration site for module *metadata*, and the
- * `satisfies Record<DashboardModuleType, DashboardModule>` clause makes that
- * completeness a compile-time guarantee: adding a member to
- * {@link DashboardModuleType} without registering it here fails the build.
- *
- * Entries are declared in {@link DashboardModuleType} order rather than
- * alphabetically, because that order is the intended catalog presentation
- * order — it groups the portfolio surface, then accounts and user settings,
- * then administration, then the assistant — which reads far better in a
- * searchable catalog than an alphabetical list that would interleave the
- * administration modules at the top. Keys *within* each entry are alphabetical,
- * matching the convention used by the shared route registry.
- *
- * Sizing follows five content archetypes, so that a module is never offered at
- * a footprint its content cannot use (a 12-column data table at 4 columns, for
- * example, is unusable):
- *
- * - compact — a single gauge or card: 3x3 minimum, 4x4 default
- * - standard — one chart or a medium table: 4x3/4x4 minimum, 6x5/8x6 default
- * - tall and narrow — a vertical list, a form or a chat transcript: a small
- *   column minimum with a generous row default
- * - wide table — a many-column paginated table: 6 columns minimum, full 12
- *   column default
- * - analytical — several stacked charts migrated from a full-page screen: 6
- *   columns minimum, full 12 column default with the tallest row budgets
- *
- * Every entry satisfies the grid contract: minimums are never below 2, defaults
- * are never below their own minimums, and no column value exceeds the fixed
- * 12-column grid width. Those bounds are mirrored by the server-side layout
- * payload validation, so a layout composed from these values always round-trips.
+ * Canonical metadata map. Enum order is catalog order; `satisfies` enforces one
+ * entry per module type.
  */
 export const dashboardModules = {
-  // Portfolio surface
   [DashboardModuleType.PORTFOLIO_OVERVIEW]: {
     defaultItemCols: 8,
     defaultItemRows: 6,
@@ -216,8 +149,7 @@ export const dashboardModules = {
     minItemCols: 4,
     minItemRows: 5,
     moduleType: DashboardModuleType.FIRE,
-    // Proper noun, deliberately not localized — consistent with the legacy
-    // route title it replaces
+    // Proper noun; intentionally not localized.
     name: 'FIRE'
   },
   [DashboardModuleType.X_RAY]: {
@@ -226,11 +158,10 @@ export const dashboardModules = {
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.X_RAY,
-    // Proper noun, deliberately not localized — see FIRE above
+    // Proper noun; intentionally not localized.
     name: 'X-ray'
   },
 
-  // Accounts and user settings
   [DashboardModuleType.ACCOUNTS]: {
     defaultItemCols: 10,
     defaultItemRows: 7,
@@ -264,8 +195,6 @@ export const dashboardModules = {
     name: $localize`Access`
   },
 
-  // Administration — gated on the permission that the deleted header
-  // navigation used to gate the admin control screens with
   [DashboardModuleType.ADMIN_OVERVIEW]: {
     defaultItemCols: 6,
     defaultItemRows: 7,
@@ -312,7 +241,6 @@ export const dashboardModules = {
     permission: permissions.accessAdminControl
   },
 
-  // Assistant
   [DashboardModuleType.AI_CHAT]: {
     defaultItemCols: 5,
     defaultItemRows: 8,
@@ -325,30 +253,8 @@ export const dashboardModules = {
 } satisfies Record<DashboardModuleType, DashboardModule>;
 
 /**
- * Resolves whether a module may be surfaced to a user holding the given
- * permissions.
- *
- * Retiring the header navigation removed the only client-side gate on the
- * administration screens, so this predicate is the single authoritative
- * replacement. It is deliberately declared once, in the shared kernel, because
- * both the module catalog (which decides what a user may add) and the canvas
- * render path (which decides what a persisted layout may still show) have to
- * answer the question identically — two independent copies would inevitably
- * drift.
- *
- * The parameter is a structural `Pick`, so it accepts both the shared metadata
- * in {@link dashboardModules} and the richer application-side registry
- * definitions that extend it. A module without a declared permission is always
- * permitted.
- *
- * This is a user-interface exposure gate only; it is not a substitute for the
- * server-side guards, which remain in force regardless of what the client
- * renders.
- *
- * @example
- * const visible = Object.values(dashboardModules).filter((module) => {
- *   return isDashboardModulePermitted(module, user?.permissions);
- * });
+ * Applies the shared UI visibility rule; absence of a permission means visible,
+ * while server authorization remains independent.
  */
 export function isDashboardModulePermitted(
   aModule: Pick<DashboardModule, 'permission'>,

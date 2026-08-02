@@ -1,15 +1,10 @@
-<div class="align-items-center d-flex h-100 justify-content-center">
+<div class="align-items-center d-flex flex-grow-1 justify-content-center">
   <mat-card appearance="outlined" class="sign-in-card">
     <mat-card-content class="align-items-center d-flex flex-column">
       <gf-logo class="mb-3" size="large" />
 
-      <!-- BLITZY [A11Y]: the filled primary variant pairs the brand fill with
-      a white label, computing 1.92:1 in the light theme, below the WCAG AA
-      4.5:1 minimum for normal text. It is the product-wide primary treatment,
-      so the theme value is implemented exactly and flagged for designer
-      review rather than silently corrected. -->
       <button
-        class="w-100"
+        class="sign-in-button w-100"
         color="primary"
         mat-flat-button
         (click)="openLoginDialog()"

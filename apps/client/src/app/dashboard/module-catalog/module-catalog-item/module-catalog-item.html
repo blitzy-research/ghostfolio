@@ -1,41 +1,16 @@
 <!--
-  Catalog row for GfModuleCatalogItemComponent: one registered dashboard module,
-  rendered as an outlined Material card that adds the module when clicked and
-  doubles as a native drag source for the canvas. Chrome only - the row never
-  instantiates the module it advertises, and it carries no navigation
-  affordance, no dimension hint and no state of its own.
-
-  Every part of the root element is load-bearing:
-  - The row template reference is what the class re-exposes to the parent
-    catalog, which scrolls the focused row into view and synthesises a click on
-    Enter. Dropping it breaks keyboard operation silently, with no compile error.
-  - "draggable" is the plain native attribute, deliberately not one of Angular's
-    own drag-and-drop directives: the grid engine subscribes to the browser's
-    native drag events, which those directives never emit. The class writes the
-    module type into the drag payload from dragstart.
-  - The click handler lives here and only here. A duplicate handler on the
-    component host would add the module twice for the keyboard path, whose
-    synthesised click bubbles out of this element.
-
-  Row content is a single line, the module's display name, rendered verbatim: it
-  is already translated where the shared module metadata declares it, so marking
-  it again here would mint duplicate translation units in every locale file.
-
-  Padding sits on a plain inner element carrying Bootstrap utility classes and
-  never on the card's own content element, whose runtime-injected rules would
-  outrank those global utilities and silently replace the spacing. Truncation
-  belongs to the text element rather than to the flex row, because a flex
-  container clips its overflow without ever drawing an ellipsis.
-
-  Surface, border, radius, text colour and the focus fill all live in
-  module-catalog-item.scss as Material 3 system tokens with fallbacks, so no
-  colour and no geometry is written here.
+  Use native draggable events because gridster listens for browser drag/drop
+  events. `is-dragging` is the drag-active state hook the stylesheet paints, and
+  it is cleared from dragend because a drag can also end in a cancel or an
+  out-of-bounds drop, neither of which fires a drop event.
 -->
 <mat-card
   #row
   appearance="outlined"
   draggable="true"
+  [class.is-dragging]="isDragging"
   (click)="onClick()"
+  (dragend)="onDragEnd()"
   (dragstart)="onDragStart($event)"
 >
   <div class="align-items-center d-flex px-3 py-2">

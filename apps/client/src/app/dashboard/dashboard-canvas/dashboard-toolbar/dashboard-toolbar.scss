@@ -1,65 +1,14 @@
-// Component-scoped styles for `GfDashboardToolbarComponent` — the
-// non-navigational control bar replacing the former header band on the
-// single-canvas dashboard. Structure (`:host` + `:host-context(.theme-dark)`,
-// nesting the Material toolbar host class) is inherited from the header
-// stylesheet; none of its values are.
-//
-// WHY EVERY COLOUR CARRIES A FALLBACK
-// This workspace themes via the legacy `mat.define-theme()` /
-// `mat.all-component-themes()` path and never calls `mat.theme()`, so Material
-// Design 3's system-token layer is unpopulated at runtime: a token reference
-// without a fallback resolves to nothing and the browser drops the whole
-// declaration. The fallback is what paints; the token is forward compatibility
-// should the theme ever migrate. Both names below belong to the 175-name
-// `--mat-sys-*` vocabulary of Angular Material 21.2.5, whose own emitted CSS
-// uses the same discipline. (The rule mandating this cites decision "D-020",
-// absent from the technical specification, which documents ADR-001 to ADR-007
-// only; the real grounding is the CHANGELOG entry for 3.0.0.)
-//
-// THREE HEADER BLOCKS DELIBERATELY NOT PORTED
-//   1. Brand logo + filled gradient — legacy palette property, driven by a
-//      deleted tab-strip flag, absent from the template, and sole carrier of
-//      the source's only viewport breakpoint.
-//   2. Navigation-link underline — dead code once the navigation surface is
-//      removed. Dropping it also removes the source's only forced declaration,
-//      only legacy comma-list colour reference and only palette property. Its
-//      transparent background is redundant too: Material's button base already
-//      declares one, and the primary-colour guard beside it is inert in v21.
-//   3. Button label colour — referenced a vendored MDC property this theme
-//      never emits, so it already resolved to nothing. The application's own
-//      `mat.button-overrides` paints the label in both themes, so omitting it
-//      is a visual no-op that also drops a redundant value from the token
-//      surface.
-//
-// NOT OWNED HERE: grid-engine chrome (unencapsulated, so a scoped stylesheet
-// cannot reach it; the global grid partial owns it and its zero-duration
-// interaction transition is never overridden); the page shell, catalog drawer,
-// catalog action button and banner height arithmetic (canvas-owned); cell
-// minimums (enforced by the engine's item-validation callback, never CSS);
-// layout state and geometry; positioning (normal flow only — the Material
-// toolbar height custom property is the source of truth for any height);
-// responsive variants (excluded by design, enforced by a zero mobile breakpoint
-// in the engine config); and spacing, which comes from Bootstrap 4.6 utility
-// classes in the template.
-//
-// No on-disk rules document was supplied, so this file additionally holds to
-// enterprise practice: no forced declarations, conditional at-rules,
-// encapsulation-piercing selectors, viewport units, global or element resets,
-// partial inclusion, or legacy palette and vendored-MDC values.
+// Material system tokens require fallbacks because the current theme does not
+// emit the --mat-sys layer.
 
 :host {
-  // A custom element is inline by default, which would collapse the band.
   display: block;
 
-  // Carried over from the header. Does not exceed the highest layer the global
-  // stylesheet uses, and stays below the overlay container hosting menus and
-  // dialogs so it cannot occlude them.
+  // Keep the toolbar below overlay-hosted menus/dialogs while above page
+  // content.
   z-index: 999;
 
   .mat-toolbar {
-    // Token row "toolbar / panel surface" — a specification-directed override
-    // of Material's own toolbar container background, mirroring what the header
-    // did with the legacy property this replaces.
     background-color: var(--mat-sys-surface-container, #ffffff);
 
     // Vendor-default neutralisation: Bootstrap right-margins every inline list
@@ -70,27 +19,13 @@
       margin: 0;
     }
 
-    // Scoped to the toolbar host class rather than the button host class the
-    // header used: that one is library-internal vendored markup, this one the
-    // component's documented host. The matched population is identical here
-    // (encapsulation limits it to elements authored in this template, and
-    // menu-panel glyphs render in a detached overlay outside the toolbar
-    // regardless) and it survives whichever public button directive is used.
     ion-icon {
       // Load-bearing: the assistant trigger glyph is authored with no size
-      // attribute and relies entirely on this rule. Glyphs that do set a size
-      // are unaffected — the icon library sizes those from inside its shadow
-      // root with a forced declaration, which outranks the outer document.
-      // Deliberately not a system type token: those are `font` shorthands, so
-      // once the token layer is populated the declaration would turn invalid
-      // and the glyph would collapse to its inherited size.
-      /* BLITZY [DESIGN_SYSTEM_GAP]: icon metric, not typography. Material
-         Design 3 defines no icon-size token, so this literal is the last rung
-         of the degradation ladder and is flagged for designer review. */
-      font-size: 1.5rem;
+      // attribute. Material names no icon-size token, so the metric is taken
+      // from the type-scale step that already measures 24px; only the `-size`
+      // members are plain lengths, the unsuffixed names being `font` shorthands.
+      font-size: var(--mat-sys-headline-small-size, 1.5rem);
 
-      // Load-bearing geometry: the assistant trigger's markup carries this
-      // class. Purely geometric, so no token applies.
       &.rotate-90 {
         transform: rotate(90deg);
       }
@@ -98,16 +33,8 @@
   }
 }
 
-// The shell toggles the theme classes on the application's root element, so
-// `:host-context()` is this repository's idiom for mirroring dark values. Only
-// genuinely differing properties are re-stated, each still token-with-fallback.
-// The shell retains sole ownership of the theme classes — there is no toggle in
-// this component and no styling for one.
 :host-context(.theme-dark) {
   .mat-toolbar {
-    // Token row "toolbar / panel surface", dark step. The deliberate Material
-    // Design 3 surface-container value — intentionally neither of the theme's
-    // legacy dark surface properties, which fall outside the token vocabulary.
     background-color: var(--mat-sys-surface-container, #262626);
   }
 }

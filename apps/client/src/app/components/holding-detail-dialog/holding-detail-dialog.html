@@ -458,11 +458,15 @@
               >
             }
             @if (data.hasPermissionToAccessAdminControl) {
-              <a mat-stroked-button (click)="onOpenAssetProfileDialog()"
-                ><ion-icon class="mr-1" name="create-outline" /><span i18n
-                  >Manage Asset Profile</span
-                >...</a
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="onOpenAssetProfileDialog()"
               >
+                <ion-icon class="mr-1" name="create-outline" /><span i18n
+                  >Manage Asset Profile</span
+                >...
+              </button>
             }
           </div>
         </div>

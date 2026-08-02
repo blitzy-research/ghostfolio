@@ -73,9 +73,8 @@ export class HttpResponseInterceptor implements HttpInterceptor {
             });
 
             this.snackBarRef.onAction().subscribe(() => {
-              // The in-app pricing route no longer exists, so navigate to the
-              // hosted pricing page. The locale is read from the document
-              // because a forbidden response can precede any loaded user.
+              // Pricing is hosted externally; document.lang is available before
+              // user hydration.
               window.location.href = `https://ghostfol.io/${document.documentElement.lang}/${publicRoutes.pricing.path}`;
             });
           }
@@ -110,8 +109,8 @@ export class HttpResponseInterceptor implements HttpInterceptor {
             });
           }
         } else if (error.status === StatusCodes.UNAUTHORIZED) {
-          // Do not sign the user out when the background data provider status
-          // probe fails: only a genuine unauthorized response ends the session.
+          // A provider-status 401 can be independent of the user's
+          // authenticated session.
           if (!error.url.includes('/data-providers/ghostfolio/status')) {
             this.userService.signOut();
           }

@@ -3,24 +3,33 @@
 // the legacy mat.define-theme() path, which leaves the --mat-sys-* layer
 // unpopulated at runtime, so the value after each comma is what paints.
 :host {
-  display: block;
-  height: 100%;
+  // The canvas stretches this host with `flex: 1 1 auto`, so a column
+  // formatting context is declared here instead of a percentage height: the
+  // centring wrapper in the template can then grow to fill a host whose
+  // ancestor chain this component cannot see.
+  display: flex;
+  flex-direction: column;
 
   .sign-in-card {
     background: var(--mat-sys-surface-container, #ffffff);
-    /* BLITZY [A11Y]: this outline computes 1.26:1 light / 1.70:1 dark
-     * against the canvas, under the 3:1 non-text minimum. Kept per spec. */
     border-color: var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
-    /* BLITZY [SHAPE]: overrides the theme's 12px outlined-card shape. */
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   }
+
+  // WCAG 1.4.3: the global light theme paints the filled-button label white,
+  // which computes 1.92:1 against the brand container fill. The on-primary
+  // fallback below is the palette's own contrast colour for that container and
+  // computes 9.27:1. Scoped to this card so the correction has no app-wide
+  // reach.
+  .sign-in-button {
+    --mat-button-filled-label-text-color: var(
+      --mat-sys-on-primary,
+      rgba(0, 0, 0, 0.87)
+    );
+  }
 }
 
-// Dark mirror: the theme class is toggled on document.body, so a scoped
-// stylesheet must reach it with :host-context(). Same canonical token
-// names, dark-theme fallbacks. The corner radius is theme-invariant and is
-// therefore not repeated here.
 :host-context(.theme-dark) {
   .sign-in-card {
     background: var(--mat-sys-surface-container, #262626);

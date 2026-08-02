@@ -1,54 +1,3 @@
-<!--
-  Body content for `GfAiChatModuleComponent` (`gf-ai-chat-module`), the AI
-  prompt grid module.
-
-  SCOPE — the card surround, the module title, the drag handle and the remove
-  action all belong to `gf-dashboard-module-host`, which instantiates this
-  component through `NgComponentOutlet`. This template therefore begins at the
-  module body and draws no chrome of its own, references nothing in the canvas
-  layer, and holds no position or size state: those belong to grid state alone.
-  Nothing here can reach a layout write either, so the canvas remains the only
-  origin of one.
-
-  SURFACE — bounded by the single real endpoint, `GET /api/v1/ai/prompt/:mode`
-  (`apps/api/src/app/endpoints/ai/ai.controller.ts`), which returns one
-  `{ prompt: string }` for one of exactly two modes. That yields three things
-  and no more: the mode control, the four states the request can be in, and the
-  copy-then-paste workflow the client already implements elsewhere. There is no
-  conversational backend behind this module, so there is deliberately no
-  transcript, composer, streaming indicator or regenerate control — each would
-  be dead UI promising an endpoint that does not exist.
-
-  ACCESS — the `readAiPrompt` permission is enforced by the server guard on the
-  endpoint and by the registry-driven catalog and canvas, which never offer a
-  module the current user lacks. No permission is re-checked here, so this
-  module stays co-equal with every other one and needs no special casing.
-
-  STYLING HOOKS — all five declared by `ai-chat.module.scss`, all consumed:
-    .content-container      flex column that scrolls the module body
-    .prompt-mode-container  label row for the analysis / portfolio control
-    .hint-text              mode explanation and copy hint (two usages)
-    .prompt-container       the returned prompt, pre-wrapped and scrollable
-    .error-container        the inert empty and failed-request state
-  Every other class is a Bootstrap utility, because the stylesheet's own
-  SPACING note assigns all padding, margin and alignment to this file. The
-  nested flex column is what lets `.prompt-container` shrink and engage its own
-  scrollbar, keeping the mode row and the actions in view.
-
-  BLITZY [A11Y] — measured in a browser, the keyboard focus indicator on the
-  three controls below resolves to a fill-only Material state layer at 1.20:1
-  (buttons) and 1.27:1 (mode toggle), under the 3:1 of WCAG 2.2 SC 1.4.11 and
-  2.4.11. The cause is global rather than local: `styles/theme.scss` does not
-  invoke Angular Material's `strong-focus-indicators()`, so
-  `.mat-focus-indicator::before` is `display: none` for every control in the
-  application. `:focus-visible` itself is correctly scoped — keyboard focus
-  paints the layer and a mouse click does not. Raised for the theme owner rather
-  than patched here, because a module-local override would leave these three
-  controls focusing differently from every other button in the product.
-
-  COMPONENT CONTRACT — this template requires `hasError`, `isLoading`,
-  `prompt`, `promptModeFormControl` and `onCopyPromptToClipboard()`.
--->
 <div class="content-container d-flex flex-column">
   <div
     class="align-items-center d-flex justify-content-between prompt-mode-container px-3 py-2"
@@ -84,13 +33,8 @@
     [attr.aria-busy]="isLoading"
   >
     @if (isLoading) {
-      <!-- The placeholder occupies the same box the prompt will fill, so the
-           load completes without a layout jump and leaves no empty gap at any
-           cell height. A single bar is deliberate: the global
-           `.skeleton-loader { margin: 0 !important }` rule collapses multiple
-           bars into one continuous block anyway. No minimum height is declared,
-           so the placeholder shrinks with the cell exactly as the prompt panel
-           does rather than overflowing a short one. -->
+      <!-- Fill the eventual prompt area so loading completes without a layout
+           jump. -->
       <ngx-skeleton-loader
         animation="pulse"
         class="flex-grow-1 m-3"
@@ -110,9 +54,6 @@
     } @else if (prompt) {
       <div class="flex-grow-1 m-3 p-3 prompt-container">{{ prompt }}</div>
     } @else {
-      <!-- The endpoint answered with nothing to show. Kept distinct from the
-           failure state above, and paired with its own icon so colour is never
-           the only cue. -->
       <div
         class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
       >
@@ -148,8 +89,6 @@
           <ng-container i18n>Copy to clipboard</ng-container>
         </span>
       </button>
-      <!-- Plain absolute link: this module reaches an external tool, never a
-           route, so no router API is involved. -->
       <a href="https://duck.ai" mat-button target="_blank">
         <span class="align-items-center d-flex">
           <ion-icon aria-hidden="true" class="mr-2" name="open-outline" />

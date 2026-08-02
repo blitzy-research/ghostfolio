@@ -1,8 +1,7 @@
-<div class="container">
-  <h1 class="d-none d-sm-block h3 mb-4 text-center" i18n>Markets</h1>
+<div class="container-fluid">
   @if (hasPermissionToAccessFearAndGreedIndex) {
     <div class="mb-5 row">
-      <div class="col-xs-12 col-md-10 offset-md-1">
+      <div class="col-12">
         <div class="mb-2 text-center text-muted">
           <small i18n>Last {{ numberOfDays }} Days</small>
         </div>
@@ -29,7 +28,7 @@
   }
 
   <div class="mb-3 row">
-    <div class="col-xs-12 col-md-10 offset-md-1">
+    <div class="col-12">
       <gf-benchmark
         [benchmarks]="benchmarks"
         [deviceType]="deviceType"

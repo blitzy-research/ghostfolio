@@ -5,13 +5,14 @@
         <div class="align-items-center d-flex h-100 justify-content-center">
           @if (canCreateAccount) {
             <div class="text-center">
-              <div
+              <button
                 class="cursor-pointer d-inline-block info-message"
+                type="button"
                 (click)="onCreateAccount()"
               >
                 <span i18n>You are using the Live Demo.</span>
                 <span class="a ml-2 p-1" i18n>Create Account</span>
-              </div>
+              </button>
             </div>
           }
           @if (!canCreateAccount && user?.systemMessage) {

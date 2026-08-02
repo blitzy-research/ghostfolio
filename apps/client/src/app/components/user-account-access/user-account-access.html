@@ -1,5 +1,5 @@
 @if (hasPermissionToUpdateOwnAccessToken) {
-  <div class="container">
+  <div class="container-fluid">
     <h1 class="h3 mb-3 text-center" i18n>Security Token</h1>
     <form
       class="w-100"
@@ -48,7 +48,7 @@
   </div>
 }
 
-<div class="container">
+<div class="container-fluid">
   @if (accessesGet.length > 0) {
     <h1 class="h3 mb-3 text-center" i18n>Received Access</h1>
     <gf-access-table class="mb-5" [accesses]="accessesGet" [user]="user" />
@@ -72,7 +72,7 @@
         class="align-items-center d-flex justify-content-center"
         color="primary"
         mat-fab
-        [queryParams]="{ createDialog: true }"
+        [queryParams]="{ createDialog: true, dialogModule: 'account-access' }"
         [routerLink]="[]"
       >
         <ion-icon name="add-outline" size="large" />
