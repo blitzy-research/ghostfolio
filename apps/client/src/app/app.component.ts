@@ -1,7 +1,6 @@
 import { getCssVariable } from '@ghostfolio/common/helper';
 import { InfoItem, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes, publicRoutes } from '@ghostfolio/common/routes/routes';
 import { ColorScheme } from '@ghostfolio/common/types';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
@@ -18,50 +17,35 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatDialog } from '@angular/material/dialog';
-import { Title } from '@angular/platform-browser';
-import {
-  ActivatedRoute,
-  NavigationEnd,
-  PRIMARY_OUTLET,
-  Router,
-  RouterLink,
-  RouterOutlet
-} from '@angular/router';
+import { ActivatedRoute, Router, RouterOutlet } from '@angular/router';
 import { DataSource } from '@prisma/client';
 import { addIcons } from 'ionicons';
 import { openOutline } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
-import { filter } from 'rxjs/operators';
 
-import { GfFooterComponent } from './components/footer/footer.component';
-import { GfHeaderComponent } from './components/header/header.component';
 import { GfHoldingDetailDialogComponent } from './components/holding-detail-dialog/holding-detail-dialog.component';
+import { UserAccountRegistrationDialogParams } from './components/user-account-registration-dialog/interfaces/interfaces';
+import { GfUserAccountRegistrationDialogComponent } from './components/user-account-registration-dialog/user-account-registration-dialog.component';
 import { GfAppQueryParams } from './interfaces/interfaces';
 import { ImpersonationStorageService } from './services/impersonation-storage.service';
+import { TokenStorageService } from './services/token-storage.service';
 import { UserService } from './services/user/user.service';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [GfFooterComponent, GfHeaderComponent, RouterLink, RouterOutlet],
+  imports: [RouterOutlet],
   selector: 'gf-root',
   styleUrls: ['./app.component.scss'],
   templateUrl: './app.component.html'
 })
 export class GfAppComponent implements OnInit {
   public canCreateAccount: boolean;
-  public currentRoute: string;
-  public currentSubRoute: string;
   public deviceType: string;
   public hasImpersonationId: boolean;
   public hasInfoMessage: boolean;
-  public hasPermissionToChangeDateRange: boolean;
-  public hasPermissionToChangeFilters: boolean;
+  public hasPermissionForSubscription: boolean;
   public hasPromotion = false;
-  public hasTabs = false;
   public info: InfoItem;
-  public pageTitle: string;
-  public routerLinkRegister = publicRoutes.register.routerLink;
-  public showFooter = false;
   public user: User | undefined;
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
@@ -76,7 +60,7 @@ export class GfAppComponent implements OnInit {
   private readonly notificationService = inject(NotificationService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly title = inject(Title);
+  private readonly tokenStorageService = inject(TokenStorageService);
   private readonly userService = inject(UserService);
 
   public constructor() {
@@ -107,94 +91,19 @@ export class GfAppComponent implements OnInit {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
     this.info = this.dataService.fetchInfo();
 
+    // Gates the terms-of-service step of the registration dialog. This
+    // derivation used to live on the register page, which owned the account
+    // creation flow before the shell absorbed it (see `onCreateAccount`).
+    this.hasPermissionForSubscription = hasPermission(
+      this.info?.globalPermissions,
+      permissions.enableSubscription
+    );
+
     this.impersonationStorageService
       .onChangeHasImpersonation()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((impersonationId) => {
         this.hasImpersonationId = !!impersonationId;
-      });
-
-    this.router.events
-      .pipe(filter((event) => event instanceof NavigationEnd))
-      .subscribe(() => {
-        const urlTree = this.router.parseUrl(this.router.url);
-        const urlSegmentGroup = urlTree.root.children[PRIMARY_OUTLET];
-        const urlSegments = urlSegmentGroup.segments;
-        this.currentRoute = urlSegments[0].path;
-        this.currentSubRoute = urlSegments[1]?.path;
-
-        if (
-          ((this.currentRoute === internalRoutes.home.path &&
-            !this.currentSubRoute) ||
-            (this.currentRoute === internalRoutes.home.path &&
-              this.currentSubRoute ===
-                internalRoutes.home.subRoutes?.holdings.path) ||
-            (this.currentRoute === internalRoutes.portfolio.path &&
-              !this.currentSubRoute)) &&
-          this.user?.settings?.viewMode !== 'ZEN'
-        ) {
-          this.hasPermissionToChangeDateRange = true;
-        } else {
-          this.hasPermissionToChangeDateRange = false;
-        }
-
-        if (
-          (this.currentRoute === internalRoutes.home.path &&
-            this.currentSubRoute ===
-              internalRoutes.home.subRoutes?.holdings.path) ||
-          (this.currentRoute === internalRoutes.portfolio.path &&
-            !this.currentSubRoute) ||
-          (this.currentRoute === internalRoutes.portfolio.path &&
-            this.currentSubRoute ===
-              internalRoutes.portfolio.subRoutes?.activities.path) ||
-          (this.currentRoute === internalRoutes.portfolio.path &&
-            this.currentSubRoute ===
-              internalRoutes.portfolio.subRoutes?.allocations.path) ||
-          (this.currentRoute === internalRoutes.zen.path &&
-            this.currentSubRoute ===
-              internalRoutes.home.subRoutes?.holdings.path)
-        ) {
-          this.hasPermissionToChangeFilters = true;
-        } else {
-          this.hasPermissionToChangeFilters = false;
-        }
-
-        this.hasTabs =
-          (this.currentRoute === publicRoutes.about.path ||
-            this.currentRoute === publicRoutes.faq.path ||
-            this.currentRoute === publicRoutes.resources.path ||
-            this.currentRoute === internalRoutes.account.path ||
-            this.currentRoute === internalRoutes.adminControl.path ||
-            this.currentRoute === internalRoutes.home.path ||
-            this.currentRoute === internalRoutes.portfolio.path ||
-            this.currentRoute === internalRoutes.zen.path) &&
-          this.deviceType !== 'mobile';
-
-        this.showFooter =
-          (this.currentRoute === publicRoutes.blog.path ||
-            this.currentRoute === publicRoutes.features.path ||
-            this.currentRoute === publicRoutes.markets.path ||
-            this.currentRoute === publicRoutes.openStartup.path ||
-            this.currentRoute === publicRoutes.public.path ||
-            this.currentRoute === publicRoutes.pricing.path ||
-            this.currentRoute === publicRoutes.register.path ||
-            this.currentRoute === publicRoutes.start.path) &&
-          this.deviceType !== 'mobile';
-
-        if (this.deviceType === 'mobile') {
-          setTimeout(() => {
-            const index = this.title.getTitle().indexOf('–');
-            const title =
-              index === -1
-                ? ''
-                : this.title.getTitle().substring(0, index).trim();
-            this.pageTitle = title.length <= 15 ? title : 'Ghostfolio';
-
-            this.changeDetectorRef.markForCheck();
-          });
-        }
-
-        this.changeDetectorRef.markForCheck();
       });
 
     this.userService.stateChanged
@@ -229,17 +138,59 @@ export class GfAppComponent implements OnInit {
       return;
     }
 
-    if (systemMessage.routerLink) {
-      void this.router.navigate(systemMessage.routerLink);
-    } else {
-      this.notificationService.alert({
-        title: systemMessage.message
-      });
-    }
+    // A system message is surfaced exclusively through the notification
+    // service. Its optional `routerLink` is deliberately ignored: on a
+    // single-canvas shell there is no screen to navigate to, so honouring it
+    // would resolve to a route that no longer exists.
+    this.notificationService.alert({
+      title: systemMessage.message
+    });
   }
 
+  /**
+   * Opens the account registration dialog and, once an access token has been
+   * issued, adopts it for the current session.
+   *
+   * This flow was migrated verbatim from the deleted register page, which was
+   * the only way to create an account before the navigation surface collapsed
+   * onto a single canvas. Two adaptations were required:
+   *
+   * - the token is persisted with `staySignedIn` forced on, matching the
+   *   register page's deliberate decision not to consult the stay-signed-in
+   *   setting for a freshly created account;
+   * - the register page navigated to `/` afterwards. `/` is already the
+   *   current — and only — route, so the navigation is replaced by a forced
+   *   user re-fetch. That is what drives the `stateChanged` subscription above
+   *   to recompute `canCreateAccount`, `hasInfoMessage` and `hasPromotion`,
+   *   which in turn dismisses the live-demo banner.
+   */
   public onCreateAccount() {
-    this.userService.signOut();
+    const dialogRef = this.dialog.open<
+      GfUserAccountRegistrationDialogComponent,
+      UserAccountRegistrationDialogParams
+    >(GfUserAccountRegistrationDialogComponent, {
+      data: {
+        deviceType: this.deviceType,
+        needsToAcceptTermsOfService: this.hasPermissionForSubscription
+      },
+      disableClose: true,
+      height: this.deviceType === 'mobile' ? '98vh' : undefined,
+      width: this.deviceType === 'mobile' ? '100vw' : '30rem'
+    });
+
+    dialogRef
+      .afterClosed()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((authToken) => {
+        if (authToken) {
+          this.tokenStorageService.saveToken(authToken, true);
+
+          this.userService
+            .get(true)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe();
+        }
+      });
   }
 
   public onSignOut() {

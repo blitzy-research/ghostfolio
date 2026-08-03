@@ -553,6 +553,9 @@
   !isLoading()
 ) {
   <div class="p-3 text-center">
-    <gf-no-transactions-info-indicator [hasBorder]="false" />
+    <gf-no-transactions-info-indicator
+      [hasBorder]="false"
+      (createActivityClicked)="createActivityClicked.emit()"
+    />
   </div>
 }

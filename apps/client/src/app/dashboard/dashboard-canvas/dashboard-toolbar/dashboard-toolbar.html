@@ -1,0 +1,247 @@
+<!--
+  COMPONENT CONTRACT - this template requires `user`, `deviceType`,
+  `hasFilters`, `hasImpersonationId`, `impersonationId`,
+  `hasPermissionForSubscription`, `hasPermissionToAccessAdminControl`,
+  `hasPermissionToAccessAssistant`, `hasPermissionToChangeDateRange`,
+  `hasPermissionToChangeFilters`, `isMenuOpen`, `pricingUrl` and
+  `assistantElement`, plus the handlers `closeAssistant()`,
+  `impersonateAccount()`, `onDateRangeChange()`, `onFiltersChanged()`,
+  `onLogoClick()`, `onMenuClosed()`, `onMenuOpened()`, `onOpenAssistant()`,
+  `onSelectModule()` and `onSignOut()`. It imports GfAssistantComponent,
+  GfLogoComponent, GfPremiumIndicatorComponent, IonIcon, MatBadgeModule,
+  MatButtonModule, MatMenuModule and MatToolbarModule alongside
+  CUSTOM_ELEMENTS_SCHEMA, and registers exactly six glyphs: closeOutline,
+  menuOutline, optionsOutline, personCircleOutline, radioButtonOffOutline and
+  radioButtonOnOutline. Two glyphs the former page chrome named are absent by
+  design - the duplicate that an adjacent binding already overrode on the
+  identity rows, and the source-repository mark that only the signed-out branch
+  ever showed - so the registration list stays exactly as long as this file
+  needs it.
+
+  This is a control surface, not a way of getting somewhere. The application
+  resolves to one canvas, so each capability rescued from the deleted page
+  chrome - the assistant, the date range, the portfolio filters, identity
+  switching, the plan upgrade and signing out - is invoked in place and nothing
+  here addresses a screen. The single address that survives leaves this
+  application altogether for the hosted plan page, which is why it is an
+  ordinary external target rather than an internal one.
+
+  Panel state, cell coordinates and cell sizes are owned by the canvas that
+  mounts this component, so none of them is read or written here, this file
+  offers no way to open or close the catalog, and no arrangement is ever saved
+  from it.
+
+  Only the signed-in half of the former page chrome lives here: the signed-out
+  state is a sibling component the canvas renders in place of the canvas body,
+  which is why the guard below has no companion branch. The guard is still
+  required, because the viewer is resolved asynchronously and the bar has to
+  render as empty chrome until it arrives rather than fault on the first pass.
+
+  BLITZY [A11Y]: measured in a browser, the keyboard focus affordance on these
+  controls is the theme's own state layer and reads about 1.2:1 against the
+  surface behind it, short of the 3:1 advisory for a non-text indicator. No
+  value here produces it - it is the button styling the whole application
+  shares, the theme has not opted into the stronger ring, and the chrome this
+  bar replaces behaved identically - so it is raised for review rather than
+  corrected for three controls in isolation.
+-->
+<mat-toolbar class="px-0">
+  @if (user) {
+    <!--
+      A button rather than a link, because activating the mark reloads the
+      content in place instead of going anywhere. It needs no label of its own:
+      the logo renders the product name as text, so it already has a spoken
+      name, and adding a second one would leave what is seen and what is heard
+      disagreeing.
+    -->
+    <button matButton (click)="onLogoClick()">
+      <gf-logo class="px-2" />
+    </button>
+    <span class="gf-spacer"></span>
+    <ul class="align-items-center d-flex list-inline m-0 px-2">
+      @if (hasPermissionToAccessAssistant) {
+        <li class="d-inline-flex list-inline-item">
+          <!--
+            The badge content is a bare non-breaking mark because the badge is a
+            dot, not a count: it reports only that filters are in force, and the
+            library hides a textless badge from assistive technology of its own
+            accord. It is deliberately left without a spoken description - a
+            fixed one would be announced even while the dot is suppressed, since
+            suppression is presentational - and the panel this button opens
+            already lists the filters in force as visible text.
+          -->
+          <button
+            #assistantTrigger="matMenuTrigger"
+            aria-label="Assistant"
+            class="h-100 no-min-width px-2"
+            i18n-aria-label
+            matBadge="&NoBreak;"
+            matBadgeSize="small"
+            matButton
+            [matBadgeHidden]="!hasFilters || !hasPermissionToChangeFilters"
+            [matMenuTriggerFor]="assistantMenu"
+            [matMenuTriggerRestoreFocus]="false"
+            (menuOpened)="onOpenAssistant()"
+          >
+            <ion-icon
+              aria-hidden="true"
+              class="rotate-90"
+              name="options-outline"
+            />
+          </button>
+          <mat-menu
+            #assistantMenu="matMenu"
+            class="no-max-width"
+            xPosition="before"
+            [overlapTrigger]="true"
+            (closed)="assistantElement?.setIsOpen(false)"
+          >
+            <!--
+              Two closing paths that are not interchangeable, so each stays on
+              the element it belongs to: the panel reporting that it has gone
+              away, and the assistant asking to be dismissed. The selection of a
+              module is emitted ahead of that second one, so the request to
+              reveal a module is never observed after the dismissal it
+              accompanies.
+            -->
+            <gf-assistant
+              #assistant
+              [deviceType]="deviceType"
+              [hasPermissionToAccessAdminControl]="
+                hasPermissionToAccessAdminControl
+              "
+              [hasPermissionToChangeDateRange]="hasPermissionToChangeDateRange"
+              [hasPermissionToChangeFilters]="hasPermissionToChangeFilters"
+              [user]="user"
+              (closed)="closeAssistant()"
+              (dateRangeChanged)="onDateRangeChange($event)"
+              (filtersChanged)="onFiltersChanged($event)"
+              (moduleSelected)="onSelectModule($event)"
+            />
+          </mat-menu>
+        </li>
+      }
+      <li class="list-inline-item">
+        <!--
+          The two marks below are a display swap carried over unchanged: on a
+          narrow viewport one decorative glyph stands in for the other on the
+          same control. Both are hidden from assistive technology and the
+          control is named once, so the swap is invisible to anyone who is not
+          looking at it, and it brings no layout of its own with it.
+        -->
+        <button
+          aria-label="Account"
+          class="no-min-width px-1"
+          i18n-aria-label
+          mat-button
+          [matMenuTriggerFor]="accountMenu"
+          (menuClosed)="onMenuClosed()"
+          (menuOpened)="onMenuOpened()"
+        >
+          <ion-icon
+            aria-hidden="true"
+            class="d-none d-sm-block"
+            name="person-circle-outline"
+            size="large"
+          />
+          <ion-icon
+            aria-hidden="true"
+            class="d-block d-sm-none"
+            size="large"
+            [name]="isMenuOpen ? 'close-outline' : 'menu-outline'"
+          />
+        </button>
+        <mat-menu #accountMenu="matMenu" xPosition="before">
+          @if (
+            hasPermissionForSubscription && user?.subscription?.type === 'Basic'
+          ) {
+            <!--
+              The plan page is hosted outside this application, so this row is
+              an ordinary external address and opens in its own tab rather than
+              taking the canvas away with it. The indicator beside the wording
+              is told not to link, so the row offers exactly one target instead
+              of two overlapping ones. Both wordings are reused unchanged from
+              the chrome this bar replaces, which keeps their existing
+              translations.
+            -->
+            <a
+              class="d-flex"
+              mat-menu-item
+              rel="noopener noreferrer"
+              target="_blank"
+              [href]="pricingUrl"
+              ><span class="align-items-center d-flex"
+                ><span>
+                  @if (user.subscription.offer.isRenewal) {
+                    <ng-container i18n>Renew Plan</ng-container>
+                  } @else {
+                    <ng-container i18n>Upgrade Plan</ng-container>
+                  }
+                </span>
+                <gf-premium-indicator
+                  class="d-inline-block ml-1"
+                  [enableLink]="false" /></span
+            ></a>
+            <hr class="m-0" />
+          }
+          @if (user?.access?.length > 0) {
+            <!--
+              One row per identity the viewer may adopt, the first being the
+              viewer themselves. Its glyph is inverted with respect to the rows
+              beneath it, which is correct rather than a slip: the viewer is the
+              current identity precisely when no other one is being borrowed.
+              Each row also publishes that state as a checked radio, so the
+              selection never rests on the shape of a glyph alone.
+            -->
+            <button
+              mat-menu-item
+              role="menuitemradio"
+              [attr.aria-checked]="!hasImpersonationId"
+              (click)="impersonateAccount(null)"
+            >
+              <span class="align-items-center d-flex">
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  [name]="
+                    hasImpersonationId
+                      ? 'radio-button-off-outline'
+                      : 'radio-button-on-outline'
+                  "
+                />
+                <span i18n>Me</span>
+              </span>
+            </button>
+            @for (accessItem of user?.access; track accessItem) {
+              <button
+                mat-menu-item
+                role="menuitemradio"
+                [attr.aria-checked]="accessItem.id === impersonationId"
+                (click)="impersonateAccount(accessItem.id)"
+              >
+                <span class="align-items-center d-flex">
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    [name]="
+                      accessItem.id === impersonationId
+                        ? 'radio-button-on-outline'
+                        : 'radio-button-off-outline'
+                    "
+                  />
+                  @if (accessItem.alias) {
+                    <span>{{ accessItem.alias }}</span>
+                  } @else {
+                    <span i18n>User</span>
+                  }
+                </span>
+              </button>
+            }
+            <hr class="m-0" />
+          }
+          <button i18n mat-menu-item (click)="onSignOut()">Log out</button>
+        </mat-menu>
+      </li>
+    </ul>
+  }
+</mat-toolbar>

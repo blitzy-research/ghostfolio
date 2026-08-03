@@ -1,6 +1,5 @@
 import { GfLogoComponent } from '@ghostfolio/ui/logo';
 
-import { RouterTestingModule } from '@angular/router/testing';
 import { moduleMetadata } from '@storybook/angular';
 import type { Meta, StoryObj } from '@storybook/angular';
 
@@ -11,7 +10,7 @@ export default {
   component: GfNoTransactionsInfoComponent,
   decorators: [
     moduleMetadata({
-      imports: [GfLogoComponent, RouterTestingModule]
+      imports: [GfLogoComponent]
     })
   ]
 } as Meta<GfNoTransactionsInfoComponent>;

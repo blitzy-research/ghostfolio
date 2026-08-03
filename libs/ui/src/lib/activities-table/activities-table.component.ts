@@ -125,6 +125,7 @@ export class GfActivitiesTableComponent implements AfterViewInit, OnInit {
   @Output() activityDeleted = new EventEmitter<string>();
   @Output() activityToClone = new EventEmitter<OrderWithAccount>();
   @Output() activityToUpdate = new EventEmitter<OrderWithAccount>();
+  @Output() createActivityClicked = new EventEmitter<void>();
   @Output() export = new EventEmitter<void>();
   @Output() exportDrafts = new EventEmitter<string[]>();
   @Output() import = new EventEmitter<void>();
