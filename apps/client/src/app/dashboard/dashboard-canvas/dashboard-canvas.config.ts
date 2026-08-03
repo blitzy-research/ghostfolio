@@ -73,6 +73,18 @@ export interface DashboardCanvasConfigHandlers {
 }
 
 /**
+ * The grid-wide floor, below which no module may be sized however it was placed.
+ *
+ * Declared once and consumed twice - by the engine, as its `minItemCols` and
+ * `minItemRows` policy, and by {@link itemValidateCallback}, as the value it
+ * falls back to for an item that declares no minimum of its own. Keeping them
+ * the same value is what makes that fallback lossless.
+ */
+const MINIMUM_ITEM_COLS = 2;
+
+const MINIMUM_ITEM_ROWS = 2;
+
+/**
  * Rejects any placement whose footprint is smaller than the minimum its module
  * declared in the registry.
  *
@@ -85,16 +97,32 @@ export interface DashboardCanvasConfigHandlers {
  * stricter per-item minimums the canvas copies onto each item from its
  * registry definition.
  *
- * HAZARD - `minItemCols` and `minItemRows` are optional on
- * `GridsterItemConfig`, and `4 >= undefined` evaluates to `false`, not `true`.
- * An item whose per-item minimums were never populated therefore has *every*
- * placement rejected and can be neither moved nor resized. No fallback is
- * applied here on purpose: quietly substituting a default would mask the bug
- * and dilute the very rule this predicate exists to enforce. Populating
- * `minItemCols` and `minItemRows` from the registry definition is the canvas's
- * contractual obligation, and it owes it on all three paths that mint an item
- * - hydrating a persisted layout, catalog click-to-add and catalog
- * drag-to-drop.
+ * `minItemCols` and `minItemRows` are optional on `GridsterItemConfig`, and the
+ * absent case must fall back to the grid's own floor rather than compare against
+ * `undefined`, because `4 >= undefined` is `false` rather than `true`. Reading
+ * them optionally is therefore not defensive padding - it is required for the
+ * predicate to be reachable at all, and it is exactly what the library does for
+ * itself: `checkGridCollision` resolves the same two members as
+ * `item.minItemCols === undefined ? $options.minItemCols : item.minItemCols`.
+ *
+ * Without that fallback, catalog drag-to-add cannot work in any browser. The
+ * library mints its own drop candidate inside `getValidItemFromEvent` as exactly
+ * `{ x, y, cols: defaultItemCols, rows: defaultItemRows }` - carrying no
+ * per-item minimums, because they are the application's to attach - and then
+ * screens it with `checkCollision`, which consults this predicate first. A
+ * predicate that rejected that candidate would make `emptyCellDropCallback`
+ * unreachable, and `emptyCellDropCallback` is the *only* place the canvas could
+ * have attached the minimums, so the obligation would be impossible to
+ * discharge rather than merely unmet. The canvas still owes those minimums on
+ * every item it mints itself - hydrating a persisted layout, catalog
+ * click-to-add and the item it appends on drop - and this predicate still
+ * enforces them there.
+ *
+ * Nothing is weakened by the fallback. The floor it substitutes is the same
+ * `minItemCols` / `minItemRows` the grid is configured with, so an item without
+ * per-item minimums is held to 2x2 exactly as the engine's own global floors and
+ * `minItemArea` hold it, while an item that declares stricter minimums is still
+ * measured against those.
  *
  * Exported independently of the configuration factory so it can be asserted
  * directly, with no fixture and no rendering.
@@ -104,9 +132,12 @@ export interface DashboardCanvasConfigHandlers {
  *
  * itemValidateCallback({ ...item, cols: 2 }); // true, exactly at the floor
  * itemValidateCallback({ ...item, cols: 1 }); // false, one column too narrow
+ * itemValidateCallback({ cols: 4, rows: 4, x: 0, y: 0 }); // true, the library's
+ * // own drop candidate, held to the grid floor it declares no minimum for
  */
 export const itemValidateCallback = (item: GridsterItemConfig): boolean =>
-  item.cols >= item.minItemCols && item.rows >= item.minItemRows;
+  item.cols >= (item.minItemCols ?? MINIMUM_ITEM_COLS) &&
+  item.rows >= (item.minItemRows ?? MINIMUM_ITEM_ROWS);
 
 /**
  * Builds the `GridsterConfig` for the dashboard canvas.
@@ -188,9 +219,9 @@ export function createDashboardCanvasConfig(
     // 2x2 is the smallest usable module footprint. `minItemArea` additionally
     // rules out the degenerate 1x4 and 4x1 shapes, which would each satisfy
     // one dimension floor while being unusable.
-    minItemArea: 4,
-    minItemCols: 2,
-    minItemRows: 2,
+    minItemArea: MINIMUM_ITEM_COLS * MINIMUM_ITEM_ROWS,
+    minItemCols: MINIMUM_ITEM_COLS,
+    minItemRows: MINIMUM_ITEM_ROWS,
     minRows: 1,
     // Permanently disables gridster's mobile stacking path, which is the
     // technical enforcement of the "no mobile or responsive layout" exclusion.
