@@ -37,6 +37,33 @@ export class UserDashboardLayoutService {
    * so the row is keyed by the authenticated identity and can never be
    * redirected by the payload. The snapshot is stored verbatim and returned
    * unwrapped, so the response carries no row envelope and no identity field.
+   *
+   * `create` sets the `userId` foreign key as a scalar rather than nesting a
+   * `user: { connect: … }` relation write, because that is what lets Prisma
+   * compile the upsert into a single atomic statement:
+   *
+   *   INSERT INTO "UserDashboardLayout" ("layoutData", "updatedAt", "userId")
+   *   VALUES ($1, $2, $3)
+   *   ON CONFLICT ("userId") DO UPDATE SET "layoutData" = $4, "updatedAt" = $5
+   *   WHERE "userId" = $6
+   *   RETURNING "userId", "layoutData", "updatedAt"
+   *
+   * A nested relation write forces Prisma to fall back to a read-then-write
+   * interactive transaction (existence probe, user probe, insert, read back,
+   * commit). Two concurrent first-ever writes for the same user then both
+   * observe an absent row and both attempt the insert, so one of them fails the
+   * primary key with P2002 and the request answers 500. That collision is not
+   * hypothetical: a brand-new user always starts with no row, so the very first
+   * save is always the create branch, and a second browser tab or a teardown
+   * flush racing a pending debounced write is enough to trigger it.
+   *
+   * `ON CONFLICT … DO UPDATE` collapses both branches into one statement, which
+   * PostgreSQL resolves atomically, so a concurrent first write converges on an
+   * update instead of failing. That is safe by construction here because the
+   * payload is always a complete layout snapshot rather than a delta: whichever
+   * writer lands last leaves the row holding one whole submitted document. The
+   * conflict target is the primary key and the `DO UPDATE` predicate matches it,
+   * so `RETURNING` always yields the persisted row.
    */
   public async updateLayout({
     userDashboardLayout,
@@ -48,11 +75,7 @@ export class UserDashboardLayoutService {
     const { layoutData } = await this.prismaService.userDashboardLayout.upsert({
       create: {
         layoutData: userDashboardLayout as unknown as Prisma.JsonObject,
-        user: {
-          connect: {
-            id: userId
-          }
-        }
+        userId
       },
       update: {
         layoutData: userDashboardLayout as unknown as Prisma.JsonObject

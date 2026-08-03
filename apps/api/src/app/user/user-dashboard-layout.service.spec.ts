@@ -222,6 +222,28 @@ describe('UserDashboardLayoutService', () => {
       });
       expect(layout).not.toHaveProperty('version');
     });
+
+    // A failed read is not the same state as a user who has never saved a
+    // layout, and the service deliberately has no `catch` that could conflate
+    // them. Were the rejection ever turned into `null`, a database outage would
+    // look exactly like a brand-new user: the catalog would auto-open on an
+    // empty canvas and the next debounced write would overwrite the layout that
+    // is still stored. Asserting the identity of the rejection reason is what
+    // makes that regression impossible to introduce quietly, because it fails
+    // for a swallowed, a replaced and a wrapped error alike.
+    it('propagates a read failure instead of reporting it as an absent layout', async () => {
+      const readFailure = new Error('connection terminated unexpectedly');
+
+      findUnique.mockRejectedValue(readFailure);
+
+      await expect(userDashboardLayoutService.getLayout(userId)).rejects.toBe(
+        readFailure
+      );
+
+      expect(findUnique).toHaveBeenCalledTimes(1);
+      expect(calledDelegateMethods()).toEqual(['findUnique']);
+      expect(prismaServiceMock.$transaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateLayout', () => {
@@ -240,15 +262,46 @@ describe('UserDashboardLayoutService', () => {
 
       expect(upsert).toHaveBeenCalledTimes(1);
       expect(upsert).toHaveBeenCalledWith({
-        create: {
-          layoutData: userDashboardLayout,
-          user: { connect: { id: userId } }
-        },
+        create: { layoutData: userDashboardLayout, userId },
         update: { layoutData: userDashboardLayout },
         where: { userId }
       });
       expect(calledDelegateMethods()).toEqual(['upsert']);
       expect(prismaServiceMock.$transaction).not.toHaveBeenCalled();
+    });
+
+    // A brand-new user always starts with no row, so the very first save always
+    // takes the create branch. Prisma only compiles an upsert into a single
+    // atomic `INSERT … ON CONFLICT … DO UPDATE` when the create branch contains
+    // no nested relation write; a `user: { connect: … }` there makes it fall
+    // back to a read-then-write transaction, and two concurrent first writes
+    // then collide on the primary key and answer 500. The shape is therefore
+    // pinned here rather than left to the round-trip assertions above.
+    it('keys the create branch by the foreign key scalar, so the write stays a single atomic statement', async () => {
+      upsert.mockResolvedValue({ layoutData: userDashboardLayout, userId });
+
+      await userDashboardLayoutService.updateLayout({
+        userDashboardLayout,
+        userId
+      });
+
+      const [{ create }] = upsert.mock.calls[0] as [
+        { create: Record<string, unknown> }
+      ];
+
+      expect(Object.keys(create).sort()).toEqual(['layoutData', 'userId']);
+      expect(create.userId).toBe(userId);
+      expect(create).not.toHaveProperty('user');
+      expect(prismaServiceMock.$transaction).not.toHaveBeenCalled();
+      expect(
+        prismaServiceMock.userDashboardLayout.create
+      ).not.toHaveBeenCalled();
+      expect(
+        prismaServiceMock.userDashboardLayout.update
+      ).not.toHaveBeenCalled();
+      expect(
+        prismaServiceMock.userDashboardLayout.findUnique
+      ).not.toHaveBeenCalled();
     });
 
     it('returns only the persisted layout document', async () => {
@@ -292,10 +345,7 @@ describe('UserDashboardLayoutService', () => {
 
       expect(upsert).toHaveBeenCalledTimes(1);
       expect(upsert).toHaveBeenCalledWith({
-        create: {
-          layoutData: { modules: [], version: 1 },
-          user: { connect: { id: userId } }
-        },
+        create: { layoutData: { modules: [], version: 1 }, userId },
         update: { layoutData: { modules: [], version: 1 } },
         where: { userId }
       });
@@ -337,7 +387,7 @@ describe('UserDashboardLayoutService', () => {
               ],
               version: 1
             },
-            user: { connect: { id: userId } }
+            userId
           }
         })
       );
@@ -397,6 +447,29 @@ describe('UserDashboardLayoutService', () => {
 
       expect(upsert).toHaveBeenCalledTimes(2);
       expect(calledDelegateMethods()).toEqual(['upsert']);
+    });
+
+    // The canvas writes through a debounced write-behind pipeline, so a
+    // rejection is the only signal that a snapshot did not reach the database.
+    // Reporting the submitted document as persisted anyway would leave the
+    // client believing its layout is saved when it is not.
+    it('propagates a write failure instead of reporting the layout as persisted', async () => {
+      const writeFailure = new Error(
+        'could not serialize access due to concurrent update'
+      );
+
+      upsert.mockRejectedValue(writeFailure);
+
+      await expect(
+        userDashboardLayoutService.updateLayout({
+          userDashboardLayout,
+          userId
+        })
+      ).rejects.toBe(writeFailure);
+
+      expect(upsert).toHaveBeenCalledTimes(1);
+      expect(calledDelegateMethods()).toEqual(['upsert']);
+      expect(prismaServiceMock.$transaction).not.toHaveBeenCalled();
     });
   });
 });

@@ -10,6 +10,7 @@ import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 import {
   ExecutionContext,
   INestApplication,
+  Logger,
   ValidationPipe,
   VersioningType
 } from '@nestjs/common';
@@ -156,14 +157,17 @@ describe('UserDashboardLayoutController', () => {
       method
     });
 
-    // Nest answers a `null` handler result with no body at all, so the raw text
-    // is captured before parsing. An empty payload is what an absent layout
-    // looks like on the wire, and it has to stay distinguishable from a stored
-    // document whose module list happens to be empty.
+    // The raw text and the content type are captured alongside the parsed body,
+    // because the wire representation is itself part of the contract: an absent
+    // layout has to arrive as the JSON literal `null` with a JSON content type,
+    // not as an empty body that only some clients coerce to `null`. Parsing is
+    // deliberately not guarded against an empty body — a zero-byte response has
+    // to surface as a failure rather than be silently normalised away.
     const text = await response.text();
 
     return {
-      json: text === '' ? null : (JSON.parse(text) as unknown),
+      contentType: response.headers.get('content-type'),
+      json: text === '' ? undefined : (JSON.parse(text) as unknown),
       status: response.status,
       text
     };
@@ -280,19 +284,41 @@ describe('UserDashboardLayoutController', () => {
         expect(json).not.toHaveProperty('userId');
       });
 
-      it('reports an absent layout as an empty body, neither as a fabricated document nor as a 404', async () => {
-        findUnique.mockResolvedValue(null);
+      // The literal is asserted, not just the parsed value: an empty body also
+      // parses to `null` in Angular's `HttpClient`, so only the raw text and the
+      // content type distinguish a real JSON `null` from a zero-byte response
+      // that no strict consumer can read.
+      //
+      // Both rows below read back with a null layout column — Prisma reports a
+      // stored SQL NULL and a stored JSON null identically — so both are the
+      // "user has never saved a layout" state and both must answer `null`.
+      it.each([
+        { description: 'no stored row at all', row: null },
+        {
+          description: 'a row whose layout column reads back as null',
+          row: {
+            layoutData: null,
+            userId: 'c0a8012e-4f7b-4d1a-9f3e-2b6d8c5a1e44'
+          }
+        }
+      ])(
+        'reports $description as the JSON literal null, neither as an empty body nor as a fabricated document nor as a 404',
+        async ({ row }) => {
+          findUnique.mockResolvedValue(row);
 
-        const { json, status, text } = await request({
-          app,
-          method: 'GET',
-          path: layoutPath
-        });
+          const { contentType, json, status, text } = await request({
+            app,
+            method: 'GET',
+            path: layoutPath
+          });
 
-        expect(status).toBe(200);
-        expect(text).toBe('');
-        expect(json).toBeNull();
-      });
+          expect(status).toBe(200);
+          expect(text).toBe('null');
+          expect(contentType).toMatch(/^application\/json/);
+          expect(json).toBeNull();
+          expect(JSON.parse(text)).toBeNull();
+        }
+      );
 
       it('returns a stored empty layout as a document, keeping it distinct from an absent one', async () => {
         const emptyLayout: UserDashboardLayout = { modules: [], version: 1 };
@@ -302,14 +328,15 @@ describe('UserDashboardLayoutController', () => {
           userId: requestUserId
         });
 
-        const { json, status, text } = await request({
+        const { contentType, json, status, text } = await request({
           app,
           method: 'GET',
           path: layoutPath
         });
 
         expect(status).toBe(200);
-        expect(text).not.toBe('');
+        expect(text).not.toBe('null');
+        expect(contentType).toMatch(/^application\/json/);
         expect(json).not.toBeNull();
         expect(json).toEqual(emptyLayout);
       });
@@ -422,10 +449,7 @@ describe('UserDashboardLayoutController', () => {
 
         expect(status).toBe(200);
         expect(upsert).toHaveBeenCalledWith({
-          create: {
-            layoutData: payload,
-            user: { connect: { id: requestUserId } }
-          },
+          create: { layoutData: payload, userId: requestUserId },
           update: { layoutData: payload },
           where: { userId: requestUserId }
         });
@@ -444,10 +468,7 @@ describe('UserDashboardLayoutController', () => {
 
         expect(upsert).toHaveBeenCalledTimes(1);
         expect(upsert).toHaveBeenCalledWith({
-          create: {
-            layoutData: { modules: [] },
-            user: { connect: { id: requestUserId } }
-          },
+          create: { layoutData: { modules: [] }, userId: requestUserId },
           update: { layoutData: { modules: [] } },
           where: { userId: requestUserId }
         });
@@ -489,6 +510,21 @@ describe('UserDashboardLayoutController', () => {
           }
         },
         {
+          // PostgreSQL cannot store a NUL inside a JSONB document, so without a
+          // control-character rule this payload satisfies every declared bound,
+          // reaches the driver and surfaces as a 500 instead of a 400.
+          description: 'a module type carrying a NUL character',
+          payload: {
+            modules: [{ cols: 4, moduleType: 'a\u0000b', rows: 4, x: 0, y: 0 }]
+          }
+        },
+        {
+          description: 'a module type carrying a lone surrogate',
+          payload: {
+            modules: [{ cols: 4, moduleType: 'a\ud800b', rows: 4, x: 0, y: 0 }]
+          }
+        },
+        {
           description: 'a document of an unsupported version',
           payload: { modules: [], version: 2 }
         },
@@ -509,6 +545,74 @@ describe('UserDashboardLayoutController', () => {
 
         expect(status).toBe(400);
         expect(upsert).not.toHaveBeenCalled();
+      });
+    });
+
+    // A failure inside the persistence layer has to reach the caller as a 500
+    // that carries no internal detail. The read case is the load-bearing one:
+    // an absent layout is answered 200 with the JSON literal `null`, so a
+    // failure that degraded into that shape - or into the empty body that shape
+    // replaced - would be indistinguishable from a user who has never saved a
+    // layout, and the canvas would replace the stored layout on its next
+    // debounced write. Both shapes are therefore ruled out below.
+    describe('when the persistence layer fails', () => {
+      const internalFailure = 'connection terminated unexpectedly';
+
+      let loggerError: jest.SpyInstance;
+
+      // Nest reports an unhandled error through its own logger before replying.
+      // That line is silenced for these two tests so a deliberately provoked
+      // failure cannot be read as a real one in the suite output, and asserted
+      // on rather than merely suppressed, because a failure the operator never
+      // sees is as damaging as one the caller never sees.
+      beforeEach(() => {
+        loggerError = jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        loggerError.mockRestore();
+      });
+
+      it('answers a failing read with 500 rather than with the absent-layout body', async () => {
+        findUnique.mockRejectedValue(new Error(internalFailure));
+
+        const { json, status, text } = await request({
+          app,
+          method: 'GET',
+          path: layoutPath
+        });
+
+        expect(status).toBe(500);
+        expect(json).toEqual({
+          message: 'Internal server error',
+          statusCode: 500
+        });
+        expect(text).not.toBe('');
+        expect(text).not.toBe('null');
+        expect(text).not.toContain(internalFailure);
+        expect(loggerError).toHaveBeenCalled();
+      });
+
+      it('answers a failing write with 500 and reports nothing as persisted', async () => {
+        upsert.mockRejectedValue(new Error(internalFailure));
+
+        const { json, status, text } = await request({
+          app,
+          method: 'PATCH',
+          path: layoutPath,
+          payload: storedLayout
+        });
+
+        expect(status).toBe(500);
+        expect(json).toEqual({
+          message: 'Internal server error',
+          statusCode: 500
+        });
+        expect(text).not.toContain(internalFailure);
+        expect(upsert).toHaveBeenCalledTimes(1);
+        expect(loggerError).toHaveBeenCalled();
       });
     });
   });

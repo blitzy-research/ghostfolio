@@ -2,6 +2,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -63,8 +64,21 @@ export class DashboardModuleLayoutItemDto {
   // whole request. It is still bounded, because an unbounded string would let a
   // single item carry megabytes into persistent storage. 64 characters leaves
   // ample headroom over the longest shipped type (18 characters).
+  //
+  // Opaque stops short of unstorable, though. `\p{C}` covers the Unicode "other"
+  // categories - control, format, surrogate, private use and unassigned - and
+  // PostgreSQL cannot represent several of them inside a JSONB document: a NUL
+  // (U+0000) or a lone surrogate makes the driver reject the whole statement
+  // with "unsupported Unicode escape sequence", which surfaces as a 500 even
+  // though the payload satisfies every other rule declared here. Excluding them
+  // turns that into a field-level 400 like every sibling case, and costs nothing
+  // legitimate: a module type is a machine identifier, and every shipped one is
+  // lower-case kebab-case ASCII.
   @IsNotEmpty()
   @IsString()
+  @Matches(/^[^\p{C}]+$/u, {
+    message: 'moduleType must not contain control characters'
+  })
   @MaxLength(64)
   moduleType: string;
 

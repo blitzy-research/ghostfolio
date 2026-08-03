@@ -69,6 +69,7 @@
     "test": {
       "executor": "@nx/jest:jest",
       "options": {
+        "codeCoverage": true,
         "jestConfig": "apps/api/jest.config.ts"
       },
       "outputs": ["{workspaceRoot}/coverage/apps/api"]
