@@ -15,7 +15,6 @@ import {
   User
 } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
@@ -39,7 +38,6 @@ import {
   PageEvent
 } from '@angular/material/paginator';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import {
   differenceInSeconds,
@@ -56,7 +54,6 @@ import {
 } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
-import { switchMap, tap } from 'rxjs/operators';
 
 @Component({
   imports: [
@@ -68,8 +65,7 @@ import { switchMap, tap } from 'rxjs/operators';
     MatMenuModule,
     MatPaginatorModule,
     MatTableModule,
-    NgxSkeletonLoaderModule,
-    RouterModule
+    NgxSkeletonLoaderModule
   ],
   selector: 'gf-admin-users',
   styleUrls: ['./admin-users.scss'],
@@ -88,8 +84,6 @@ export class GfAdminUsersComponent implements OnInit {
   public info: InfoItem;
   public isLoading = false;
   public pageSize = DEFAULT_PAGE_SIZE;
-  public routerLinkAdminControlUsers =
-    internalRoutes.adminControl.subRoutes.users.routerLink;
   public totalItems = 0;
   public user: User;
 
@@ -102,8 +96,6 @@ export class GfAdminUsersComponent implements OnInit {
     private dialog: MatDialog,
     private impersonationStorageService: ImpersonationStorageService,
     private notificationService: NotificationService,
-    private route: ActivatedRoute,
-    private router: Router,
     private userService: UserService
   ) {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
@@ -137,29 +129,19 @@ export class GfAdminUsersComponent implements OnInit {
     }
 
     this.userService.stateChanged
-      .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        tap((state) => {
-          if (state?.user) {
-            this.user = state.user;
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((state) => {
+        if (state?.user) {
+          this.user = state.user;
 
-            this.defaultDateFormat = getDateFormatString(
-              this.user.settings.locale
-            );
+          this.defaultDateFormat = getDateFormatString(
+            this.user.settings.locale
+          );
 
-            this.hasPermissionToImpersonateAllUsers = hasPermission(
-              this.user.permissions,
-              permissions.impersonateAllUsers
-            );
-          }
-        }),
-        switchMap(() => this.route.paramMap)
-      )
-      .subscribe((params) => {
-        const userId = params.get('userId');
-
-        if (userId) {
-          this.openUserDetailDialog(userId);
+          this.hasPermissionToImpersonateAllUsers = hasPermission(
+            this.user.permissions,
+            permissions.impersonateAllUsers
+          );
         }
       });
 
@@ -205,13 +187,10 @@ export class GfAdminUsersComponent implements OnInit {
           .deleteUser(aId)
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe(() => {
-            this.router.navigate(['..'], { relativeTo: this.route });
+            this.fetchUsers();
           });
       },
       confirmType: ConfirmationDialogType.Warn,
-      discardFn: () => {
-        this.router.navigate(['..'], { relativeTo: this.route });
-      },
       title: $localize`Do you really want to delete this user?`
     });
   }
@@ -252,9 +231,7 @@ export class GfAdminUsersComponent implements OnInit {
   }
 
   public onOpenUserDetailDialog(userId: string) {
-    this.router.navigate(
-      internalRoutes.adminControl.subRoutes.users.routerLink.concat(userId)
-    );
+    this.openUserDetailDialog(userId);
   }
 
   private fetchUsers({ pageIndex }: { pageIndex: number } = { pageIndex: 0 }) {
@@ -303,10 +280,6 @@ export class GfAdminUsersComponent implements OnInit {
       .subscribe((data) => {
         if (data?.action === 'delete' && data?.userId) {
           this.onDeleteUser(data.userId);
-        } else {
-          this.router.navigate(
-            internalRoutes.adminControl.subRoutes.users.routerLink
-          );
         }
       });
   }
