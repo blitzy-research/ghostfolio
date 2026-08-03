@@ -1,35 +1,43 @@
+<!--
+  COMPONENT CONTRACT - this template requires `definition`, `resolvedComponent`,
+  `hasLoadError` and `onRemove()`; it imports IonIcon, MatButtonModule,
+  MatCardModule, MatMenuModule, NgComponentOutlet and NgxSkeletonLoaderModule
+  alongside CUSTOM_ELEMENTS_SCHEMA, and registers the ellipsisHorizontal,
+  reorderTwoOutline and trashOutline glyphs.
+
+  No module is named here: one is resolved at runtime and mounted into the body
+  region below, so every module gets identical chrome. The module name is already
+  translated where the shared metadata declares it, so it is interpolated
+  verbatim, and the failure notice reuses an existing source message
+  character-for-character. No string here carries a custom identifier.
+-->
 <mat-card
   appearance="outlined"
   role="region"
   [attr.aria-busy]="!resolvedComponent && !hasLoadError"
-  [attr.aria-label]="definition.name"
+  [attr.aria-label]="definition?.name"
 >
   <mat-card-header class="align-items-center px-3 py-2">
     <!--
-      Keep the drag handle outside .gridster-item-content: gridster matches
-      these class names from its drag configuration, and a mismatch silently
-      breaks drag isolation.
+      The class below and the one on the body wrapper are matched by string
+      against the grid's drag configuration, so each is spelled exactly once in
+      this file and nowhere else in it. Keep the handle OUTSIDE that wrapper and
+      everything interactive inside it, or a press anywhere in the module starts
+      a drag - a mismatch compiles and lints cleanly and then fails silently.
     -->
     <!--
-      Focusable for discovery, and intentionally not a button: pointer drag has
-      no keyboard activation, so the arrow keys move the module and Shift with an
-      arrow key resizes it, mirroring the Move and Resize menu items below.
+      Focusable for the `:focus-visible` treatment and so assistive technology
+      can discover that the module moves, but intentionally not a button:
+      repositioning is a pointer gesture owned by the grid, so an activation
+      affordance would promise something pressing it never delivers.
     -->
     <span
-      aria-label="Move module: press an arrow key to move it, or Shift with an arrow key to resize it"
+      aria-label="Drag to move module"
       class="gf-dashboard-module-drag-handle mr-2 p-2"
       i18n-aria-label
       i18n-title
       tabindex="0"
-      title="Drag to move, or use the arrow keys"
-      (keydown.arrowDown)="onMove('down', $event)"
-      (keydown.arrowLeft)="onMove('left', $event)"
-      (keydown.arrowRight)="onMove('right', $event)"
-      (keydown.arrowUp)="onMove('up', $event)"
-      (keydown.shift.arrowDown)="onResize('taller', $event)"
-      (keydown.shift.arrowLeft)="onResize('narrower', $event)"
-      (keydown.shift.arrowRight)="onResize('wider', $event)"
-      (keydown.shift.arrowUp)="onResize('shorter', $event)"
+      title="Drag to move module"
     >
       <ion-icon aria-hidden="true" name="reorder-two-outline" />
     </span>
@@ -40,7 +48,7 @@
     -->
     <div class="mr-2 overflow-hidden">
       <mat-card-title class="mb-0 text-truncate">{{
-        definition.name
+        definition?.name
       }}</mat-card-title>
     </div>
 
@@ -56,51 +64,11 @@
       <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
     </button>
     <mat-menu #moduleActionsMenu="matMenu" xPosition="before">
-      <button mat-menu-item [matMenuTriggerFor]="moduleMoveMenu">
-        <span class="align-items-center d-flex">
-          <ion-icon aria-hidden="true" class="mr-2" name="move-outline" />
-          <span i18n>Move</span>
-        </span>
-      </button>
-      <button mat-menu-item [matMenuTriggerFor]="moduleResizeMenu">
-        <span class="align-items-center d-flex">
-          <ion-icon aria-hidden="true" class="mr-2" name="resize-outline" />
-          <span i18n>Resize</span>
-        </span>
-      </button>
       <button mat-menu-item (click)="onRemove()">
         <span class="align-items-center d-flex">
           <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
           <span i18n>Remove</span>
         </span>
-      </button>
-    </mat-menu>
-    <mat-menu #moduleMoveMenu="matMenu" xPosition="before">
-      <button mat-menu-item (click)="onMove('up')">
-        <span i18n>Move up</span>
-      </button>
-      <button mat-menu-item (click)="onMove('down')">
-        <span i18n>Move down</span>
-      </button>
-      <button mat-menu-item (click)="onMove('left')">
-        <span i18n>Move left</span>
-      </button>
-      <button mat-menu-item (click)="onMove('right')">
-        <span i18n>Move right</span>
-      </button>
-    </mat-menu>
-    <mat-menu #moduleResizeMenu="matMenu" xPosition="before">
-      <button mat-menu-item (click)="onResize('wider')">
-        <span i18n>Make wider</span>
-      </button>
-      <button mat-menu-item (click)="onResize('narrower')">
-        <span i18n>Make narrower</span>
-      </button>
-      <button mat-menu-item (click)="onResize('taller')">
-        <span i18n>Make taller</span>
-      </button>
-      <button mat-menu-item (click)="onResize('shorter')">
-        <span i18n>Make shorter</span>
       </button>
     </mat-menu>
   </mat-card-header>

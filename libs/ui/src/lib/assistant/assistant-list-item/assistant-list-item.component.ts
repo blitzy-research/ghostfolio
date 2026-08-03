@@ -1,5 +1,5 @@
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { GfSymbolPipe } from '@ghostfolio/common/pipes';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 
 import { FocusableOption } from '@angular/cdk/a11y';
 import {
@@ -44,6 +44,16 @@ export class GfAssistantListItemComponent
 
   protected readonly clicked = output<void>();
 
+  /**
+   * Names the dashboard module the activated result stands for. Emitted for the
+   * result kinds that carry a module discriminator, so the consumer can surface
+   * that module without this library knowing how modules are hosted. This
+   * output is the only channel through which an app-directed intent leaves the
+   * component; the shared module vocabulary keeps it framework- and
+   * application-agnostic.
+   */
+  protected readonly moduleSelected = output<DashboardModuleType>();
+
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
 
   @HostBinding('class.has-focus')
@@ -58,7 +68,10 @@ export class GfAssistantListItemComponent
         accountId: this.item.id
       };
 
-      this.routerLink = internalRoutes.accounts.routerLink;
+      // The dialog is addressed by query parameter rather than by screen, so
+      // the empty command array keeps the activation on the current URL instead
+      // of navigating to a screen that no longer exists.
+      this.routerLink = [];
     } else if (this.item?.mode === SearchMode.ASSET_PROFILE) {
       this.queryParams = {
         assetProfileDialog: true,
@@ -66,8 +79,9 @@ export class GfAssistantListItemComponent
         symbol: this.item.symbol
       };
 
-      this.routerLink =
-        internalRoutes.adminControl.subRoutes.marketData.routerLink ?? [];
+      // Same route-free dialog form as the account branch above: the asset
+      // profile dialog is opened from wherever the assistant was invoked.
+      this.routerLink = [];
     } else if (this.item?.mode === SearchMode.HOLDING) {
       this.queryParams = {
         dataSource: this.item.dataSource,
@@ -77,13 +91,13 @@ export class GfAssistantListItemComponent
 
       this.routerLink = [];
     } else if (this.item?.mode === SearchMode.QUICK_LINK) {
-      // The URL no longer selects a screen, so a quick link stays on the
-      // current route: the empty command array is the established route-free
-      // form already used by the holding branch above. Revealing the module the
-      // item names is the consumer's responsibility, reached through the click
-      // output rather than through navigation.
+      // A quick link is the one genuinely navigational mode, and the URL no
+      // longer selects a screen. It therefore derives no router link at all:
+      // revealing the module the item names is the consumer's responsibility
+      // and travels through the `moduleSelected` output instead. The template
+      // independently binds `null` for this mode, so leaving the field unset
+      // cannot activate a stale route either.
       this.queryParams = {};
-      this.routerLink = [];
     }
   }
 
@@ -103,6 +117,15 @@ export class GfAssistantListItemComponent
   }
 
   public onClick() {
+    // `moduleType` is present on account and quick link results only, so the
+    // property check narrows the result union and asset results fall through
+    // without a module intent. The module intent is emitted before the click so
+    // that a consumer which closes the assistant on click can never observe a
+    // close ahead of the selection it belongs to.
+    if (this.item && 'moduleType' in this.item) {
+      this.moduleSelected.emit(this.item.moduleType);
+    }
+
     this.clicked.emit();
   }
 

@@ -8,6 +8,14 @@
   display: block;
   height: 100%;
 
+  // The global stylesheet resets `button:focus` and this theme does not enable
+  // Material's strong focus indicators, so the header's actions trigger would
+  // show nothing at all under keyboard focus. Matches the drag handle's ring.
+  button:focus-visible {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: 2px;
+  }
+
   mat-card {
     background: var(--mat-sys-surface-container, #ffffff);
 
@@ -47,6 +55,17 @@
   // text-selection behavior. The resting and hover tones carry the handle past
   // the WCAG 1.4.3 minimum, and the ring is explicit because the global
   // stylesheet resets focus outlines.
+  //
+  /* BLITZY [A11Y]: the specified handle tone is 4.61:1 against the light card
+     and clears the 3:1 non-text minimum, but measured in the browser the
+     darkest rendered pixel of the glyph is only 2.68:1. `reorder-two-outline`
+     is a stroked icon whose 32/512 stroke lands on a 0.875px sub-pixel line at
+     the 14px type size the global grid partial gives this handle, so no pixel
+     reaches full coverage. Neither the tone nor the glyph nor that type size is
+     this component's to change - the tone is the mapped system token, the glyph
+     is specified, and the type size belongs to the global partial - so it is
+     implemented as specified and flagged for designer review. Dark theme is
+     unaffected (4.86:1 measured). */
   .gf-dashboard-module-drag-handle {
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
     cursor: move;
@@ -77,6 +96,10 @@
 }
 
 :host-context(.theme-dark) {
+  button:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+
   mat-card {
     background: var(--mat-sys-surface-container, #262626);
     color: var(--mat-sys-on-surface, #ffffff);
