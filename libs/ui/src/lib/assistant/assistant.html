@@ -64,6 +64,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.quickLinks) {
@@ -90,6 +91,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.accounts) {
@@ -116,6 +118,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.holdings) {
@@ -146,6 +149,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.assetProfiles) {

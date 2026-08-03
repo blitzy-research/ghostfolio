@@ -1,8 +1,10 @@
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import {
   getTooltipOptions,
   getVerticalHoverLinePlugin
 } from '@ghostfolio/common/chart-helper';
 import { primaryColorRgb, secondaryColorRgb } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import {
   getBackgroundColor,
   getDateFormatString,
@@ -12,7 +14,6 @@ import {
 } from '@ghostfolio/common/helper';
 import { LineChartItem, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { ColorScheme } from '@ghostfolio/common/types';
 import { registerChartConfiguration } from '@ghostfolio/ui/chart';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
@@ -31,7 +32,6 @@ import {
 } from '@angular/core';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { MatSelectModule } from '@angular/material/select';
-import { RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { SymbolProfile } from '@prisma/client';
 import {
@@ -60,8 +60,7 @@ import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
     IonIcon,
     MatSelectModule,
     NgxSkeletonLoaderModule,
-    ReactiveFormsModule,
-    RouterModule
+    ReactiveFormsModule
   ],
   selector: 'gf-benchmark-comparator',
   styleUrls: ['./benchmark-comparator.component.scss'],
@@ -83,10 +82,8 @@ export class GfBenchmarkComparatorComponent implements OnChanges, OnDestroy {
 
   public chart: Chart<'line'>;
   public hasPermissionToAccessAdminControl: boolean;
-  public routerLinkAdminControlMarketData =
-    internalRoutes.adminControl.subRoutes.marketData.routerLink;
 
-  public constructor() {
+  public constructor(private dashboardIntentService: DashboardIntentService) {
     Chart.register(
       annotationPlugin,
       LinearScale,
@@ -115,6 +112,21 @@ export class GfBenchmarkComparatorComponent implements OnChanges, OnDestroy {
 
   public onChangeBenchmark(symbolProfileId: string) {
     this.benchmarkChanged.next(symbolProfileId);
+  }
+
+  /**
+   * Surfaces the market data module, which is where benchmarks are managed. The
+   * option used to carry a `routerLink` to the admin market data screen, and
+   * that screen no longer owns a URL of its own, so the intent is published on
+   * the neutral bus and the canvas decides how to reveal the module. Nothing
+   * about authorization changes: the template still gates the option behind
+   * `hasPermissionToAccessAdminControl` and the API keeps enforcing the
+   * permission independently.
+   */
+  public onOpenAdminMarketData() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ADMIN_MARKET_DATA);
   }
 
   public ngOnDestroy() {

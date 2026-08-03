@@ -1,0 +1,96 @@
+<!--
+  COMPONENT CONTRACT - this template requires `searchFormControl`, `modules` and
+  `onAddModule()`; it imports GfModuleCatalogItemComponent, MatFormFieldModule,
+  MatInputModule and ReactiveFormsModule. No Ionicon appears here, so IonIcon,
+  addIcons() and CUSTOM_ELEMENTS_SCHEMA are deliberately not required.
+
+  `modules` must keep its previous contents while a new search term debounces.
+  The empty notice at the bottom of this file is gated on the list itself rather
+  than on a loading flag, so emptying the list at the start of the debounce -
+  instead of when the narrowed result arrives - would make that notice flash
+  mid-keystroke.
+
+  The list is read through `?.` so a collection that is still being populated
+  cannot fault the first render, which also means the notice cannot appear before
+  the list exists: a search term is only ever non-empty after the user has typed
+  into an initialised catalog.
+
+  `modules` arrives already narrowed: the registry is its only source and the
+  visibility permission has already been applied, so no module is named, added
+  or excluded here. Each row is handed the whole definition and reads only the
+  display name from it, which the shared metadata has already translated. No
+  cell dimension is rendered anywhere in this file, because a module's size and
+  position belong to the grid rather than to the catalog.
+
+  Adding a module is an outward intent and nothing else. There is no drawer, no
+  open state, no close affordance and no link: the canvas owns the panel this
+  content is mounted into, and each row owns the native drag the grid engine
+  listens for.
+
+  The three regions below are direct children of a flex column declared on the
+  host, which is why only the results region grows and scrolls while the search
+  field and the hint stay put.
+-->
+<div class="p-3 search-container">
+  <mat-form-field appearance="outline" class="w-100 without-hint">
+    <!--
+      The label is the field's accessible name, so it carries the wording on its
+      own; a placeholder would only repeat it and be announced twice.
+    -->
+    <mat-label i18n>Search modules</mat-label>
+    <input
+      #search
+      autocomplete="off"
+      autocorrect="off"
+      matInput
+      name="search"
+      type="text"
+      [formControl]="searchFormControl"
+    />
+  </mat-form-field>
+</div>
+
+<!--
+  Above the list rather than below it: the catalog opens by itself for a user who
+  has no saved layout, and that is exactly the user who has not yet learned that
+  a row can be dragged as well as clicked. Stated as ordinary visible text so it
+  reaches everyone, not as a label only assistive technology would reach.
+-->
+<div class="catalog-hint px-3 py-2">
+  <small i18n>Click a module to add it, or drag it onto the canvas.</small>
+</div>
+
+@if (modules?.length > 0) {
+  <div class="flex-grow-1 overflow-auto px-3 py-2 result-container" role="list">
+    <!--
+      Tracked by module type because that discriminator is unique across the
+      registry and stable across a filter change, which keeps each row's element
+      - and therefore the roving focus the parent moves between rows - intact
+      while the list narrows. Every interaction belongs to the row: adding is
+      forwarded through the component so the catalog re-emits it as its own
+      output, and the drag, the click and the list-item semantics are the row's
+      to declare, so repeating any of them here would add the module twice and
+      nest one list item inside another.
+    -->
+    @for (module of modules; track module.moduleType) {
+      <gf-module-catalog-item
+        [definition]="module"
+        (moduleAdded)="onAddModule($event)"
+      />
+    }
+  </div>
+} @else if (searchFormControl.value) {
+  <!--
+    Reached only once a search term has narrowed the list to nothing, so a
+    catalog that is merely still empty never claims a failed search. Dropping the
+    results region rather than leaving it standing empty also keeps `role="list"`
+    from ever existing without a row to own it. Announced politely because the
+    list it replaces changes without moving focus. The wording matches the
+    assistant's notice character for character so its existing translations carry
+    over untouched; adding a description here would change the message identity
+    and forfeit them.
+  -->
+  <div class="flex-grow-1 no-results px-3 py-2" i18n role="status">
+    No results found...
+  </div>
+}

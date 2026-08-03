@@ -33,7 +33,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatMenuTrigger } from '@angular/material/menu';
 import { MatSelectModule } from '@angular/material/select';
-import { RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { AssetClass, DataSource } from '@prisma/client';
 import { differenceInYears, eachYearOfInterval, format } from 'date-fns';
@@ -80,8 +79,7 @@ import {
     MatFormFieldModule,
     MatSelectModule,
     NgxSkeletonLoaderModule,
-    ReactiveFormsModule,
-    RouterModule
+    ReactiveFormsModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-assistant',
@@ -137,6 +135,18 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
   protected readonly closed = output<void>();
   protected readonly dateRangeChanged = output<DateRange>();
   protected readonly filtersChanged = output<Filter[]>();
+
+  /**
+   * Re-emits the dashboard module a quick link or account result stands for.
+   * Search results no longer carry a route, and the assistant lives in the
+   * shared library and therefore cannot reach the application that hosts those
+   * modules, so this output is the only channel through which the selection
+   * intent leaves this library; the consuming application decides how to
+   * surface the module. It is emitted before
+   * {@link GfAssistantComponent.closed}, so a consumer that closes the
+   * assistant on selection never observes the close ahead of the selection.
+   */
+  protected readonly moduleSelected = output<DashboardModuleType>();
 
   private readonly PRESELECTION_DELAY = 100;
 
@@ -557,6 +567,19 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
     );
 
     this.onCloseAssistant();
+  }
+
+  /**
+   * Forwards a module intent raised by a result row to this component's own
+   * consumer and does nothing else. Deliberately free of any close or reset
+   * behaviour: the row emits its module intent ahead of its click, so closing
+   * and resetting stay with the existing `clicked` handler and
+   * `onCloseAssistant` remains solely responsible for tearing the assistant
+   * down. A consumer therefore never observes the close ahead of the selection
+   * it belongs to.
+   */
+  public onSelectModule(moduleType: DashboardModuleType) {
+    this.moduleSelected.emit(moduleType);
   }
 
   public setIsOpen(aIsOpen: boolean) {

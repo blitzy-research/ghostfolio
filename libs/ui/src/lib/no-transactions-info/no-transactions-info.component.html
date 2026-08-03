@@ -2,12 +2,22 @@
   <div class="d-flex justify-content-center mb-1">
     <gf-logo size="large" [showLabel]="false" />
   </div>
-  <a
+  <!--
+    A button, not an anchor: this control raises an in-application intent
+    through createActivityClicked rather than navigating anywhere. The removed
+    router binding was the anchor's only source of a link target, and Angular
+    Material aliases MatAnchor straight to MatButton without contributing one,
+    which would have left the control unreachable by keyboard. Material styles
+    both element forms through the same .mat-mdc-button class, so the native
+    button restores focus and Enter/Space activation at no visual cost.
+  -->
+  <button
     class="align-items-center justify-content-center"
     color="primary"
     mat-button
+    type="button"
     (click)="createActivityClicked.emit()"
   >
     <span i18n>Time to add your first activity.</span>
-  </a>
+  </button>
 </div>

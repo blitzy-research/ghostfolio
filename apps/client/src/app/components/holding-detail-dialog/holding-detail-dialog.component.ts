@@ -1,9 +1,11 @@
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import {
   NUMERICAL_PRECISION_THRESHOLD_3_FIGURES,
   NUMERICAL_PRECISION_THRESHOLD_5_FIGURES,
   NUMERICAL_PRECISION_THRESHOLD_6_FIGURES
 } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { CreateOrderDto } from '@ghostfolio/common/dtos';
 import { DATE_FORMAT, downloadAsFile } from '@ghostfolio/common/helper';
 import {
@@ -15,7 +17,6 @@ import {
   User
 } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { GfAccountsTableComponent } from '@ghostfolio/ui/accounts-table';
 import { GfActivitiesTableComponent } from '@ghostfolio/ui/activities-table';
 import { GfDataProviderCreditsComponent } from '@ghostfolio/ui/data-provider-credits';
@@ -52,7 +53,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { SortDirection } from '@angular/material/sort';
 import { MatTableDataSource } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
-import { Router, RouterModule } from '@angular/router';
+import { Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { Account, MarketData, Tag } from '@prisma/client';
 import { isUUID } from 'class-validator';
@@ -94,8 +95,7 @@ import { HoldingDetailDialogParams } from './interfaces/interfaces';
     MatFormFieldModule,
     MatTabsModule,
     NgxSkeletonLoaderModule,
-    ReactiveFormsModule,
-    RouterModule
+    ReactiveFormsModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-holding-detail-dialog',
@@ -145,8 +145,6 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   public quantity: number;
   public quantityPrecision = 2;
   public reportDataGlitchMail: string;
-  public routerLinkAdminControlMarketData =
-    internalRoutes.adminControl.subRoutes.marketData.routerLink;
   public sectors: {
     [name: string]: { name: string; value: number };
   };
@@ -161,6 +159,7 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
     private dataService: DataService,
+    private dashboardIntentService: DashboardIntentService,
     private destroyRef: DestroyRef,
     public dialogRef: MatDialogRef<GfHoldingDetailDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: HoldingDetailDialogParams,
@@ -546,12 +545,18 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   }
 
   public onCloneActivity(aActivity: Activity) {
-    this.router.navigate(
-      internalRoutes.portfolio.subRoutes.activities.routerLink,
-      {
-        queryParams: { activityId: aActivity.id, createDialog: true }
-      }
-    );
+    // The activities screen no longer owns a URL of its own, so the canvas is
+    // asked to surface the activities module instead of being navigated to. The
+    // dialog payload is unchanged and is merged onto the current route, which
+    // keeps this entry point route-agnostic.
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
+
+    this.router.navigate([], {
+      queryParams: { activityId: aActivity.id, createDialog: true },
+      queryParamsHandling: 'merge'
+    });
 
     this.dialogRef.close();
   }
@@ -583,9 +588,13 @@ export class GfHoldingDetailDialogComponent implements OnInit {
       .postActivity(activity)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        this.router.navigate(
-          internalRoutes.portfolio.subRoutes.activities.routerLink
-        );
+        // This was the one purely cross-screen destination in the component:
+        // the former navigation carried no dialog payload, so revealing the
+        // activities module is the entire intent and no query parameter is
+        // produced here.
+        this.dashboardIntentService
+          .getRevealModuleSubject()
+          .next(DashboardModuleType.ACTIVITIES);
 
         this.dialogRef.close();
       });
@@ -617,13 +626,43 @@ export class GfHoldingDetailDialogComponent implements OnInit {
     }
   }
 
+  /**
+   * Opens the asset profile dialog for this holding. The market data screen has
+   * become a module, so the intent surfaces that module while the query
+   * parameters, unchanged from the ones the template used to carry itself, open
+   * the dialog on the current route. Authorization is untouched: the template
+   * still gates the action behind `hasPermissionToAccessAdminControl` and the
+   * API keeps enforcing it independently.
+   */
+  public onOpenAssetProfileDialog() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ADMIN_MARKET_DATA);
+
+    this.router.navigate([], {
+      queryParams: {
+        assetProfileDialog: true,
+        dataSource: this.SymbolProfile?.dataSource,
+        symbol: this.SymbolProfile?.symbol
+      },
+      queryParamsHandling: 'merge'
+    });
+
+    this.onClose();
+  }
+
   public onUpdateActivity(aActivity: Activity) {
-    this.router.navigate(
-      internalRoutes.portfolio.subRoutes.activities.routerLink,
-      {
-        queryParams: { activityId: aActivity.id, editDialog: true }
-      }
-    );
+    // Same reveal-then-merge sequence as cloning: the intent surfaces the
+    // activities module and the unchanged query parameters open the edit dialog
+    // there, without a screen change.
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
+
+    this.router.navigate([], {
+      queryParams: { activityId: aActivity.id, editDialog: true },
+      queryParamsHandling: 'merge'
+    });
 
     this.dialogRef.close();
   }
