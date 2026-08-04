@@ -3,7 +3,8 @@
     color="primary"
     i18n
     mat-flat-button
-    [queryParams]="{ createTagDialog: true }"
+    queryParamsHandling="merge"
+    [queryParams]="createDialogQueryParams"
     [routerLink]="[]"
   >
     Add Tag

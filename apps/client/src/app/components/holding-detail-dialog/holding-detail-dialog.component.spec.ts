@@ -311,9 +311,14 @@ describe('GfHoldingDetailDialogComponent', () => {
           extras: {
             queryParams: {
               assetProfileDialog: true,
+              // Dropped because it is the third flag reading the identifier pair
+              // below. A stale one would make the benchmark table open its own
+              // dialog for this asset as a side effect of the hand-off.
+              benchmarkDetailDialog: null,
               // Kept rather than cleared, unlike the activities hand-off above:
               // these two identify the asset profile being asked for, not this
-              // dialog. Only the flag that would reopen this dialog is dropped.
+              // dialog. Only the flags that would reopen a dialog for the same
+              // pair are dropped.
               dataSource: holding.dataSource,
               dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
               holdingDetailDialog: null,

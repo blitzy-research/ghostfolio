@@ -75,7 +75,10 @@ import {
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { switchMap } from 'rxjs/operators';
 
-import { HoldingDetailDialogParams } from './interfaces/interfaces';
+import {
+  HoldingDetailDialogParams,
+  HoldingDetailDialogResult
+} from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -165,7 +168,16 @@ export class GfHoldingDetailDialogComponent implements OnInit {
     private dataService: DataService,
     private dashboardIntentService: DashboardIntentService,
     private destroyRef: DestroyRef,
-    public dialogRef: MatDialogRef<GfHoldingDetailDialogComponent>,
+    // Typed with its close result as well as its own component type. The asset
+    // profile hand-off below resolves with `{ hasHandedOverAssetProfile: true }`
+    // and every other close resolves with nothing, and the shell relies on that
+    // difference to decide whether clearing this dialog's parameters would take the
+    // hand-off's with them - so the union belongs on the reference rather than in an
+    // assertion made by the shell.
+    public dialogRef: MatDialogRef<
+      GfHoldingDetailDialogComponent,
+      HoldingDetailDialogResult | undefined
+    >,
     @Inject(MAT_DIALOG_DATA) public data: HoldingDetailDialogParams,
     private formBuilder: FormBuilder,
     private router: Router,
@@ -648,10 +660,13 @@ export class GfHoldingDetailDialogComponent implements OnInit {
 
     // `dataSource` and `symbol` are shared with this dialog's own parameters, so
     // only the flag that identifies it is dropped - the pair is being handed on
-    // rather than cleared.
+    // rather than cleared. `benchmarkDetailDialog` is dropped with it: it is the
+    // third flag reading that same pair, so a stale one would make the benchmark
+    // table open its own dialog for this asset as a side effect of the hand-off.
     void this.router.navigate([], {
       queryParams: {
         assetProfileDialog: true,
+        benchmarkDetailDialog: null,
         dataSource: this.SymbolProfile?.dataSource,
         dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
         holdingDetailDialog: null,
@@ -660,7 +675,12 @@ export class GfHoldingDetailDialogComponent implements OnInit {
       queryParamsHandling: 'merge'
     });
 
-    this.onClose();
+    // Reported as a hand-off rather than closed silently. The shell's own cleanup
+    // clears `dataSource` and `symbol` along with `holdingDetailDialog`, and those
+    // two are exactly what the navigation above is handing on - so without this the
+    // administration module would be asked to open an asset profile dialog for no
+    // asset at all.
+    this.dialogRef.close({ hasHandedOverAssetProfile: true });
   }
 
   public onUpdateActivity(aActivity: Activity) {

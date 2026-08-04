@@ -30,6 +30,8 @@ import { DeviceDetectorService } from 'ngx-device-detector';
 import { EMPTY } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
+import { GfDashboardLayoutService } from '../../services/dashboard-layout.service';
+
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfLogoComponent, MatButtonModule, MatCardModule],
@@ -53,6 +55,7 @@ export class GfSignInPromptComponent implements OnInit {
 
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
+    private dashboardLayoutService: GfDashboardLayoutService,
     private dataService: DataService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
@@ -147,6 +150,34 @@ export class GfSignInPromptComponent implements OnInit {
       });
   }
 
+  /**
+   * Adopts a freshly created account's token, and handles the read of the viewer
+   * it belongs to failing.
+   *
+   * The failure is not hypothetical and not benign: the token is persisted before
+   * the viewer is read, so a request that never answers - an offline tab, a proxy
+   * returning status 0 - leaves a stored credential with no viewer resolved
+   * against it. The viewer store keeps whatever it last held on a failed forced
+   * fetch, which while this prompt is on screen is nothing at all, so the canvas
+   * is never told to leave the signed-out branch. The viewer sits looking at a
+   * sign-in prompt for an account that exists, was just created, and whose token
+   * is already in storage - with no control on screen that can retry, because
+   * every control here creates or adopts a *new* credential rather than re-reading
+   * the current one.
+   *
+   * Reloading is the remedy, for the same reason the shell reloads after adopting
+   * a newly created account's token: it discards every in-memory cache and
+   * restarts viewer resolution from the stored token, which is precisely the step
+   * that failed. The message is written to the console rather than raised as an
+   * alert because there is nothing for the viewer to decide - the recovery is
+   * automatic - and it deliberately carries no response body, only the error
+   * object the HTTP layer produced.
+   *
+   * The transition is announced first, in the same order the shell uses, so that
+   * the interval between storing the token and resolving its viewer cannot
+   * authorise a layout write. Writes reopen only when the canvas hydrates and
+   * names the viewer that arrived.
+   */
   public openShowAccessTokenDialog() {
     // Resolves with the freshly issued token, or with nothing when the dialog is
     // cancelled - its template closes on `authToken` and on `undefined`
@@ -169,41 +200,77 @@ export class GfSignInPromptComponent implements OnInit {
       .afterClosed()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((authToken) => {
-        if (authToken) {
-          this.tokenStorageService.saveToken(authToken, true);
-
-          this.userService
-            .get(true)
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe();
+        if (!authToken) {
+          return;
         }
+
+        this.dashboardLayoutService.beginIdentityTransition();
+
+        this.tokenStorageService.saveToken(authToken, true);
+
+        this.userService
+          .get(true)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            error: (error) => {
+              console.error(
+                'Failed to read the newly created user account',
+                error
+              );
+
+              window.location.reload();
+            }
+          });
       });
   }
 
   /**
    * Persists a token using the stay-signed-in preference. A language change
    * requires document navigation because locales use distinct base paths.
+   *
+   * The read is forced. An unforced one is served from the viewer store whenever
+   * it holds anything at all, and the whole point of this call is to resolve the
+   * viewer belonging to the token that was stored one line above - a cached answer
+   * would describe whoever was current before it.
+   *
+   * A failed read is handled for the same reason as in
+   * {@link openShowAccessTokenDialog}, and it matters more here: this method is
+   * the sole continuation of the token sign-in path, so without an error branch a
+   * request that never answers leaves the token persisted, the viewer unresolved,
+   * the canvas on its signed-out branch and no navigation performed - a prompt the
+   * viewer cannot get past, for a credential that is already accepted. Reloading
+   * restarts resolution from that stored token, which is exactly the step that
+   * failed.
    */
   public setToken(aToken: string) {
+    this.dashboardLayoutService.beginIdentityTransition();
+
     this.tokenStorageService.saveToken(
       aToken,
       this.settingsStorageService.getSetting(KEY_STAY_SIGNED_IN) === 'true'
     );
 
     this.userService
-      .get()
+      .get(true)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((user) => {
-        const userLanguage = user?.settings?.language;
+      .subscribe({
+        error: (error) => {
+          console.error('Failed to read the signed-in user account', error);
 
-        if (userLanguage && document.documentElement.lang !== userLanguage) {
-          window.location.href = `../${userLanguage}`;
-        } else {
-          // Voided deliberately rather than awaited. The request is already
-          // satisfied on the collapsed route table, so it resolves immediately
-          // and there is nothing to sequence after it; the re-read of the viewer
-          // above is what the canvas rehydrates from.
-          void this.router.navigate(['/']);
+          window.location.reload();
+        },
+        next: (user) => {
+          const userLanguage = user?.settings?.language;
+
+          if (userLanguage && document.documentElement.lang !== userLanguage) {
+            window.location.href = `../${userLanguage}`;
+          } else {
+            // Voided deliberately rather than awaited. The request is already
+            // satisfied on the collapsed route table, so it resolves immediately
+            // and there is nothing to sequence after it; the re-read of the viewer
+            // above is what the canvas rehydrates from.
+            void this.router.navigate(['/']);
+          }
         }
       });
   }

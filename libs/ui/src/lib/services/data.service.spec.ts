@@ -8,7 +8,7 @@ import {
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
-import { DataService } from './data.service';
+import { DataService, encodeApiPath } from './data.service';
 
 /**
  * The HTTP contract of the dashboard layout endpoints, asserted at the transport
@@ -238,6 +238,138 @@ describe('DataService dashboard layout endpoints', () => {
 
         request.flush({ modules: [], version: 1 });
       }
+    });
+  });
+});
+
+/**
+ * The path encoder every request URL in this workspace is built with, tested as the
+ * security boundary it is rather than as a formatting helper.
+ *
+ * The claim under test is narrow and load-bearing: an interpolated identifier may
+ * contribute exactly one path segment, and may never re-address the request. Two
+ * facts make that non-obvious and are therefore pinned here rather than left to the
+ * reader. The dot is an *unreserved* character, so `encodeURIComponent` returns `.`
+ * and `..` verbatim - encoding does not touch them at all. And percent-encoding is
+ * no remedy, because a URL parser decodes a segment before it decides whether the
+ * segment is relative, so `%2e%2e` is resolved away exactly as `..` is; a fix that
+ * substituted `%2E` for the dot would read as a fix and change nothing.
+ *
+ * The rejection is asserted against the WHATWG dot-segment set rather than against
+ * a single example, and the pass-through cases are asserted alongside it, because a
+ * check that is too wide is its own defect: asset symbols legitimately contain dots
+ * and refusing `BRK.B` would break a real portfolio.
+ */
+describe('encodeApiPath', () => {
+  describe('ordinary identifiers', () => {
+    it('contributes each value as exactly one segment', () => {
+      expect(
+        encodeApiPath`/api/v1/symbol/${'YAHOO'}/${'AAPL'}/${'2024-01-01'}`
+      ).toBe('/api/v1/symbol/YAHOO/AAPL/2024-01-01');
+    });
+
+    it('encodes a reserved character instead of letting it delimit', () => {
+      // A manually maintained asset may legitimately carry a slash or a hash in
+      // its symbol. Encoded, it stays one segment; raw, it would silently become
+      // two - or truncate the path at a fragment.
+      expect(encodeApiPath`/api/v1/symbol/${'MANUAL'}/${'A/B#C'}`).toBe(
+        '/api/v1/symbol/MANUAL/A%2FB%23C'
+      );
+    });
+
+    it('accepts a symbol that merely contains a dot', () => {
+      // The check must be exactly as wide as the parser's own and no wider. These
+      // are real symbols; a broader test would break a real portfolio.
+      for (const symbol of ['BRK.B', 'VWRL.AS', '.hidden', 'a..b', '...']) {
+        expect(() => {
+          return encodeApiPath`/api/v1/symbol/${'YAHOO'}/${symbol}`;
+        }).not.toThrow();
+      }
+    });
+
+    it('accepts a numeric value', () => {
+      expect(encodeApiPath`/api/v1/admin/queue/job/${42}`).toBe(
+        '/api/v1/admin/queue/job/42'
+      );
+    });
+  });
+
+  describe('a value a URL parser would resolve away', () => {
+    it.each(['.', '..'])('refuses %p outright', (value) => {
+      expect(() => {
+        return encodeApiPath`/api/v1/symbol/${'YAHOO'}/${value}/${'2024-01-01'}`;
+      }).toThrow(/relative path segment/);
+    });
+
+    it('refuses it in any position, not only the last', () => {
+      expect(() => {
+        return encodeApiPath`/api/v1/symbol/${'..'}/${'AAPL'}`;
+      }).toThrow(/relative path segment/);
+    });
+
+    it('names the offending value, so the failure is diagnosable', () => {
+      expect(() => {
+        return encodeApiPath`/api/v1/account/${'..'}`;
+      }).toThrow(/'\.\.'/);
+    });
+
+    // The other half of the boundary, and the half that is easy to get wrong in
+    // the opposite direction. A percent-spelled dot segment arriving as raw input
+    // is neutralised by the encoder rather than refused by it, because
+    // `encodeURIComponent` turns the literal `%` into `%25` - so the segment that
+    // reaches the parser is `%252e`, which is not a dot segment at all. Refusing
+    // these as well would be a check wider than the parser's own, and the
+    // assertion below is what pins the distinction rather than leaving it to be
+    // rediscovered.
+    it.each(['%2e', '%2E', '%2e%2e', '%2E%2E', '.%2e', '%2e.'])(
+      'accepts %p, because encoding already neutralises it',
+      (value) => {
+        expect(() => {
+          return encodeApiPath`/api/v1/symbol/${'YAHOO'}/${value}/${'2024-01-01'}`;
+        }).not.toThrow();
+      }
+    );
+
+    it.each(['%2e', '%2e%2e', '.%2e'])(
+      'keeps %p as one segment once a parser has seen it',
+      (value) => {
+        // Proven through a real parser rather than asserted in prose: the claim
+        // above is only sound if the encoded form genuinely survives
+        // normalisation.
+        const path = encodeApiPath`/api/v1/symbol/${'YAHOO'}/${value}/${'2024-01-01'}`;
+
+        expect(new URL(`https://example.invalid${path}`).pathname).toBe(path);
+      }
+    );
+  });
+
+  describe('what the refusal prevents', () => {
+    it.each([
+      ['..', '/api/v1/symbol/2024-01-01'],
+      ['%2e%2e', '/api/v1/symbol/2024-01-01'],
+      ['.%2E', '/api/v1/symbol/2024-01-01']
+    ])(
+      'a path built with %p would have been resolved to %p',
+      (value, resolvedPathname) => {
+        // Asserted through a real URL parser rather than described in prose. This
+        // is the outcome the throw above replaces: the identifier is gone, one
+        // segment of the intended path is gone with it, and the request that
+        // leaves the browser names an endpoint the caller never asked for - with
+        // the signed-in viewer's credentials attached.
+        expect(
+          new URL(
+            `https://example.invalid/api/v1/symbol/YAHOO/${value}/2024-01-01`
+          ).pathname
+        ).toBe(resolvedPathname);
+      }
+    );
+
+    it('leaves a legitimate dot-containing symbol intact through a parser', () => {
+      expect(
+        new URL(
+          `https://example.invalid${encodeApiPath`/api/v1/symbol/${'YAHOO'}/${'BRK.B'}`}`
+        ).pathname
+      ).toBe('/api/v1/symbol/YAHOO/BRK.B');
     });
   });
 });

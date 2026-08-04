@@ -1,8 +1,10 @@
+import type { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import {
   DEFAULT_PAGE_SIZE,
   ghostfolioScraperApiSymbolPrefix
 } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { getDateFormatString } from '@ghostfolio/common/helper';
 import {
   AssetProfileIdentifier,
@@ -165,6 +167,47 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
   public totalItems = 0;
   public user: User;
 
+  /**
+   * The query parameters that ask this module for a blank asset profile form.
+   *
+   * Bound by the floating action button in this component's template.
+   * `assetProfileDialog` and the identifier pair it reads are nulled because
+   * `assetProfileDialog` is tested *ahead* of `createAssetProfileDialog`, so a stale
+   * request would re-open an existing profile instead of the blank form.
+   */
+  public readonly createDialogQueryParams = {
+    assetProfileDialog: null as boolean,
+    createAssetProfileDialog: true,
+    dataSource: null as string,
+    dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
+    symbol: null as string
+  };
+
+  /**
+   * The dialog request this module has already served, or `null` for none.
+   *
+   * Every producer on the canvas merges its query parameters rather than replacing
+   * them - it has to, or it would drop a sibling module's and the shared-portfolio
+   * identifier - so `route.queryParams` emits again whenever any *other* module
+   * writes to the URL. Without this each of those emissions would open a second copy
+   * of a dialog that is already up. Keyed on the asset rather than held as a flag,
+   * so a request for a different asset profile is still honoured. Reset by the
+   * parameters ceasing to ask for anything rather than by a dialog closing - see
+   * {@link serveDialogRequest}.
+   */
+  private openedDialogAddress: string = null;
+
+  /**
+   * The query parameters as they stand, held rather than consumed on arrival.
+   *
+   * The dialogs this module opens are sized from `deviceType`, which is resolved in
+   * `ngOnInit` - after the constructor. That ordering only matters on one canvas,
+   * where a module is materialised lazily *in response to* a request that is already
+   * on the URL, so the parameters arrive before the module can honour them properly:
+   * the dialog was laid out for the wrong device every time it was reached this way.
+   */
+  private queryParams: GfAppQueryParams;
+
   public constructor(
     public adminMarketDataService: AdminMarketDataService,
     private adminService: AdminService,
@@ -208,19 +251,10 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
 
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => {
-        if (
-          params['assetProfileDialog'] &&
-          params['dataSource'] &&
-          params['symbol']
-        ) {
-          this.openAssetProfileDialog({
-            dataSource: params['dataSource'],
-            symbol: params['symbol']
-          });
-        } else if (params['createAssetProfileDialog']) {
-          this.openCreateAssetProfileDialog();
-        }
+      .subscribe((queryParams: GfAppQueryParams) => {
+        this.queryParams = queryParams;
+
+        this.applyQueryParams();
       });
 
     this.userService.stateChanged
@@ -275,6 +309,10 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
 
     this.selection = new SelectionModel(true);
+
+    // Re-evaluated now that the device is known, so a request that was already on
+    // the URL when this module was created is honoured at the right size.
+    this.applyQueryParams();
   }
 
   public onChangePage(page: PageEvent) {
@@ -343,16 +381,127 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
       .subscribe();
   }
 
-  public onOpenAssetProfileDialog({
+  /**
+   * The query parameters that ask this module to open an asset profile.
+   *
+   * Built here rather than inline in the template so that the row menu's edit link
+   * and {@link onOpenAssetProfileDialog} cannot drift apart - a duplicated payload
+   * is a match no compiler checks.
+   *
+   * Merged rather than replacing, because this URL is shared with every other placed
+   * module and restating only these keys would drop the rest - a sibling module's
+   * open dialog and the shared-portfolio access identifier among them. Merging in
+   * turn obliges the request to null what it takes over: `dataSource` and `symbol`
+   * are shared identifiers read by three different flags, the other two belonging to
+   * the application shell and to the benchmark table, so leaving either up would
+   * re-point *their* dialog at this asset. `dialogModule` names this module so the
+   * flag is unambiguous even though this module is currently its only consumer.
+   */
+  public getAssetProfileQueryParams({
     dataSource,
     symbol
   }: AssetProfileIdentifier) {
-    this.router.navigate([], {
+    return {
+      dataSource,
+      symbol,
+      assetProfileDialog: true,
+      benchmarkDetailDialog: null,
+      createAssetProfileDialog: null,
+      dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
+      holdingDetailDialog: null
+    };
+  }
+
+  public onOpenAssetProfileDialog(
+    aAssetProfileIdentifier: AssetProfileIdentifier
+  ) {
+    void this.router.navigate([], {
+      queryParams: this.getAssetProfileQueryParams(aAssetProfileIdentifier),
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
+    });
+  }
+
+  /**
+   * Opens a dialog unless the same request has already been served.
+   *
+   * Keyed on the request the URL is making rather than on the dialog's own
+   * lifecycle. Resetting the record when the dialog closed instead was not
+   * equivalent: the close handler removes the parameters through a navigation, and
+   * until that navigation is applied the parameters still ask for the dialog that
+   * has just been dismissed.
+   *
+   * The address carries the asset profile's identity, so being asked for a
+   * *different* profile while one is open is honoured as the genuine second request
+   * it is.
+   */
+  private serveDialogRequest(aAddress: string, aOpen?: () => void) {
+    if (this.openedDialogAddress === aAddress) {
+      return;
+    }
+
+    this.openedDialogAddress = aAddress;
+
+    aOpen?.();
+  }
+
+  /**
+   * Opens whatever the current query parameters ask this module for, once it is in a
+   * position to open it properly.
+   *
+   * Reached from two places - a parameter change and the device becoming known -
+   * because either can be the last to arrive, which makes idempotence a requirement
+   * rather than a nicety.
+   */
+  private applyQueryParams() {
+    if (!this.deviceType) {
+      return;
+    }
+
+    const { assetProfileDialog, createAssetProfileDialog, dataSource, symbol } =
+      this.queryParams ?? {};
+
+    if (assetProfileDialog && dataSource && symbol) {
+      this.serveDialogRequest(
+        `assetProfileDialog:${dataSource}:${symbol}`,
+        () => {
+          this.openAssetProfileDialog({ dataSource, symbol });
+        }
+      );
+    } else if (createAssetProfileDialog) {
+      this.serveDialogRequest('createAssetProfileDialog', () => {
+        this.openCreateAssetProfileDialog();
+      });
+    } else {
+      // Nothing is being asked of this module. Forgetting what was last served is
+      // what lets the same profile be asked for a second time: the close handler
+      // removes the parameters it travelled on, this branch observes their absence,
+      // and the next identical request is therefore new again.
+      this.serveDialogRequest(null);
+    }
+  }
+
+  /**
+   * Removes the query parameters this module's dialogs travel on, and only those.
+   *
+   * The empty command array keeps the request on the current URL - the workspace's
+   * route-agnostic convention - and merging is what makes the clear safe on a single
+   * canvas. The `navigate(['.'])` this replaced named a route segment instead, which
+   * dropped every query parameter on the canvas: closing this module's dialog also
+   * closed a sibling module's and discarded the shared-portfolio access identifier
+   * along with it.
+   */
+  private clearDialogQueryParams() {
+    void this.router.navigate([], {
       queryParams: {
-        dataSource,
-        symbol,
-        assetProfileDialog: true
-      }
+        assetProfileDialog: null,
+        createAssetProfileDialog: null,
+        dataSource: null,
+        dialogModule: null,
+        symbol: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -451,7 +600,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
               if (newAssetProfileIdentifier) {
                 this.onOpenAssetProfileDialog(newAssetProfileIdentifier);
               } else {
-                this.router.navigate(['.'], { relativeTo: this.route });
+                this.clearDialogQueryParams();
               }
             }
           );
@@ -482,7 +631,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe((result) => {
             if (!result) {
-              this.router.navigate(['.'], { relativeTo: this.route });
+              this.clearDialogQueryParams();
 
               return;
             }

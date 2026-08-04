@@ -1079,6 +1079,140 @@ describe('GfDashboardCanvasComponent', () => {
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
     });
 
+    it('should keep a module the viewer may not see in the arrangement it persists', async () => {
+      await createCanvas({
+        layout: of(gatedLayout),
+        viewer: { id: 'viewer-1', permissions: [] }
+      });
+      paint();
+
+      // Only one of the four is drawable for this viewer; the other three are
+      // known modules they are simply not entitled to. Reporting the canvas as the
+      // whole arrangement would delete all three from the stored document the very
+      // first time the viewer dragged the one they can see - permanently, and as a
+      // side effect of moving something unrelated.
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.MARKETS]);
+
+      const [itemComponent] = gridsterItemComponents();
+
+      component.modules[0].x = 2;
+
+      component.options.itemChangeCallback(component.modules[0], itemComponent);
+
+      expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(1);
+
+      const [, reported] = dashboardLayoutServiceMock.scheduleSave.mock
+        .calls[0] as [string, { moduleType: string }[]];
+
+      expect(reported.map(({ moduleType }) => moduleType).sort()).toEqual(
+        [
+          DashboardModuleType.ADMIN_OVERVIEW,
+          DashboardModuleType.AI_CHAT,
+          DashboardModuleType.MARKETS,
+          DashboardModuleType.MARKETS_PREMIUM
+        ].sort()
+      );
+
+      // The visible module carries the geometry the grid just committed; the three
+      // hidden ones keep the geometry they were saved with, which is the only
+      // geometry they have.
+      expect(reported).toEqual(
+        expect.arrayContaining([
+          {
+            cols: 4,
+            moduleType: DashboardModuleType.MARKETS,
+            rows: 3,
+            x: 2,
+            y: 0
+          },
+          {
+            cols: 8,
+            moduleType: DashboardModuleType.ADMIN_OVERVIEW,
+            rows: 6,
+            x: 0,
+            y: 0
+          }
+        ])
+      );
+    });
+
+    it('should forget a module the viewer removed while keeping one they may not see', async () => {
+      await createCanvas({
+        layout: of(gatedLayout),
+        viewer: {
+          id: 'viewer-1',
+          permissions: [permissions.accessAdminControl]
+        }
+      });
+      paint();
+
+      expect(renderedModuleTypes()).toEqual([
+        DashboardModuleType.ADMIN_OVERVIEW,
+        DashboardModuleType.MARKETS
+      ]);
+
+      const [itemComponent] = gridsterItemComponents();
+      const removedItem = component.modules[0];
+
+      moduleHostComponents()[0].remove.emit();
+      component.options.itemRemovedCallback(removedItem, itemComponent);
+
+      const [, reported] = dashboardLayoutServiceMock.scheduleSave.mock
+        .calls[0] as [string, { moduleType: string }[]];
+
+      // Both the removed module and the two gated ones are absent from the canvas,
+      // and permission is the only thing that tells them apart. Removing a module
+      // the viewer *could* see is an instruction to forget it; a module they cannot
+      // see was never theirs to remove.
+      expect(reported.map(({ moduleType }) => moduleType).sort()).toEqual(
+        [
+          DashboardModuleType.AI_CHAT,
+          DashboardModuleType.MARKETS,
+          DashboardModuleType.MARKETS_PREMIUM
+        ].sort()
+      );
+      expect(reported).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            moduleType: DashboardModuleType.ADMIN_OVERVIEW
+          })
+        ])
+      );
+    });
+
+    it('should persist the arrangement as it stands now rather than as it was fetched', async () => {
+      await createCanvas({
+        layout: of(gatedLayout),
+        viewer: { id: 'viewer-1', permissions: [] }
+      });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      component.modules[0].x = 1;
+
+      component.options.itemChangeCallback(component.modules[0], itemComponent);
+
+      component.modules[0].x = 5;
+
+      component.options.itemChangeCallback(component.modules[0], itemComponent);
+
+      expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(2);
+
+      const [, secondReported] = dashboardLayoutServiceMock.scheduleSave.mock
+        .calls[1] as [string, { moduleType: DashboardModuleType; x: number }[]];
+
+      // The second report has to describe the second move. Holding the arrangement
+      // as it was *fetched* and merging into that would have gone stale from the
+      // first edit onwards, so every later snapshot would have re-sent the loaded
+      // position.
+      expect(
+        secondReported.find(
+          ({ moduleType }) => moduleType === DashboardModuleType.MARKETS
+        ).x
+      ).toBe(5);
+    });
+
     it('should neither re-read nor write when a permission is granted', async () => {
       await createCanvas({
         layout: of(gatedLayout),
@@ -2623,7 +2757,7 @@ describe('GfDashboardCanvasComponent', () => {
       expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(1);
     });
 
-    it('should hand the layout service the one array it owns', async () => {
+    it('should keep owning one array while reporting the arrangement as its own projection', async () => {
       await createCanvas({ layout: of(singleModuleLayout) });
       paint();
 
@@ -2637,6 +2771,9 @@ describe('GfDashboardCanvasComponent', () => {
       moduleHostComponents()[0].remove.emit();
       component.options.itemRemovedCallback(placedItem, itemComponent);
 
+      // The array's identity is still part of the contract with the grid engine,
+      // which writes coordinates straight onto the objects inside it, so it is
+      // mutated in place and never replaced.
       expect(component.modules).toBe(ownedArray);
       expect(dashboardLayoutServiceMock.scheduleSave.mock.calls).toHaveLength(
         2
@@ -2644,8 +2781,42 @@ describe('GfDashboardCanvasComponent', () => {
 
       for (const [, reported] of dashboardLayoutServiceMock.scheduleSave.mock
         .calls) {
-        expect(reported).toBe(ownedArray);
+        // What is *reported* is deliberately not that array. The complete
+        // arrangement is not necessarily all on the canvas - a module the viewer
+        // is not entitled to see has a saved position and no cell - so handing
+        // over the grid array would describe the visible subset as the whole
+        // arrangement and the server would delete the rest. Each report is
+        // therefore the canvas's own five-field projection, which is also what
+        // stops the grid mutating a snapshot after it was taken.
+        expect(reported).not.toBe(ownedArray);
+
+        for (const module of reported as unknown[]) {
+          expect(Object.keys(module as object).sort()).toEqual([
+            'cols',
+            'moduleType',
+            'rows',
+            'x',
+            'y'
+          ]);
+        }
       }
+
+      // The first report carries the resized module; the second carries the empty
+      // canvas the removal left, which is a state the viewer can legitimately
+      // reach and must be persistable.
+      const [[, firstReported], [, secondReported]] =
+        dashboardLayoutServiceMock.scheduleSave.mock.calls;
+
+      expect(firstReported).toEqual([
+        {
+          cols: 8,
+          moduleType: DashboardModuleType.HOLDINGS,
+          rows: singleModuleLayout.modules[0].rows,
+          x: singleModuleLayout.modules[0].x,
+          y: singleModuleLayout.modules[0].y
+        }
+      ]);
+      expect(secondReported).toEqual([]);
     });
 
     it('should never write the layout itself', async () => {
@@ -2852,6 +3023,130 @@ describe('GfDashboardCanvasComponent', () => {
       expect(component.modules).toHaveLength(1);
       expect(scrollIntoViewMock).not.toHaveBeenCalled();
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a stored arrangement that does not hold to the contract', () => {
+    it.each([
+      {
+        description: 'a modules member that is not an array',
+        layout: { modules: 'not-an-array', version: 1 }
+      },
+      {
+        description: 'a version this build does not know',
+        layout: {
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 2
+        }
+      }
+    ])(
+      'should treat $description as an unreadable arrangement rather than an empty one',
+      async ({ layout }) => {
+        await createCanvas({
+          layout: of(layout as unknown as UserDashboardLayout)
+        });
+
+        // Both would previously have been walked straight into: the first throws
+        // while it is iterated, inside the success handler of the read - the one
+        // place a failure must not surface, because the canvas has already
+        // concluded the read succeeded - and the second would let this build
+        // rewrite a document a newer one wrote, in an older shape.
+        //
+        // The error state is the safe answer to both. It offers a retry and
+        // permits no write at all, so the stored arrangement survives; reporting
+        // it as empty would open the catalog as though this were a first visit and
+        // the first module added afterwards would overwrite the very document that
+        // could not be read.
+        expect(component.hasLayoutError).toBe(true);
+        expect(component.isInitialized).toBe(true);
+        expect(component.isCatalogOpen).toBe(false);
+        expect(component.modules).toEqual([]);
+
+        paint();
+
+        expect(queryElement('gf-empty-canvas-state')).toBeNull();
+        expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+      }
+    );
+
+    it('should grow a stored footprint that is smaller than its module declares', async () => {
+      await createCanvas({
+        // Both entries clear the grid-wide 2x2 floor and both are still below the
+        // minimum their own module declares in the registry - three columns for the
+        // markets module, four rows for the assistant. The engine enforces those
+        // declared minimums for every resize and every drop, but it is never
+        // consulted for an item that arrives already placed, so without normalizing
+        // here a document written by hand would draw a module at a size no person
+        // could have resized it to.
+        layout: of({
+          modules: [
+            { cols: 2, moduleType: 'markets', rows: 3, x: 0, y: 0 },
+            { cols: 5, moduleType: 'ai-chat', rows: 2, x: 4, y: 0 }
+          ],
+          version: 1
+        }),
+        viewer: { id: 'viewer-1', permissions: [permissions.readAiPrompt] }
+      });
+      paint();
+
+      expect(component.modules).toHaveLength(2);
+
+      const placed = new Map(
+        component.modules.map((item) => [item.moduleType, item])
+      );
+
+      expect(placed.get(DashboardModuleType.MARKETS).cols).toBe(3);
+      expect(placed.get(DashboardModuleType.MARKETS).rows).toBe(3);
+      expect(placed.get(DashboardModuleType.AI_CHAT).cols).toBe(5);
+      expect(placed.get(DashboardModuleType.AI_CHAT).rows).toBe(4);
+
+      // The correction is not an edit. It is recorded as the arrangement last
+      // reported, so it reaches the server only when the viewer next changes
+      // something themselves.
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
+
+    it('should fit a stored geometry that overflows the grid back inside it', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 20, moduleType: 'holdings', rows: 4, x: 9, y: -3 }],
+          version: 1
+        })
+      });
+      paint();
+
+      const [item] = component.modules;
+
+      expect(item.cols).toBe(12);
+      expect(item.x).toBe(0);
+      expect(item.y).toBe(0);
+      expect(item.x + item.cols).toBeLessThanOrEqual(12);
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
+
+    it('should drop a stored entry whose coordinates are not whole numbers', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [
+            { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+            {
+              cols: 4,
+              moduleType: 'markets',
+              rows: Number.NaN,
+              x: 0,
+              y: 4
+            } as never
+          ],
+          version: 1
+        })
+      });
+      paint();
+
+      // A coordinate that is not a whole number describes no cell, so there is
+      // nothing to clamp it to. One unreadable entry costs its own module and
+      // nothing else.
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+      expect(component.hasLayoutError).toBe(false);
     });
   });
 
@@ -3256,7 +3551,15 @@ describe('GfDashboardCanvasComponent', () => {
       // whose arrangement it was.
       expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledWith(
         signedInViewer.id,
-        component.modules
+        [
+          {
+            cols: singleModuleLayout.modules[0].cols,
+            moduleType: DashboardModuleType.HOLDINGS,
+            rows: singleModuleLayout.modules[0].rows,
+            x: 3,
+            y: singleModuleLayout.modules[0].y
+          }
+        ]
       );
     });
 

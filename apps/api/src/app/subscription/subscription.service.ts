@@ -63,9 +63,19 @@ export class SubscriptionService {
 
     const stripeCheckoutSessionCreateParams: Stripe.Checkout.SessionCreateParams =
       {
+        // The locale root, because `/<language>/account` no longer resolves: the
+        // membership screen is a canvas module now, not a route, and a cancelled
+        // checkout would have landed on a URL that the wildcard redirects away
+        // from - an avoidable extra navigation on the one path a user takes after
+        // deciding not to pay.
+        //
+        // The viewer's own language is kept, unlike the success callback, which
+        // has no authenticated request to read it from and therefore falls back to
+        // the default. Here `user` is in hand, so the viewer returns to the locale
+        // they left rather than to the deployment's default one.
         cancel_url: `${this.configurationService.get('ROOT_URL')}/${
-          user.settings.settings.language
-        }/account`,
+          user.settings.settings.language ?? DEFAULT_LANGUAGE_CODE
+        }/`,
         client_reference_id: user.id,
         line_items: [
           {

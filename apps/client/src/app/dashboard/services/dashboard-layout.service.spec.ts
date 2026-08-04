@@ -15,9 +15,13 @@ import { GfDashboardLayoutService } from './dashboard-layout.service';
 
 /**
  * A burst of triggers inside the debounce window must collapse to one request
- * carrying the newest *complete* snapshot. Cancelling an in-flight save is only safe
- * because the payload is a whole layout rather than a delta, so a later snapshot
- * always supersedes an earlier one.
+ * carrying the newest *complete* snapshot, and two snapshots that escape the same
+ * window must reach the server in the order they were reported. The second half is
+ * what an in-flight cancellation cannot deliver: unsubscribing from a response does
+ * not withdraw a request the server has already accepted, and because the endpoint
+ * upserts a whole document, two requests in flight leave the stored arrangement
+ * decided by commit order. The writes are therefore serialised, and a snapshot a
+ * newer one has already superseded is dropped rather than replayed.
  *
  * 1. The wire projection. `DashboardLayoutItem` extends the grid engine's
  *    own item configuration type, which declares fourteen optional members
@@ -31,7 +35,7 @@ import { GfDashboardLayoutService } from './dashboard-layout.service';
  *    check would collapse the two and re-fetch on every read for exactly the
  *    brand-new users the feature onboards, because their layout row does not
  *    exist yet.
- * 3. Operator placement. `catchError` sits *inside* the switched request. Were
+ * 3. Operator placement. `catchError` sits *inside* the projected request. Were
  *    it on the outer pipe, the first network hiccup would terminate the save
  *    stream permanently; only a successful save *after* a failed one proves the
  *    placement.
@@ -500,9 +504,18 @@ describe('GfDashboardLayoutService', () => {
       });
     });
 
-    it('cancels an in-flight PATCH when a newer snapshot arrives', () => {
+    it('holds a newer snapshot back until the in-flight PATCH settles, instead of cancelling it', () => {
       const firstTeardown = jest.fn();
-      const first$ = new Observable<UserDashboardLayout>(() => firstTeardown);
+      let completeFirst: () => void;
+
+      const first$ = new Observable<UserDashboardLayout>((subscriber) => {
+        completeFirst = () => {
+          subscriber.next({ modules: [], version: 1 });
+          subscriber.complete();
+        };
+
+        return firstTeardown;
+      });
 
       dataServiceMock.patchUserDashboardLayout
         .mockReturnValueOnce(first$)
@@ -521,13 +534,63 @@ describe('GfDashboardLayoutService', () => {
 
       jest.advanceTimersByTime(500);
 
-      // Unsubscribing the older request is exactly `switchMap` semantics, and it
-      // is safe here only because every body is a complete, idempotent snapshot:
-      // replacing an in-flight write with a newer full snapshot always converges
-      // on the latest state. A delta payload would corrupt the stored layout on
-      // cancellation and would make `concatMap` mandatory instead.
+      // The older request is deliberately NOT unsubscribed, and the newer one is
+      // deliberately NOT sent yet. Unsubscribing is only ever a cancellation on
+      // this side of the wire: by now the first request has very likely been
+      // accepted by the server, and dropping the response does not withdraw it.
+      // Because the endpoint upserts a whole document, two requests in flight
+      // leave the stored arrangement decided by which one the database commits
+      // last rather than by the order the viewer made the changes in - a drag
+      // whose result silently reverts. Serialising removes the possibility.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(firstTeardown).not.toHaveBeenCalled();
+
+      completeFirst();
+
+      // Only once the first write has settled does the second go out, so the last
+      // document the server sees is by construction the last one reported.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
-      expect(firstTeardown).toHaveBeenCalled();
+      expect(readPatchedDto(1).modules[0].cols).toBe(8);
+    });
+
+    it('sends only the newest arrangement when several queue behind an in-flight PATCH', () => {
+      let completeFirst: () => void;
+
+      const first$ = new Observable<UserDashboardLayout>((subscriber) => {
+        completeFirst = () => {
+          subscriber.next({ modules: [], version: 1 });
+          subscriber.complete();
+        };
+      });
+
+      dataServiceMock.patchUserDashboardLayout
+        .mockReturnValueOnce(first$)
+        .mockReturnValue(of({ modules: [], version: 1 }));
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 4 })]);
+
+      jest.advanceTimersByTime(500);
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 6 })]);
+
+      jest.advanceTimersByTime(500);
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      completeFirst();
+
+      // Serialising must not mean replaying. Every snapshot is a complete
+      // arrangement, so the intermediate one describes nothing the newest one
+      // does not - sending it would spend a round trip writing a document the very
+      // next request contradicts. Exactly two requests therefore leave: the one
+      // that was already in flight, and the newest.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
       expect(readPatchedDto(1).modules[0].cols).toBe(8);
     });
 

@@ -24,6 +24,10 @@ import { openOutline } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
 
 import { GfHoldingDetailDialogComponent } from './components/holding-detail-dialog/holding-detail-dialog.component';
+import {
+  HoldingDetailDialogParams,
+  HoldingDetailDialogResult
+} from './components/holding-detail-dialog/interfaces/interfaces';
 import { UserAccountRegistrationDialogParams } from './components/user-account-registration-dialog/interfaces/interfaces';
 import { GfUserAccountRegistrationDialogComponent } from './components/user-account-registration-dialog/user-account-registration-dialog.component';
 import { GfDashboardLayoutService } from './dashboard/services/dashboard-layout.service';
@@ -69,6 +73,17 @@ export class GfAppComponent implements OnInit {
   private readonly tokenStorageService = inject(TokenStorageService);
   private readonly userService = inject(UserService);
 
+  /**
+   * The asset the holding detail dialog is currently open for, or `null`.
+   *
+   * The shell is mounted for the whole session and observes a URL that every placed
+   * module writes to, so its query-parameter handler is re-notified constantly for
+   * reasons that have nothing to do with it. This is what keeps those notifications
+   * from stacking copies of a dialog that is already open, while still honouring a
+   * request for a different asset.
+   */
+  private openedHoldingDetailAddress: string = null;
+
   public constructor() {
     this.initializeTheme();
     this.user = undefined;
@@ -95,10 +110,24 @@ export class GfAppComponent implements OnInit {
             isKnownDataSource(dataSource) &&
             this.isUsableSymbol(symbol)
           ) {
-            this.openHoldingDetailDialog({
-              dataSource,
-              symbol
-            });
+            // Guarded against being told the same thing twice. Every producer on
+            // this URL merges rather than replaces - it has to, or it would drop a
+            // sibling module's parameters and the shared-portfolio identifier - so
+            // this stream emits again whenever any module writes to the URL for a
+            // reason of its own. Without the guard each of those emissions would
+            // open a second copy of the dialog that is already up. Keyed on the
+            // asset rather than held as a flag, so asking for a *different* holding
+            // while one is open is still a genuine second request.
+            const address = `${dataSource}:${symbol}`;
+
+            if (this.openedHoldingDetailAddress !== address) {
+              this.openedHoldingDetailAddress = address;
+
+              this.openHoldingDetailDialog({
+                dataSource,
+                symbol
+              });
+            }
           }
         }
       );
@@ -297,7 +326,11 @@ export class GfAppComponent implements OnInit {
       .subscribe((user) => {
         this.user = user;
 
-        const dialogRef = this.dialog.open(GfHoldingDetailDialogComponent, {
+        const dialogRef = this.dialog.open<
+          GfHoldingDetailDialogComponent,
+          HoldingDetailDialogParams,
+          HoldingDetailDialogResult | undefined
+        >(GfHoldingDetailDialogComponent, {
           autoFocus: false,
           data: {
             dataSource,
@@ -337,13 +370,24 @@ export class GfAppComponent implements OnInit {
         dialogRef
           .afterClosed()
           .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(() => {
+          .subscribe((result) => {
+            this.openedHoldingDetailAddress = null;
+
+            // `dataSource` and `symbol` are shared, not owned. This dialog is the
+            // only owner of `holdingDetailDialog`, so that key always goes; the pair
+            // goes with it on an ordinary close and is deliberately left standing
+            // when the dialog closed itself in order to hand the same asset on to
+            // the market data administration module, which reads exactly that pair.
+            // Clearing regardless is what previously left the administration module
+            // with a request to open an asset profile dialog for no asset.
             void this.router.navigate([], {
-              queryParams: {
-                dataSource: null,
-                holdingDetailDialog: null,
-                symbol: null
-              },
+              queryParams: result?.hasHandedOverAssetProfile
+                ? { holdingDetailDialog: null }
+                : {
+                    dataSource: null,
+                    holdingDetailDialog: null,
+                    symbol: null
+                  },
               queryParamsHandling: 'merge',
               relativeTo: this.route
             });

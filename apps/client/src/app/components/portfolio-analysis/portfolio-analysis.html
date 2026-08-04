@@ -294,11 +294,8 @@
             <li class="py-1">
               <a
                 class="d-flex"
-                [queryParams]="{
-                  dataSource: holding.dataSource,
-                  holdingDetailDialog: true,
-                  symbol: holding.symbol
-                }"
+                queryParamsHandling="merge"
+                [queryParams]="getHoldingDetailQueryParams(holding)"
                 [routerLink]="[]"
               >
                 <div class="flex-grow-1 mr-2">{{ holding.name }}</div>
@@ -343,11 +340,8 @@
             <li class="py-1">
               <a
                 class="d-flex"
-                [queryParams]="{
-                  dataSource: holding.dataSource,
-                  holdingDetailDialog: true,
-                  symbol: holding.symbol
-                }"
+                queryParamsHandling="merge"
+                [queryParams]="getHoldingDetailQueryParams(holding)"
                 [routerLink]="[]"
               >
                 <div class="flex-grow-1 mr-2">{{ holding.name }}</div>

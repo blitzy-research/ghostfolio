@@ -14,7 +14,7 @@ import {
   inject,
   output
 } from '@angular/core';
-import { Params, Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterModule } from '@angular/router';
 
 import { SearchMode } from '../enums/search-mode';
 import {
@@ -68,6 +68,7 @@ export class GfAssistantListItemComponent
   protected readonly moduleSelected = output<DashboardModuleType>();
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   @HostBinding('class.has-focus')
@@ -82,6 +83,13 @@ export class GfAssistantListItemComponent
       this.queryParams = {
         accountDetailDialog: true,
         accountId: this.item.id,
+        // Nulled because these parameters are merged rather than replacing the
+        // whole map, and the module that answers this request tests its create and
+        // edit flags against the same discriminator. A stale one left on the URL by
+        // an earlier interaction would open that module's create form instead of
+        // this account's detail dialog.
+        createDialog: null,
+        editDialog: null,
         // More than one module knows how to open this dialog, so the result
         // names the one it stands for. The discriminator travels on the result
         // itself, which keeps this library free of any knowledge of how the
@@ -98,7 +106,14 @@ export class GfAssistantListItemComponent
     } else if (this.item?.mode === SearchMode.ASSET_PROFILE) {
       this.queryParams = {
         assetProfileDialog: true,
+        // `dataSource` and `symbol` are shared identifiers: three flags read that
+        // same pair, and the other two are read by the application shell and by the
+        // benchmark table. Because these parameters are merged rather than
+        // replacing the whole map, leaving either up would re-point *their* dialog
+        // at this asset rather than merely leaving it alone.
+        benchmarkDetailDialog: null,
         dataSource: this.item.dataSource,
+        holdingDetailDialog: null,
         symbol: this.item.symbol
       };
 
@@ -107,6 +122,10 @@ export class GfAssistantListItemComponent
       // to land after the module that reads them has been asked for.
     } else if (this.item?.mode === SearchMode.HOLDING) {
       this.queryParams = {
+        // Same shared-identifier obligation as the asset profile branch above: the
+        // pair this takes over is read by two other flags, so both are nulled.
+        assetProfileDialog: null,
+        benchmarkDetailDialog: null,
         dataSource: this.item.dataSource,
         holdingDetailDialog: true,
         symbol: this.item.symbol
@@ -159,7 +178,16 @@ export class GfAssistantListItemComponent
     // other kind either has a shell-owned reader or no parameters at all, and
     // keeps applying them through the template's router link.
     if (this.item?.mode === SearchMode.ASSET_PROFILE) {
-      void this.router.navigate([], { queryParams: this.queryParams });
+      // Merged, not replaced. Replacing the whole map discarded every parameter the
+      // rest of the canvas had put there - a sibling module's open dialog, the
+      // shared-portfolio access identifier, the sign-in token hand-off - as a side
+      // effect of opening this one dialog. What this request takes over it nulls
+      // explicitly instead; see `ngOnChanges`.
+      void this.router.navigate([], {
+        queryParams: this.queryParams,
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
+      });
     }
 
     this.clicked.emit();

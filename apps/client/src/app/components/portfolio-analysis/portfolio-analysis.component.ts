@@ -5,6 +5,7 @@ import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
 import { openExternalWindow } from '@ghostfolio/common/helper';
 import {
+  AssetProfileIdentifier,
   HistoricalDataItem,
   InvestmentItem,
   PortfolioInvestmentsResponse,
@@ -127,6 +128,32 @@ export class GfPortfolioAnalysisComponent implements OnInit {
     return this.mode === 'year'
       ? savingsRatePerMonth * 12
       : savingsRatePerMonth;
+  }
+
+  /**
+   * The query parameters that ask the application shell to open a holding's detail
+   * dialog.
+   *
+   * Built here rather than inline in the template because the template renders this
+   * link twice - once for the best performers and once for the worst - and the
+   * payload has to be identical in both. It carries two explicit nulls:
+   * `dataSource` and `symbol` are shared identifiers read by three different flags,
+   * the other two belonging to the market data administration module and to the
+   * benchmark table, and because these parameters are merged rather than replacing
+   * the whole map, leaving either up would re-point *their* dialog at this holding
+   * rather than merely leaving it alone.
+   */
+  public getHoldingDetailQueryParams({
+    dataSource,
+    symbol
+  }: AssetProfileIdentifier) {
+    return {
+      dataSource,
+      symbol,
+      assetProfileDialog: null,
+      benchmarkDetailDialog: null,
+      holdingDetailDialog: true
+    };
   }
 
   public ngOnInit() {

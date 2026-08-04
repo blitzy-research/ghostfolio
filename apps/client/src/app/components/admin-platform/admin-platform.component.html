@@ -3,7 +3,8 @@
     color="primary"
     i18n
     mat-flat-button
-    [queryParams]="{ createPlatformDialog: true }"
+    queryParamsHandling="merge"
+    [queryParams]="createDialogQueryParams"
     [routerLink]="[]"
   >
     Add Platform

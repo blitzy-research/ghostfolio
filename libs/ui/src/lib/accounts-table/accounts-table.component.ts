@@ -19,7 +19,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatSort, MatSortModule } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { Account } from '@prisma/client';
 import { addIcons } from 'ionicons';
@@ -113,6 +113,7 @@ export class GfAccountsTableComponent {
   protected readonly isLoading = computed(() => !this.accounts());
 
   private readonly notificationService = inject(NotificationService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   public constructor() {
@@ -151,8 +152,26 @@ export class GfAccountsTableComponent {
 
   protected onOpenAccountDetailDialog(accountId: string) {
     if (this.hasPermissionToOpenDetails()) {
-      this.router.navigate([], {
-        queryParams: { accountId, accountDetailDialog: true }
+      // Merged, not replaced. Replacing the whole map discarded every parameter the
+      // rest of the canvas had put there - a sibling module's open dialog, the
+      // shared-portfolio access identifier, the sign-in token hand-off - as a side
+      // effect of opening this one dialog.
+      //
+      // Deliberately unqualified. This table is mounted by the accounts module,
+      // which is the default owner of this dialog and answers a request that names
+      // nobody; the allocations module hosts its own copy and answers only a
+      // request that names it. `dialogModule` is nulled rather than set so that a
+      // discriminator an earlier interaction left on the URL cannot make the
+      // default owner stand down as addressed elsewhere, which would leave a click
+      // on an account row doing nothing at all.
+      void this.router.navigate([], {
+        queryParams: {
+          accountId,
+          accountDetailDialog: true,
+          dialogModule: null
+        },
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
       });
     }
   }

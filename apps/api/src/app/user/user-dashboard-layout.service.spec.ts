@@ -1,6 +1,8 @@
 import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 
+import { InternalServerErrorException, Logger } from '@nestjs/common';
+
 import { UserDashboardLayoutService } from './user-dashboard-layout.service';
 
 describe('UserDashboardLayoutService', () => {
@@ -25,6 +27,13 @@ describe('UserDashboardLayoutService', () => {
       .map(([methodName]) => methodName);
 
   beforeEach(() => {
+    // Silenced rather than left to print. A refused document is reported at
+    // `error` and a dropped entry at `warn`, both deliberately, and several cases
+    // below exercise exactly those paths - so without this the suite's output is
+    // dominated by lines that are the expected behaviour rather than a problem.
+    jest.spyOn(Logger, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+
     findUnique = jest.fn();
     upsert = jest.fn();
 
@@ -45,6 +54,10 @@ describe('UserDashboardLayoutService', () => {
     userDashboardLayoutService = new UserDashboardLayoutService(
       prismaServiceMock as unknown as PrismaService
     );
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   it('takes the Prisma delegate as its only dependency, so persisting a layout can emit nothing and notify nobody', () => {
@@ -218,6 +231,80 @@ describe('UserDashboardLayoutService', () => {
       });
       expect(layout).not.toHaveProperty('version');
     });
+
+    it('carries over only the two members the contract defines, so a surplus property cannot reach the response', async () => {
+      findUnique.mockResolvedValue({
+        layoutData: {
+          modules: [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          surplus: 'unexpected',
+          version: 1
+        },
+        userId
+      });
+
+      const layout = await userDashboardLayoutService.getLayout(userId);
+
+      expect(Object.keys(layout).sort()).toEqual(layoutDocumentKeys);
+      expect(layout).not.toHaveProperty('surplus');
+    });
+
+    it('drops a module entry it cannot interpret and keeps every entry it can', async () => {
+      // The client iterates this array inside the success handler of its read, so
+      // an entry that cannot be destructured throws in the one place a failure
+      // must not surface: the canvas has already concluded the read succeeded, so
+      // it never enters its error state, offers no retry, and shows a blank canvas
+      // that the next module added would overwrite the stored arrangement from.
+      findUnique.mockResolvedValue({
+        layoutData: {
+          modules: [
+            { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+            null,
+            'not-an-object',
+            { cols: 4, moduleType: 'markets', rows: 'four', x: 0, y: 4 },
+            { cols: 4, rows: 4, x: 0, y: 8 },
+            { cols: 4, moduleType: '', rows: 4, x: 0, y: 12 },
+            { cols: 6, moduleType: 'watchlist', rows: 3, x: 4, y: 0 }
+          ],
+          version: 1
+        },
+        userId
+      });
+
+      const layout = await userDashboardLayoutService.getLayout(userId);
+
+      expect(layout.modules).toEqual([
+        { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+        { cols: 6, moduleType: 'watchlist', rows: 3, x: 4, y: 0 }
+      ]);
+    });
+
+    it.each([
+      { description: 'is not an object at all', layoutData: 'not-a-document' },
+      { description: 'is a JSON array', layoutData: [] },
+      {
+        description: 'holds no modules array',
+        layoutData: { modules: 'not-an-array', version: 1 }
+      },
+      {
+        description: 'declares a version this build does not know',
+        layoutData: { modules: [], version: 2 }
+      }
+    ])(
+      'refuses a stored document that $description rather than reporting it as an absent layout',
+      async ({ layoutData }) => {
+        // Refusing is what keeps the document safe. The client maps a failed read
+        // to its own error state, which offers a retry and permits no write at
+        // all, so the stored arrangement survives for an operator to look at.
+        // Answering `null` instead would look like a first visit, and the first
+        // module added afterwards would be written out as the user's entire
+        // arrangement - destroying the very document that could not be read.
+        findUnique.mockResolvedValue({ layoutData, userId });
+
+        await expect(
+          userDashboardLayoutService.getLayout(userId)
+        ).rejects.toThrow(InternalServerErrorException);
+      }
+    );
 
     it('propagates a read failure instead of reporting it as an absent layout', async () => {
       const readFailure = new Error('connection terminated unexpectedly');

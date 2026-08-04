@@ -87,6 +87,25 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 /**
+ * The spellings a URL parser treats as a relative path segment rather than as a
+ * name, per the WHATWG URL standard.
+ *
+ * Percent-encoding is not a defence here, which is the whole reason this set
+ * exists: a parser decodes a segment before deciding whether it is relative, so
+ * `%2e%2e` is resolved away exactly as `..` is, and substituting `%2E` for the
+ * dot would read as a fix while changing nothing.
+ *
+ * The percent spellings are nonetheless listed. Today they are unreachable,
+ * because the membership test below runs on the *encoded* value and
+ * `encodeURIComponent` turns the literal `%` into `%25` — so a raw `%2e`
+ * arrives at the parser as `%252e`, which is not a dot segment at all and is
+ * therefore correctly let through. Listing them makes this a statement about
+ * the parser's vocabulary rather than about the current encoding step, so the
+ * boundary still holds if that step is ever changed or relaxed.
+ */
+const DOT_SEGMENTS = new Set(['.', '..', '.%2e', '%2e', '%2e.', '%2e%2e']);
+
+/**
  * The single encoder every request URL in this workspace is built with.
  *
  * Used as a template tag — ``encodeApiPath`/api/v1/account/${aId}` `` — it
@@ -102,7 +121,14 @@ import { map } from 'rxjs/operators';
  * request leaves it — turning a read of one resource into a request for an
  * entirely different endpoint, issued with the signed-in viewer's own
  * credentials. Encoding strips the reserved meaning from `/`, `?`, `#` and `%`,
- * so `../..` can no longer climb out of the intended path.
+ * which is what keeps a value from delimiting its way into extra segments.
+ *
+ * Encoding alone is not sufficient, and assuming otherwise is the subtle half of
+ * this boundary: the dot is an *unreserved* character, so an interpolated value
+ * that is exactly `.` or `..` survives `encodeURIComponent` untouched and is
+ * still resolved away by the parser. Those values are therefore refused outright
+ * (see `DOT_SEGMENTS`) instead of encoded, which is the only handling that
+ * actually prevents the request from being re-addressed.
  *
  * Legitimate identifiers are unaffected, because the values used here are
  * uuids, enum members, ISO dates and asset symbols, none of which contains a
@@ -117,6 +143,9 @@ import { map } from 'rxjs/operators';
  * @param aStrings the literal chunks of the tagged template. They are authored
  * in this workspace and are therefore trusted verbatim.
  * @param aValues the interpolated identifiers, each encoded as one segment.
+ * @throws if an interpolated value is exactly a relative path segment, because
+ * no legitimate identifier is and the alternative is a request addressed
+ * somewhere the caller never asked for.
  */
 export function encodeApiPath(
   aStrings: TemplateStringsArray,
@@ -125,6 +154,20 @@ export function encodeApiPath(
   return aStrings.reduce((path, literalChunk, index) => {
     const encodedValue =
       index < aValues.length ? encodeURIComponent(`${aValues[index]}`) : '';
+
+    // Encoding alone cannot close this gap, because the dot is an *unreserved*
+    // character: `encodeURIComponent` returns `.` and `..` verbatim. Such a value
+    // is resolved away by the parser before the request leaves the browser, which
+    // silently drops a segment of the intended path and re-addresses the request
+    // at an endpoint the caller never named — carrying the viewer's credentials.
+    // There is no legitimate identifier that is exactly a dot segment, so the
+    // only correct handling is to refuse it rather than to reshape it into
+    // something that would still address the wrong resource.
+    if (DOT_SEGMENTS.has(encodedValue.toLowerCase())) {
+      throw new Error(
+        `encodeApiPath refused '${aValues[index]}' because it is a relative path segment and would re-address the request`
+      );
+    }
 
     return `${path}${literalChunk}${encodedValue}`;
   }, '');

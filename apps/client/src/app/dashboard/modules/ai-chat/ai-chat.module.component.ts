@@ -1,3 +1,4 @@
+import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { openExternalWindow } from '@ghostfolio/common/helper';
 import type { AiPromptMode } from '@ghostfolio/common/types';
@@ -28,7 +29,7 @@ import {
 import ms from 'ms';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { EMPTY } from 'rxjs';
-import { catchError, startWith, switchMap, tap } from 'rxjs/operators';
+import { catchError, filter, startWith, switchMap, tap } from 'rxjs/operators';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,6 +47,15 @@ import { catchError, startWith, switchMap, tap } from 'rxjs/operators';
 })
 export class GfAiChatModuleComponent implements OnInit {
   public hasError = false;
+
+  /**
+   * Whether the viewer is currently looking at somebody else's portfolio.
+   *
+   * The one piece of state this module withholds its prompt on. See
+   * {@link ngOnInit} for why a prompt cannot be built at all in that mode.
+   */
+  public hasImpersonationId = false;
+
   public isLoading = false;
   public prompt: string;
   public promptModeFormControl = new FormControl<AiPromptMode>('analysis');
@@ -55,6 +65,7 @@ export class GfAiChatModuleComponent implements OnInit {
     private clipboard: Clipboard,
     private dataService: DataService,
     private destroyRef: DestroyRef,
+    private impersonationStorageService: ImpersonationStorageService,
     private snackBar: MatSnackBar,
     private userService: UserService
   ) {
@@ -67,6 +78,60 @@ export class GfAiChatModuleComponent implements OnInit {
   }
 
   public ngOnInit() {
+    // The prompt is withheld entirely while impersonating, and this is a
+    // correctness requirement rather than a policy preference.
+    //
+    // A prompt request carries two things that have to agree about whose
+    // portfolio is being described: the filters, and the identity the server
+    // resolves them against. This module sends `userService.getFilters()`, which
+    // on an impersonated surface names the *impersonated* user's accounts and
+    // tags. The AI endpoint resolves them against the authenticated user - it
+    // passes `impersonationId: undefined` and `userId: request.user.id` - so the
+    // two disagree, and the resulting prose describes the viewer's own holdings
+    // while every filter chip on screen says it describes somebody else's. It is
+    // not a redacted or empty answer, which the viewer could recognise; it is a
+    // confidently wrong one.
+    //
+    // Reconciling it the other way round - honouring the impersonation - is not
+    // available here. The endpoint is outside this refactor's scope, and
+    // Ghostfolio withholds another user's monetary values by redacting them from
+    // responses, which is something that can be done to a numeric field and
+    // cannot be done to a paragraph of generated prose. Passing impersonation
+    // through would therefore turn a value-redaction guarantee into a
+    // value-disclosure hole.
+    //
+    // So the module says so instead. The mode toggle and the copy control are
+    // withdrawn, and an explicit notice takes the place of the prompt - the same
+    // shape every other module uses to withdraw an action while impersonating,
+    // `!this.hasImpersonationId && …`, with the difference that here the whole
+    // output rather than one button is what has to go.
+    this.impersonationStorageService
+      .onChangeHasImpersonation()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((impersonationId) => {
+        this.hasImpersonationId = !!impersonationId;
+
+        // Anything already on screen belongs to the identity that was current
+        // when it was fetched, so it is dropped rather than left standing under a
+        // notice that contradicts it. Dropped on the way *out* of impersonation
+        // too, because the request below re-runs and the stale prose would
+        // otherwise be visible until it answers.
+        this.hasError = false;
+        this.isLoading = false;
+        this.prompt = undefined;
+
+        this.changeDetectorRef.markForCheck();
+
+        if (!this.hasImpersonationId) {
+          // Re-asked on the way out, because the mode control has not changed and
+          // would otherwise emit nothing at all.
+          this.promptModeFormControl.setValue(
+            this.promptModeFormControl.value,
+            { emitEvent: true }
+          );
+        }
+      });
+
     // `startWith` emits synchronously, so the loading state is set before the
     // first render instead of flashing the empty state. `switchMap` discards a
     // superseded request, so a slow response for the previous mode can never
@@ -77,6 +142,11 @@ export class GfAiChatModuleComponent implements OnInit {
     this.promptModeFormControl.valueChanges
       .pipe(
         startWith(this.promptModeFormControl.value),
+        filter(() => {
+          // Placed after `startWith` and before `tap`, so a mode change made
+          // while impersonating leaves no loading state behind either.
+          return !this.hasImpersonationId;
+        }),
         tap(() => {
           this.hasError = false;
           this.isLoading = true;

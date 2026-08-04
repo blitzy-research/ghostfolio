@@ -255,11 +255,8 @@
               <mat-menu #assetProfileActionsMenu="matMenu" xPosition="before">
                 <a
                   mat-menu-item
-                  [queryParams]="{
-                    assetProfileDialog: true,
-                    dataSource: element.dataSource,
-                    symbol: element.symbol
-                  }"
+                  queryParamsHandling="merge"
+                  [queryParams]="getAssetProfileQueryParams(element)"
                   [routerLink]="[]"
                 >
                   <span class="align-items-center d-flex">
@@ -345,7 +342,8 @@
       color="primary"
       i18n-aria-label
       mat-fab
-      [queryParams]="{ createAssetProfileDialog: true }"
+      queryParamsHandling="merge"
+      [queryParams]="createDialogQueryParams"
       [routerLink]="[]"
     >
       <ion-icon aria-hidden="true" name="add-outline" size="large" />

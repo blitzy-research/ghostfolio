@@ -27,7 +27,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { gridOutline, reorderFourOutline } from 'ionicons/icons';
@@ -75,6 +75,7 @@ export class GfHomeHoldingsComponent implements OnInit {
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
     private impersonationStorageService: ImpersonationStorageService,
+    private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
   ) {
@@ -140,8 +141,26 @@ export class GfHomeHoldingsComponent implements OnInit {
 
   public onHoldingClicked({ dataSource, symbol }: AssetProfileIdentifier) {
     if (dataSource && symbol) {
+      // Merged, not replaced. Replacing the whole map discarded every parameter the
+      // rest of the canvas had put there - a sibling module's open dialog, the
+      // shared-portfolio access identifier, the sign-in token hand-off - as a side
+      // effect of opening this one dialog.
+      //
+      // Merging in turn obliges this producer to null what it is taking over.
+      // `dataSource` and `symbol` are shared identifiers: three flags read that
+      // same pair, and the other two belong to the market data administration
+      // module and to the benchmark table. Leaving either up would re-point
+      // *their* dialog at this holding rather than merely leaving it alone.
       void this.router.navigate([], {
-        queryParams: { dataSource, symbol, holdingDetailDialog: true }
+        queryParams: {
+          dataSource,
+          symbol,
+          assetProfileDialog: null,
+          benchmarkDetailDialog: null,
+          holdingDetailDialog: true
+        },
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
       });
     }
   }

@@ -440,7 +440,7 @@ describe('UserDashboardLayoutController', () => {
 
       it('accepts a payload that omits the version', async () => {
         const payload = {
-          modules: [{ cols: 2, moduleType: 'watchlist', rows: 2, x: 10, y: 0 }]
+          modules: [{ cols: 4, moduleType: 'watchlist', rows: 3, x: 8, y: 0 }]
         };
 
         respondWithWrittenDocument();
@@ -456,16 +456,45 @@ describe('UserDashboardLayoutController', () => {
         expect(json).toEqual(payload);
       });
 
+      // `watchlist` is spelled at exactly its own declared minimum - four columns
+      // by three rows - rather than at the grid-wide 2x2 floor, because the two
+      // bounds are now both enforced and the narrower one wins. That makes each
+      // case doubly inclusive: it proves the grid edge is reachable *and* that a
+      // module sized exactly to its declared minimum is accepted rather than
+      // rejected by one cell.
       it.each([
         {
           description:
             'a module whose columns end exactly at the right edge of the grid',
-          module: { cols: 2, moduleType: 'watchlist', rows: 2, x: 10, y: 0 }
+          module: { cols: 4, moduleType: 'watchlist', rows: 3, x: 8, y: 0 }
         },
         {
           description:
             'a module whose rows end exactly at the bottom of the grid',
-          module: { cols: 2, moduleType: 'watchlist', rows: 2, x: 0, y: 98 }
+          module: { cols: 4, moduleType: 'watchlist', rows: 3, x: 0, y: 97 }
+        },
+        {
+          // Exactly the AI chat module's own declared minimum, which is the
+          // strictest in the catalog. The two rejections below sit one cell inside
+          // each of these dimensions, so without this case both could be satisfied
+          // by a rule that was off by one in the rejecting direction.
+          description: 'a known module sized exactly to its declared minimum',
+          module: { cols: 3, moduleType: 'ai-chat', rows: 5, x: 0, y: 0 }
+        },
+        {
+          // A discriminator the catalog does not know carries no declared minimum
+          // to measure, so only the grid-wide floor applies to it. That is
+          // deliberate rather than a gap: an arrangement holding a module that has
+          // since been withdrawn has to stay writable, and such an entry is dropped
+          // per item when the layout is read.
+          description: 'an unknown module type at the grid-wide floor',
+          module: {
+            cols: 2,
+            moduleType: 'some-future-module',
+            rows: 2,
+            x: 0,
+            y: 0
+          }
         },
         {
           description: 'a module type of exactly the maximum length',
@@ -597,9 +626,23 @@ describe('UserDashboardLayoutController', () => {
           // cross-field rule can reject this, so this case is the only thing
           // standing between that rule and silent removal. The existing `x: 12`
           // case cannot serve: it fails `@Max(11)` first.
+          //
+          // The module type is deliberately one the catalog does not know, which
+          // is what keeps this case a probe of the grid rule alone: every module
+          // that *is* known declares a minimum of at least three columns, so
+          // naming one would fail the declared-minimum rule first and this test
+          // would pass whether the grid rule existed or not.
           description: 'a module whose columns overflow the right edge',
           payload: {
-            modules: [{ cols: 2, moduleType: 'holdings', rows: 2, x: 11, y: 0 }]
+            modules: [
+              {
+                cols: 2,
+                moduleType: 'some-future-module',
+                rows: 2,
+                x: 11,
+                y: 0
+              }
+            ]
           }
         },
         {
@@ -607,7 +650,37 @@ describe('UserDashboardLayoutController', () => {
           // the per-field bounds: `y` is within 0..99 and `rows` within 2..100.
           description: 'a module whose rows overflow the bottom of the grid',
           payload: {
-            modules: [{ cols: 2, moduleType: 'holdings', rows: 2, x: 0, y: 99 }]
+            modules: [
+              {
+                cols: 2,
+                moduleType: 'some-future-module',
+                rows: 2,
+                x: 0,
+                y: 99
+              }
+            ]
+          }
+        },
+        {
+          // The declared-minimum rule, horizontally. Every other bound is
+          // satisfied - two columns clears the grid-wide floor and the placement
+          // fits - and the arrangement is still one the grid engine would never
+          // have let a person produce, because the AI chat module declares three
+          // columns as its own minimum. Without this rule the footprint could only
+          // be enforced in the browser, and a hand-written request would store a
+          // module at a size no resize could reach.
+          description: 'a known module narrower than its own declared minimum',
+          payload: {
+            modules: [{ cols: 2, moduleType: 'ai-chat', rows: 5, x: 0, y: 0 }]
+          }
+        },
+        {
+          // The vertical half of the same rule: the AI chat module declares five
+          // rows, so four is a rejection even though it clears the grid-wide floor
+          // of two.
+          description: 'a known module shorter than its own declared minimum',
+          payload: {
+            modules: [{ cols: 3, moduleType: 'ai-chat', rows: 4, x: 0, y: 0 }]
           }
         },
         {

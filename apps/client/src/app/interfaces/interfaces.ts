@@ -45,19 +45,58 @@ import type { DataSource } from '@prisma/client';
  * Flags are cleared the same way they are set — by navigating with an empty
  * command array — and every close path drops `dialogModule` along with the flag
  * it qualified, so a stale qualifier can never outlive its dialog.
+ *
+ * A third rule follows from the first two and is easy to miss: **a producer must
+ * merge, never replace.** `router.navigate([], { queryParams })` without
+ * `queryParamsHandling: 'merge'` discards every parameter it does not restate,
+ * which on one shared URL means closing a sibling module's dialog and dropping the
+ * shared-portfolio access identifier as a side effect of opening something
+ * unrelated. Merging is what makes each key owned by the module that set it, and
+ * it is also why every consumer has to tolerate being re-notified: once sibling
+ * parameters survive a navigation, `route.queryParams` emits again for changes
+ * that mean nothing to it, so a consumer that opens on every emission opens the
+ * same dialog twice.
+ *
+ * Every member is declared rather than left to the inherited index signature. The
+ * point is not documentation: a key that only exists in the signature is read as
+ * `any`, so a typo in a producer and a typo in its consumer both compile, and the
+ * dialog simply never opens. Listing them is what makes the two halves check
+ * against each other.
  */
 export interface GfAppQueryParams extends Params {
   accessId?: string;
   accountDetailDialog?: string;
   accountId?: string;
   activityId?: string;
+  /** Owned by the market data administration module. */
+  assetProfileDialog?: string;
+  /**
+   * Owned by `gf-benchmark`, which three modules can host at once — so unlike
+   * every other dialog-naming flag it is *always* qualified with `dialogModule`,
+   * and each instance reacts only to its own module's name.
+   */
+  benchmarkDetailDialog?: string;
+  /** Owned by the market data administration module. */
+  createAssetProfileDialog?: string;
   createDialog?: string;
+  /** Owned by `gf-admin-platform`, hosted by the administration settings module. */
+  createPlatformDialog?: string;
+  /** Owned by `gf-admin-tag`, hosted by the administration settings module. */
+  createTagDialog?: string;
+  /** Owned by the watchlist module. */
+  createWatchlistItemDialog?: string;
   dataSource?: DataSource;
   dialogModule?: DashboardModuleType;
   editDialog?: string;
+  /** Owned by `gf-admin-platform`; pairs with `platformId`. */
+  editPlatformDialog?: string;
+  /** Owned by `gf-admin-tag`; pairs with `tagId`. */
+  editTagDialog?: string;
   holdingDetailDialog?: string;
   jwt?: string;
+  platformId?: string;
   symbol?: string;
+  tagId?: string;
   transferBalanceDialog?: string;
   /**
    * Acquisition attribution, captured by the route guard and persisted to local

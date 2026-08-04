@@ -5,9 +5,12 @@
     <!-- Hidden from assistive technology because the identical string is the
          toggle group's accessible name, so it is announced exactly once. -->
     <span aria-hidden="true" i18n>Mode</span>
+    <!-- Disabled rather than removed while impersonating, so the control the
+         notice below refers to stays visible and the module does not reflow. -->
     <mat-button-toggle-group
       aria-label="Mode"
       i18n-aria-label
+      [disabled]="hasImpersonationId"
       [formControl]="promptModeFormControl"
       [hideSingleSelectionIndicator]="true"
     >
@@ -21,7 +24,11 @@
   </div>
 
   <div class="hint-text pt-2 px-3">
-    <small i18n>Choose the data the prompt should cover.</small>
+    @if (hasImpersonationId) {
+      <small i18n>Unavailable while viewing another portfolio.</small>
+    } @else {
+      <small i18n>Choose the data the prompt should cover.</small>
+    }
   </div>
 
   <!-- One live region that outlives every state swap, so a screen reader
@@ -32,7 +39,21 @@
     class="d-flex flex-column flex-grow-1 overflow-hidden"
     [attr.aria-busy]="isLoading"
   >
-    @if (isLoading) {
+    @if (hasImpersonationId) {
+      <!-- The prompt is withheld rather than shown empty or stale: it would
+           describe the signed-in portfolio while every filter on screen names
+           another one. See `ngOnInit` for why it cannot simply be rebuilt for
+           the portfolio being viewed. -->
+      <div
+        class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
+      >
+        <ion-icon aria-hidden="true" class="mb-2" name="alert-circle-outline" />
+        <div i18n>
+          AI prompts are unavailable while viewing another portfolio.
+        </div>
+        <div i18n>Stop viewing it to generate a prompt for your own.</div>
+      </div>
+    } @else if (isLoading) {
       <!-- Fill the eventual prompt area so loading completes without a layout
            jump. -->
       <ngx-skeleton-loader
@@ -71,13 +92,17 @@
     class="align-items-center d-flex flex-wrap justify-content-between pb-3 px-3"
   >
     <div class="hint-text mr-2">
-      <small i18n>Copy the prompt, then paste it into your AI tool.</small>
+      @if (hasImpersonationId) {
+        <small i18n>No prompt is generated for another portfolio.</small>
+      } @else {
+        <small i18n>Copy the prompt, then paste it into your AI tool.</small>
+      }
     </div>
     <div class="align-items-center d-flex">
       <button
         class="mr-1"
         mat-stroked-button
-        [disabled]="isLoading || !prompt"
+        [disabled]="hasImpersonationId || isLoading || !prompt"
         (click)="onCopyPromptToClipboard()"
       >
         <span class="align-items-center d-flex">

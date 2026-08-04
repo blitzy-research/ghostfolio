@@ -1,6 +1,7 @@
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { locale as defaultLocale } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import {
   AssetProfileIdentifier,
   Benchmark,
@@ -48,6 +49,28 @@ import { CreateWatchlistItemDialogParams } from './create-watchlist-item-dialog/
   templateUrl: './home-watchlist.html'
 })
 export class GfHomeWatchlistComponent implements OnInit {
+  /**
+   * The module this component stands for, passed to the benchmark table so that its
+   * detail dialog request names an owner.
+   *
+   * The benchmark table is mounted by three modules and all three can be on the
+   * canvas at once, all three observe the same query parameters, and
+   * `benchmarkDetailDialog` said nothing about which of them a request was for - so
+   * one click opened the dialog up to three times over.
+   */
+  public readonly benchmarkDialogModule = DashboardModuleType.WATCHLIST;
+
+  /**
+   * The query parameters that ask this module for the create-watchlist-item form.
+   *
+   * Bound by the floating action button in this component's template. Merged rather
+   * than replacing the whole map, which discarded every parameter the rest of the
+   * canvas had put there.
+   */
+  protected readonly createDialogQueryParams = {
+    createWatchlistItemDialog: true
+  };
+
   protected hasImpersonationId: boolean;
   protected hasPermissionToCreateWatchlistItem: boolean;
   protected hasPermissionToDeleteWatchlistItem: boolean;
@@ -70,6 +93,19 @@ export class GfHomeWatchlistComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
 
+  /**
+   * Whether the create-watchlist-item request has already been served.
+   *
+   * Every producer on the canvas merges rather than replaces its query parameters -
+   * it has to, or it would drop a sibling module's and the shared-portfolio
+   * identifier - so these parameters are re-observed whenever any *other* module
+   * writes to the URL, and opening on every emission stacked a second copy of a
+   * dialog that was already up. Keyed on the request rather than on the dialog's own
+   * lifecycle, because the close handler removes the parameters through a navigation
+   * that has not necessarily been applied yet.
+   */
+  private hasServedCreateDialogRequest = false;
+
   public constructor() {
     this.impersonationStorageService
       .onChangeHasImpersonation()
@@ -81,7 +117,15 @@ export class GfHomeWatchlistComponent implements OnInit {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
-        if (params['createWatchlistItemDialog']) {
+        const isRequested = !!params['createWatchlistItemDialog'];
+
+        if (this.hasServedCreateDialogRequest === isRequested) {
+          return;
+        }
+
+        this.hasServedCreateDialogRequest = isRequested;
+
+        if (isRequested) {
           this.openCreateWatchlistItemDialog();
         }
       });
@@ -173,7 +217,16 @@ export class GfHomeWatchlistComponent implements OnInit {
                 });
             }
 
-            this.router.navigate(['.'], { relativeTo: this.route });
+            // Removes the parameter this dialog travelled on, and only that one.
+            // The `navigate(['.'])` this replaced named a route segment instead,
+            // which dropped every query parameter on the canvas: closing this
+            // dialog also closed a sibling module's and discarded the
+            // shared-portfolio access identifier along with it.
+            void this.router.navigate([], {
+              queryParams: { createWatchlistItemDialog: null },
+              queryParamsHandling: 'merge',
+              relativeTo: this.route
+            });
           });
       });
   }

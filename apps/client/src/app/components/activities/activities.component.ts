@@ -60,15 +60,21 @@ export class GfActivitiesComponent implements OnInit {
   public dataSource: MatTableDataSource<Activity>;
   public deviceType: string;
   /**
-   * The discriminator this module's dialog flags are addressed with.
+   * The query parameters that ask this module for a blank create form.
    *
-   * Exposed so the template can bind it instead of repeating the literal. The
-   * discriminator has to match what this component's own query-parameter handler
-   * compares against, and a repeated literal is a match that no compiler
-   * checks - renaming the enum member would leave the control silently opening
-   * nothing.
+   * Shared by the floating action button in this component's template and by
+   * {@link onCreateActivity}, so the two controls that mean the same thing cannot
+   * drift apart. The explicit nulls are the point of it: `activityId` and
+   * `editDialog` may already be on the URL from an edit request, and because
+   * {@link applyQueryParams} tests `createDialog` first, merging without clearing
+   * them opened a create form pre-filled from the activity being edited.
    */
-  public readonly dialogModule = DashboardModuleType.ACTIVITIES;
+  public readonly createDialogQueryParams = {
+    activityId: null as string,
+    createDialog: true,
+    dialogModule: DashboardModuleType.ACTIVITIES,
+    editDialog: null as boolean
+  };
 
   public hasImpersonationId: boolean;
   public hasPermissionToCreateActivity: boolean;
@@ -80,6 +86,25 @@ export class GfActivitiesComponent implements OnInit {
   public sortDirection: SortDirection = 'desc';
   public totalItems: number | undefined;
   public user: User;
+
+  /**
+   * The dialog request this module has already served, or `null` for none.
+   *
+   * Kept so that being told the same thing more than once opens one dialog - see
+   * {@link applyQueryParams} for why that happens. Reset by the query parameters
+   * ceasing to ask for anything rather than by a dialog closing - see
+   * {@link serveDialogRequest} for why that distinction matters.
+   */
+  private openedDialogAddress: string = null;
+
+  /**
+   * The query parameters as they stand, held rather than consumed on arrival.
+   *
+   * They can reach this module before it is able to act on them - see
+   * {@link applyQueryParams} - so the most recent set is kept and re-evaluated
+   * whenever a prerequisite arrives.
+   */
+  private queryParams: GfAppQueryParams;
 
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
@@ -93,52 +118,23 @@ export class GfActivitiesComponent implements OnInit {
     private router: Router,
     private userService: UserService
   ) {
-    this.routeQueryParams = route.queryParams
+    // Recorded rather than acted on. Every dialog this module opens is sized from
+    // `deviceType` and filled from `user`, and both are resolved in `ngOnInit` -
+    // which runs *after* this. On the route-per-screen shell that never mattered,
+    // because a screen was constructed by a navigation that had already happened
+    // and its parameters arrived afterwards. On one canvas a module is
+    // materialised lazily *in response to* a request that is already on the URL,
+    // so `queryParams` delivers its current value here, in the constructor,
+    // before any of those prerequisites exist. Acting on it then produced a
+    // dialog laid out for the wrong device and handed `user: undefined`, which
+    // left the account and currency selectors of an edit form empty.
+    this.routeQueryParams = this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(
-        ({
-          activityId,
-          createDialog,
-          dialogModule,
-          editDialog
-        }: GfAppQueryParams) => {
-          // On the single-canvas shell every module observes the same query
-          // parameters at once, so `createDialog` and `editDialog` carry no
-          // indication of who they were meant for. `dialogModule` does, and
-          // bailing out on it first makes this handler fail-safe: an unqualified
-          // or foreign-qualified flag - the accounts module's floating action
-          // button, or the account-access module's edit link - opens nothing
-          // here. See the same gate in
-          // `components/user-account-access/user-account-access.component.ts`.
-          if (dialogModule !== DashboardModuleType.ACTIVITIES) {
-            return;
-          }
+      .subscribe((queryParams: GfAppQueryParams) => {
+        this.queryParams = queryParams;
 
-          if (createDialog) {
-            if (activityId) {
-              this.dataService
-                .fetchActivity(activityId)
-                .pipe(takeUntilDestroyed(this.destroyRef))
-                .subscribe((activity) => {
-                  this.openCreateActivityDialog(activity);
-                });
-            } else {
-              this.openCreateActivityDialog();
-            }
-          } else if (editDialog) {
-            if (activityId) {
-              this.dataService
-                .fetchActivity(activityId)
-                .pipe(takeUntilDestroyed(this.destroyRef))
-                .subscribe((activity) => {
-                  this.openUpdateActivityDialog(activity);
-                });
-            } else {
-              this.clearDialogQueryParams();
-            }
-          }
-        }
-      );
+        this.applyQueryParams();
+      });
 
     addIcons({ addOutline });
   }
@@ -151,6 +147,15 @@ export class GfActivitiesComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((impersonationId) => {
         this.hasImpersonationId = !!impersonationId;
+
+        // The permissions this module gates its dialogs on are withdrawn while
+        // impersonating, so they are recomputed here rather than only when the
+        // viewer changes.
+        if (this.user) {
+          this.updateUser(this.user);
+        }
+
+        this.applyQueryParams();
       });
 
     this.userService.stateChanged
@@ -162,8 +167,15 @@ export class GfActivitiesComponent implements OnInit {
           this.fetchActivities();
 
           this.changeDetectorRef.markForCheck();
+
+          this.applyQueryParams();
         }
       });
+
+    // Re-evaluated once the device is known, so a request that was already on the
+    // URL when this module was created is honoured now that it can be honoured
+    // correctly.
+    this.applyQueryParams();
   }
 
   public fetchActivities() {
@@ -190,19 +202,17 @@ export class GfActivitiesComponent implements OnInit {
         this.dataSource = new MatTableDataSource(activities);
         this.totalItems = count;
 
-        if (
-          this.hasPermissionToCreateActivity &&
-          this.user?.activitiesCount === 0
-        ) {
-          void this.router.navigate([], {
-            queryParams: {
-              createDialog: true,
-              dialogModule: DashboardModuleType.ACTIVITIES
-            },
-            queryParamsHandling: 'merge',
-            relativeTo: this.route
-          });
-        }
+        // Nothing is opened automatically. On the route-per-screen shell the
+        // activities screen was the only thing on it, so greeting a user who had
+        // no activities with the create dialog was unambiguous. On one canvas the
+        // accounts module makes the same offer for the same user at the same
+        // moment, and which of the two responses arrives first decides whether one
+        // onboarding dialog appears or two appear stacked - an outcome the
+        // previous shell could not produce. The offer is made by the empty state
+        // the activities table already renders, whose call to action reaches
+        // {@link onCreateActivity}, and by this module's floating action button -
+        // both of which the viewer chooses to act on.
+        this.applyQueryParams();
 
         this.changeDetectorRef.markForCheck();
       });
@@ -218,10 +228,18 @@ export class GfActivitiesComponent implements OnInit {
     // No discriminator: the holding detail dialog is opened by the application
     // shell rather than by any module, so its parameters name themselves and are
     // deliberately global.
+    //
+    // Two nulls are still required, because merging obliges a producer to null what
+    // it takes over. `dataSource` and `symbol` are shared identifiers read by three
+    // different flags, the other two belonging to the market data administration
+    // module and to the benchmark table, so leaving either up would re-point *their*
+    // dialog at this holding rather than merely leaving it alone.
     void this.router.navigate([], {
       queryParams: {
         dataSource,
         symbol,
+        assetProfileDialog: null,
+        benchmarkDetailDialog: null,
         holdingDetailDialog: true
       },
       queryParamsHandling: 'merge',
@@ -242,20 +260,23 @@ export class GfActivitiesComponent implements OnInit {
    * `createActivityClicked`, so the intent has to be turned back into the
    * dialog request here — without this handler the button is inert.
    *
-   * The payload is deliberately identical to the floating action button's in
-   * this component's own template, and it deliberately *replaces* the query
-   * parameters rather than merging them: `createDialog` is evaluated ahead of
-   * `editDialog` by the handler in the constructor, so merging onto a URL that
-   * still carried an edit request would open the create dialog pre-filled from
-   * the activity being edited. Replacing guarantees a blank form, which is the
-   * only thing this control can mean.
+   * The payload is deliberately identical to the floating action button's in this
+   * component's own template, and it merges while explicitly nulling the two keys
+   * that would otherwise make the form arrive filled in: `activityId`, because a
+   * blank form is the only thing this control can mean, and `editDialog`, because
+   * leaving both flags up would make the outcome depend on which one
+   * {@link applyQueryParams} happens to test first.
+   *
+   * Merging rather than replacing is what keeps the clear that narrow. Replacing
+   * the whole map would also discard the shared-portfolio access identifier, the
+   * sign-in token hand-off and every sibling module's dialog state, none of which
+   * this control has any business touching.
    */
   public onCreateActivity() {
     void this.router.navigate([], {
-      queryParams: {
-        createDialog: true,
-        dialogModule: DashboardModuleType.ACTIVITIES
-      }
+      queryParams: this.createDialogQueryParams,
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -462,6 +483,83 @@ export class GfActivitiesComponent implements OnInit {
   }
 
   /**
+   * Opens whatever the current query parameters ask this module for, once it is in
+   * a position to open it properly.
+   *
+   * Reached from four places - a parameter change, the device becoming known, the
+   * viewer resolving, and the impersonation state settling - because any of them
+   * can be the last one to arrive. That makes idempotence a requirement rather
+   * than a nicety, and {@link openedDialogAddress} is what provides it: the
+   * address a dialog was opened for is remembered until it closes, so being told
+   * the same thing four times opens one dialog.
+   *
+   * Idempotence is also what makes merging safe. Every producer merges rather than
+   * replaces - it has to, or it would drop a sibling module's parameters and the
+   * shared-portfolio identifier - so `route.queryParams` emits again whenever any
+   * *other* module writes to the URL, and a handler that opened on every emission
+   * would stack a second copy of a dialog that is already up.
+   */
+  private applyQueryParams() {
+    if (!this.deviceType || !this.user) {
+      return;
+    }
+
+    const { activityId, createDialog, dialogModule, editDialog } =
+      this.queryParams ?? {};
+
+    // On the single-canvas shell every module observes the same query
+    // parameters at once, so `createDialog` and `editDialog` carry no
+    // indication of who they were meant for. `dialogModule` does, and
+    // testing it first makes this handler fail-safe: an unqualified
+    // or foreign-qualified flag - the accounts module's floating action
+    // button, or the account-access module's edit link - opens nothing
+    // here. See the same gate in
+    // `components/user-account-access/user-account-access.component.ts`.
+    //
+    // Not addressed here is treated as *nothing requested* rather than returned
+    // on, so that the final branch still forgets what was last served. Returning
+    // early left the record standing, which meant a viewer who closed a dialog and
+    // asked for the same one again was ignored.
+    const isAddressed = dialogModule === DashboardModuleType.ACTIVITIES;
+
+    if (isAddressed && createDialog) {
+      if (activityId) {
+        this.serveDialogRequest(`createDialog:${activityId}`, () => {
+          this.dataService
+            .fetchActivity(activityId)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe((activity) => {
+              this.openCreateActivityDialog(activity);
+            });
+        });
+      } else {
+        this.serveDialogRequest('createDialog', () => {
+          this.openCreateActivityDialog();
+        });
+      }
+    } else if (isAddressed && editDialog) {
+      if (activityId) {
+        this.serveDialogRequest(`editDialog:${activityId}`, () => {
+          this.dataService
+            .fetchActivity(activityId)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe((activity) => {
+              this.openUpdateActivityDialog(activity);
+            });
+        });
+      } else {
+        this.clearDialogQueryParams();
+      }
+    } else {
+      // Nothing is being asked of this module. Forgetting what was last served is
+      // what lets the viewer ask for the same dialog a second time: the close
+      // handler removes the parameters it travelled on, this branch observes their
+      // absence, and the next identical request is therefore new again.
+      this.serveDialogRequest(null);
+    }
+  }
+
+  /**
    * Removes the query parameters this module's dialogs travel on, and only
    * those.
    *
@@ -544,6 +642,31 @@ export class GfActivitiesComponent implements OnInit {
             this.clearDialogQueryParams();
           });
       });
+  }
+
+  /**
+   * Opens a dialog unless the same request has already been served.
+   *
+   * The request the URL is making - not the dialog's own lifecycle - is what this
+   * is keyed on, and that is the whole point. `applyQueryParams` is reached from
+   * five places, and one of them is `fetchActivities`, which every close handler
+   * calls; keying on the dialog instead would let a close re-open the dialog that
+   * had just closed, because the parameters asking for it are removed by a
+   * navigation that has not necessarily been applied yet.
+   *
+   * The address is what makes this precise rather than merely a lock: asking to
+   * edit a *different* activity while an edit form is open is a genuine second
+   * request and is honoured, while being re-notified about the one already served
+   * is not.
+   */
+  private serveDialogRequest(aAddress: string, aOpen?: () => void) {
+    if (this.openedDialogAddress === aAddress) {
+      return;
+    }
+
+    this.openedDialogAddress = aAddress;
+
+    aOpen?.();
   }
 
   private updateUser(aUser: User) {

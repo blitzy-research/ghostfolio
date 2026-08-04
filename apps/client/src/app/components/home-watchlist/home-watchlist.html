@@ -12,6 +12,7 @@
       <gf-benchmark
         [benchmarks]="watchlist"
         [deviceType]="deviceType()"
+        [dialogModule]="benchmarkDialogModule"
         [hasPermissionToDeleteItem]="hasPermissionToDeleteWatchlistItem"
         [locale]="user?.settings?.locale || undefined"
         [user]="user"
@@ -35,7 +36,8 @@
       color="primary"
       i18n-aria-label
       mat-fab
-      [queryParams]="{ createWatchlistItemDialog: true }"
+      queryParamsHandling="merge"
+      [queryParams]="createDialogQueryParams"
       [routerLink]="[]"
     >
       <ion-icon aria-hidden="true" name="add-outline" size="large" />

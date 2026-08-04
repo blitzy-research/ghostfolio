@@ -1,21 +1,17 @@
 import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
 import { reportSanitizedError } from '@ghostfolio/common/helper';
-import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
+import {
+  DashboardModuleLayoutItem,
+  UserDashboardLayout
+} from '@ghostfolio/common/interfaces';
 import { DataService } from '@ghostfolio/ui/services';
 
 import { DestroyRef, Injectable, OnDestroy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ObservableStore } from '@codewithdan/observable-store';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
-import {
-  catchError,
-  debounceTime,
-  filter,
-  map,
-  switchMap
-} from 'rxjs/operators';
+import { catchError, concatMap, debounceTime, map } from 'rxjs/operators';
 
-import { DashboardLayoutItem } from '../interfaces/interfaces';
 import { DashboardLayoutStoreActions } from './dashboard-layout-store.actions';
 import { DashboardLayoutStoreState } from './dashboard-layout-store.state';
 
@@ -40,6 +36,18 @@ import { DashboardLayoutStoreState } from './dashboard-layout-store.state';
 interface DashboardLayoutSnapshot {
   layout: UpdateUserDashboardLayoutDto;
   userId: string;
+}
+
+/**
+ * One acknowledged write, paired with the snapshot that produced it.
+ *
+ * The pairing is what lets the subscriber tell an acknowledgement of the
+ * arrangement still outstanding from an acknowledgement of one that has since
+ * been superseded, so only the former retires the pending snapshot.
+ */
+interface DashboardLayoutWriteResult {
+  layout: UserDashboardLayout;
+  snapshot: DashboardLayoutSnapshot;
 }
 
 @Injectable({
@@ -142,51 +150,26 @@ export class GfDashboardLayoutService
     this.snapshot$
       .pipe(
         debounceTime(500),
-        // The identity is re-checked *here*, after the debounce, rather than
-        // where the snapshot was accepted. The check has to happen as late as
-        // possible, because the window it closes is precisely the one the
-        // debounce opens: the request is authorised by whichever token is in
-        // storage at the moment it is created, so an arrangement reported by one
-        // viewer must not be sent once another viewer is the one it would be
-        // written for. A refused snapshot is discarded rather than deferred - it
-        // describes a canvas that is no longer on screen - which is also what
-        // stops it being offered to {@link retryFailedSave} afterwards.
-        map((snapshot) => {
-          if (this.isAuthorizedIdentity(snapshot.userId)) {
-            return snapshot;
-          }
-
-          this.discardSnapshot(snapshot);
-
-          return null;
-        }),
-        // Narrowed with a type guard rather than a bare predicate, so the
-        // switched request below receives a snapshot and never a `null`.
-        filter((snapshot): snapshot is DashboardLayoutSnapshot => !!snapshot),
-        switchMap((snapshot) =>
-          this.dataService.patchUserDashboardLayout(snapshot.layout).pipe(
-            // Paired with the snapshot that produced it, so the subscriber can
-            // tell whether the write that just succeeded is the one still
-            // outstanding or a superseded attempt.
-            map((layout) => ({ layout, snapshot })),
-            // Caught inside the `switchMap` on purpose. An error allowed to reach
-            // the outer pipe would terminate it, and a terminated pipe silently
-            // stops saving for the rest of the session, so a single transient
-            // failure would cost the viewer every later change they made.
-            catchError((error) => {
-              reportSanitizedError('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', error);
-
-              // Published, not merely logged. The snapshot is left exactly where
-              // it is so the arrangement stays recoverable, and this is the only
-              // channel that tells the canvas to offer the retry that recovers
-              // it - without it the viewer is left believing an arrangement they
-              // can still see had been stored.
-              this.hasSaveError$.next(true);
-
-              return of(null);
-            })
-          )
-        ),
+        // `concatMap`, emphatically not `switchMap`. Cancelling a superseded
+        // write is only ever a cancellation on *this* side of the wire: by the
+        // time a newer arrangement supersedes an older one, the older request
+        // has usually already been accepted by the server, and unsubscribing
+        // from its response does not withdraw it. Because the endpoint performs
+        // an unconditional upsert of a whole document, two requests in flight at
+        // once leave the stored arrangement decided by which one the database
+        // commits last - completion order - rather than by the order in which the
+        // viewer made the changes. The observable outcome is a drag whose result
+        // silently reverts.
+        //
+        // Serialising the writes removes the possibility rather than narrowing
+        // it: this client never has more than one PATCH outstanding, so the last
+        // document the server commits is by construction the last one the viewer
+        // reported. The queue that serialisation implies cannot grow without
+        // bound either - the debounce above admits at most one snapshot per quiet
+        // period, and {@link dispatchSnapshot} drops every queued snapshot that a
+        // newer one has already replaced, so a burst costs one request rather
+        // than one per change.
+        concatMap((snapshot) => this.dispatchSnapshot(snapshot)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((result) => {
@@ -194,11 +177,10 @@ export class GfDashboardLayoutService
           return;
         }
 
-        // Checked a second time, after the response. `switchMap` cancels an
-        // in-flight write only when a newer one supersedes it, so a reply that
-        // belongs to the previous viewer can still arrive after an identity
-        // change - and caching it would serve one viewer's arrangement to
-        // another out of this store.
+        // Checked again, after the response. An identity can change while a
+        // write is in flight, so a reply that belongs to the previous viewer can
+        // still arrive afterwards - and caching it would serve one viewer's
+        // arrangement to another out of this store.
         if (!this.isAuthorizedIdentity(result.snapshot.userId)) {
           return;
         }
@@ -326,9 +308,13 @@ export class GfDashboardLayoutService
    * authorisation is discarded rather than sent. It never reaches the wire - the
    * request body is the five-field projection in {@link createLayoutDto} and
    * nothing else, because the server derives identity from the request itself.
-   * @param modules the whole canvas, every time.
+   * @param modules the whole arrangement, every time. Declared as the persisted
+   * five-field shape rather than as a grid item, because the caller's complete
+   * arrangement is not necessarily all on the canvas: a module the viewer is not
+   * currently entitled to see holds a saved position and no grid cell, and a
+   * snapshot that omitted it would delete it from the stored document.
    */
-  public scheduleSave(userId: string, modules: DashboardLayoutItem[]) {
+  public scheduleSave(userId: string, modules: DashboardModuleLayoutItem[]) {
     // Projected here rather than after the debounce, so what is queued is a
     // record of the arrangement at the instant it changed and cannot be altered
     // afterwards by the grid writing new coordinates onto its own items.
@@ -352,7 +338,7 @@ export class GfDashboardLayoutService
   }
 
   private createLayoutDto(
-    modules: DashboardLayoutItem[]
+    modules: DashboardModuleLayoutItem[]
   ): UpdateUserDashboardLayoutDto {
     return {
       modules: (modules ?? []).map(({ cols, moduleType, rows, x, y }) => ({
@@ -364,6 +350,72 @@ export class GfDashboardLayoutService
       })),
       version: 1
     };
+  }
+
+  /**
+   * Sends one snapshot, or declines to.
+   *
+   * Reached only from the serialised dispatch above, one snapshot at a time, and
+   * that is what both checks below depend on: a snapshot can wait here behind an
+   * in-flight write for as long as that write takes, so neither question can be
+   * answered before it is queued.
+   *
+   * **Superseded while queued.** {@link pendingSnapshot} is always the newest
+   * arrangement reported, so a queued snapshot that is no longer it has already
+   * been replaced by one waiting behind it. Every snapshot carries the entire
+   * arrangement, so sending the older one would put a document on the wire that
+   * the very next request contradicts - and would spend a round trip doing it.
+   * Skipping it is not a loss: the newer snapshot describes everything the older
+   * one did.
+   *
+   * **No longer authorised.** The identity check belongs here for the same
+   * reason it used to sit immediately after the debounce, only more so. A write
+   * is authorised by whichever bearer token is in storage when the request is
+   * created, and a queued snapshot may have been produced by a viewer who has
+   * since been replaced by signing in, signing out or creating an account. Such a
+   * snapshot is discarded rather than deferred - it describes a canvas that is no
+   * longer on screen - which is also what stops it being offered to
+   * {@link retryFailedSave} afterwards.
+   *
+   * A skip returns `null` rather than completing empty, because the subscriber
+   * distinguishes "nothing was sent" from "a write succeeded" and must not retire
+   * a snapshot it never wrote.
+   */
+  private dispatchSnapshot(
+    aSnapshot: DashboardLayoutSnapshot
+  ): Observable<DashboardLayoutWriteResult | null> {
+    if (aSnapshot !== this.pendingSnapshot) {
+      return of(null);
+    }
+
+    if (!this.isAuthorizedIdentity(aSnapshot.userId)) {
+      this.discardSnapshot(aSnapshot);
+
+      return of(null);
+    }
+
+    return this.dataService.patchUserDashboardLayout(aSnapshot.layout).pipe(
+      // Paired with the snapshot that produced it, so the subscriber can tell
+      // whether the write that just succeeded is the one still outstanding or a
+      // superseded attempt.
+      map((layout) => ({ layout, snapshot: aSnapshot })),
+      // Caught inside the projected observable on purpose. An error allowed to
+      // reach the outer pipe would terminate it, and a terminated pipe silently
+      // stops saving for the rest of the session, so a single transient failure
+      // would cost the viewer every later change they made.
+      catchError((error) => {
+        reportSanitizedError('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', error);
+
+        // Published, not merely logged. The snapshot is left exactly where it is
+        // so the arrangement stays recoverable, and this is the only channel that
+        // tells the canvas to offer the retry that recovers it - without it the
+        // viewer is left believing an arrangement they can still see had been
+        // stored.
+        this.hasSaveError$.next(true);
+
+        return of(null);
+      })
+    );
   }
 
   /**

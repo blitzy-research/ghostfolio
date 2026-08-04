@@ -89,6 +89,20 @@ const MINIMUM_ITEM_COLS = 2;
 const MINIMUM_ITEM_ROWS = 2;
 
 /**
+ * The canvas extent, in cells.
+ *
+ * Exported because it is grid policy, and this file is the one place grid policy
+ * is declared. The canvas needs the same two numbers to fit a *stored* geometry
+ * back inside the grid as it hydrates — a document written by an earlier build, or
+ * by hand, can name a cell the grid no longer has — and reading them from here is
+ * what stops that normalization and the engine's own `minCols`/`maxCols` and
+ * `maxRows` from ever describing different grids.
+ */
+export const GRID_COLUMNS = 12;
+
+export const GRID_ROWS = 100;
+
+/**
  * Rejects any placement whose footprint is smaller than the minimum its module
  * declared in the registry.
  *
@@ -250,9 +264,9 @@ export function createDashboardCanvasConfig(
     itemResizeCallback: () => handlers.onLayoutChange(),
     itemValidateCallback,
     margin: 10,
-    maxCols: 12,
-    maxRows: 100,
-    minCols: 12,
+    maxCols: GRID_COLUMNS,
+    maxRows: GRID_ROWS,
+    minCols: GRID_COLUMNS,
     // 2x2 is the smallest usable module footprint, and the column and row floors
     // below are what impose it. The area floor is derived from them so it can
     // never contradict them; on its own it excludes no shape they allow.

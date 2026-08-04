@@ -1,3 +1,4 @@
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import {
   getLocale,
@@ -65,6 +66,22 @@ import { BenchmarkDetailDialogParams } from './benchmark-detail-dialog/interface
 export class GfBenchmarkComponent {
   public readonly benchmarks = input.required<Benchmark[]>();
   public readonly deviceType = input.required<string>();
+
+  /**
+   * The module this instance stands for, as the discriminator its dialog request
+   * is addressed with.
+   *
+   * Required rather than optional, and that is deliberate. Three modules mount
+   * this component - markets, premium markets and the watchlist - and on the
+   * single-canvas shell all three can be on screen at once, all three observe the
+   * same query parameters, and `benchmarkDetailDialog` said nothing about which of
+   * them a request was for. One click therefore opened the dialog up to three
+   * times over. An optional input would have left that outcome reachable simply by
+   * forgetting to pass it, in a template that would still compile; requiring it
+   * makes a new host declare its identity or fail to build.
+   */
+  public readonly dialogModule = input.required<DashboardModuleType>();
+
   public readonly hasPermissionToDeleteItem = input<boolean>();
   public readonly locale = input(getLocale());
   public readonly showSymbol = input(true);
@@ -98,6 +115,12 @@ export class GfBenchmarkComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
+  /**
+   * The benchmark whose detail dialog this instance has already been asked for, or
+   * `null` for none.
+   */
+  private servedDialogAddress: string | null = null;
+
   public constructor() {
     effect(() => {
       const benchmarks = this.benchmarks();
@@ -115,11 +138,29 @@ export class GfBenchmarkComponent {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
-        if (
+        const isRequested =
           params['benchmarkDetailDialog'] &&
           params['dataSource'] &&
-          params['symbol']
-        ) {
+          params['symbol'] &&
+          // The gate that makes exactly one of the co-mounted instances answer.
+          params['dialogModule'] === this.dialogModule();
+
+        // Keyed on the request the URL is making rather than on the dialog's own
+        // lifecycle, so that a request already served is not served again - every
+        // producer on the canvas merges, so these parameters are re-observed
+        // whenever any other module writes to the URL - and a request withdrawn is
+        // forgotten, which is what lets the same benchmark be opened a second time.
+        const address: string | null = isRequested
+          ? `${params['dataSource']}:${params['symbol']}`
+          : null;
+
+        if (this.servedDialogAddress === address) {
+          return;
+        }
+
+        this.servedDialogAddress = address;
+
+        if (isRequested) {
           this.openBenchmarkDetailDialog({
             dataSource: params['dataSource'],
             symbol: params['symbol']
@@ -144,8 +185,27 @@ export class GfBenchmarkComponent {
     dataSource,
     symbol
   }: AssetProfileIdentifier) {
-    this.router.navigate([], {
-      queryParams: { dataSource, symbol, benchmarkDetailDialog: true }
+    // Merged, not replaced. Replacing the whole map discarded every parameter the
+    // rest of the canvas had put there - a sibling module's open dialog, the
+    // shared-portfolio access identifier, the sign-in token hand-off - as a side
+    // effect of opening this one dialog.
+    //
+    // Merging in turn obliges this producer to null what it is taking over.
+    // `dataSource` and `symbol` are shared identifiers: three flags read that same
+    // pair, and the other two are read by the application shell and by the market
+    // data administration module. Leaving either of them up would re-point *their*
+    // dialog at this benchmark rather than merely leaving it alone.
+    void this.router.navigate([], {
+      queryParams: {
+        dataSource,
+        symbol,
+        assetProfileDialog: null,
+        benchmarkDetailDialog: true,
+        dialogModule: this.dialogModule(),
+        holdingDetailDialog: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -172,7 +232,21 @@ export class GfBenchmarkComponent {
       .afterClosed()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        this.router.navigate(['.'], { relativeTo: this.route });
+        // Removes the parameters this dialog travelled on, and only those. The
+        // `navigate(['.'])` this replaced named a route segment instead, which
+        // dropped every query parameter on the canvas: closing this dialog also
+        // closed a sibling module's and discarded the shared-portfolio access
+        // identifier along with it.
+        void this.router.navigate([], {
+          queryParams: {
+            benchmarkDetailDialog: null,
+            dataSource: null,
+            dialogModule: null,
+            symbol: null
+          },
+          queryParamsHandling: 'merge',
+          relativeTo: this.route
+        });
       });
   }
 }

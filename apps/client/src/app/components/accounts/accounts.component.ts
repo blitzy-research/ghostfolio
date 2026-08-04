@@ -1,5 +1,8 @@
 import { GfAccountDetailDialogComponent } from '@ghostfolio/client/components/account-detail-dialog/account-detail-dialog.component';
-import { AccountDetailDialogParams } from '@ghostfolio/client/components/account-detail-dialog/interfaces/interfaces';
+import {
+  AccountDetailDialogParams,
+  AccountDetailDialogResult
+} from '@ghostfolio/client/components/account-detail-dialog/interfaces/interfaces';
 import type { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
@@ -49,15 +52,25 @@ export class GfAccountsComponent implements OnInit {
   public activitiesCount = 0;
   public deviceType: string;
   /**
-   * The discriminator this module's dialog flags are addressed with.
+   * The query parameters that ask this module for a blank create form.
    *
-   * Exposed so the template can bind it instead of repeating the literal. The
-   * discriminator has to match what this component's own query-parameter handler
-   * compares against, and a repeated literal is a match that no compiler
-   * checks - renaming the enum member would leave the control silently opening
-   * nothing.
+   * Bound by the floating action button in this component's template. The
+   * explicit nulls are the point of it: `accountDetailDialog`, `accountId` and
+   * `editDialog` may already be on the URL from an earlier interaction, and
+   * because {@link applyQueryParams} tests the account detail request ahead of
+   * `createDialog`, merging without clearing them re-opened that dialog instead
+   * of the create form. `transferBalanceDialog` is cleared for the mirror-image
+   * reason - it is tested *after* `createDialog`, so a stale one would open on
+   * top of the form the moment it was dismissed.
    */
-  public readonly dialogModule = DashboardModuleType.ACCOUNTS;
+  public readonly createDialogQueryParams = {
+    accountDetailDialog: null as boolean,
+    accountId: null as string,
+    createDialog: true,
+    dialogModule: DashboardModuleType.ACCOUNTS,
+    editDialog: null as boolean,
+    transferBalanceDialog: null as boolean
+  };
 
   public hasImpersonationId: boolean;
   public hasPermissionToCreateAccount: boolean;
@@ -66,6 +79,25 @@ export class GfAccountsComponent implements OnInit {
   public totalBalanceInBaseCurrency = 0;
   public totalValueInBaseCurrency = 0;
   public user: User;
+
+  /**
+   * The dialog request this module has already served, or `null` for none.
+   *
+   * A string rather than a boolean so that a request for a *different* account's
+   * detail dialog is still honoured while one is open. Reset by the query
+   * parameters ceasing to ask for anything rather than by a dialog closing - see
+   * {@link serveDialogRequest} for why that distinction matters.
+   */
+  private openedDialogAddress: string = null;
+
+  /**
+   * The query parameters as they stand, held rather than consumed on arrival.
+   *
+   * They can reach this module before it is able to act on them - see
+   * {@link applyQueryParams} - so the most recent set is kept and re-evaluated
+   * whenever a prerequisite arrives.
+   */
+  private queryParams: GfAppQueryParams;
 
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
@@ -79,70 +111,23 @@ export class GfAccountsComponent implements OnInit {
     private router: Router,
     private userService: UserService
   ) {
+    // Recorded rather than acted on. Every dialog this module opens is sized from
+    // `deviceType` and permitted from `user`, and both are resolved in `ngOnInit` -
+    // which runs *after* this. On the route-per-screen shell that never mattered,
+    // because a screen was constructed by a navigation that had already happened
+    // and its parameters arrived afterwards. On one canvas a module is
+    // materialised lazily *in response to* a request that is already on the URL,
+    // so `queryParams` delivers its current value here, in the constructor, before
+    // any of those prerequisites exist. Acting on it then produced a dialog laid
+    // out for the wrong device and, worse, a `createDialog` that opened nothing at
+    // all because the permission it is gated on had not been read yet.
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(
-        ({
-          accountDetailDialog,
-          accountId,
-          createDialog,
-          dialogModule,
-          editDialog,
-          transferBalanceDialog
-        }: GfAppQueryParams) => {
-          // On the single-canvas shell every module observes the same query
-          // parameters at once, so a flag that does not say who it is for is
-          // seen by all of them. `dialogModule` is what says it, and the two
-          // kinds of flag need it differently.
-          //
-          // `createDialog` and `editDialog` name no dialog of their own, so they
-          // are honoured here ONLY when addressed to this module. That gate is
-          // fail-safe by construction - an unqualified or foreign-qualified flag
-          // opens nothing - and it is what stops one module's floating action
-          // button from opening another's dialog. Same gate as in
-          // `components/user-account-access/user-account-access.component.ts`.
-          //
-          // `accountDetailDialog` and `transferBalanceDialog` do name a dialog,
-          // but naming a dialog is not the same as naming an owner: the account
-          // detail dialog is opened from three unqualified producers - the
-          // accounts table rendered inside this module, the assistant, and the
-          // allocations module - and the allocations module hosts a second copy
-          // of the very same dialog. Honouring these flags unconditionally
-          // therefore opened TWO identical dialogs whenever both modules were on
-          // the canvas. This module stays the default owner, because the two
-          // unqualified producers belong to it, but it now stands down when the
-          // request names someone else.
-          const isAddressed = dialogModule === DashboardModuleType.ACCOUNTS;
-          const isAddressedElsewhere = !!dialogModule && !isAddressed;
+      .subscribe((queryParams: GfAppQueryParams) => {
+        this.queryParams = queryParams;
 
-          if (accountId && accountDetailDialog && !isAddressedElsewhere) {
-            this.openAccountDetailDialog(accountId);
-          } else if (
-            isAddressed &&
-            createDialog &&
-            this.hasPermissionToCreateAccount
-          ) {
-            this.openCreateAccountDialog();
-          } else if (isAddressed && editDialog) {
-            const account = this.accounts?.find(({ id }) => {
-              return id === accountId;
-            });
-
-            // An account that cannot be found is the only outcome besides
-            // opening the dialog. Passing it on regardless would destructure
-            // `undefined` and throw, which is exactly what an `editDialog`
-            // addressed to this module before its accounts had loaded - or
-            // naming an account that has since been deleted - used to do.
-            if (account) {
-              this.openUpdateAccountDialog(account);
-            } else {
-              this.clearDialogQueryParams();
-            }
-          } else if (transferBalanceDialog && !isAddressedElsewhere) {
-            this.openTransferBalanceDialog();
-          }
-        }
-      );
+        this.applyQueryParams();
+      });
 
     addIcons({ addOutline });
   }
@@ -155,6 +140,8 @@ export class GfAccountsComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((impersonationId) => {
         this.hasImpersonationId = !!impersonationId;
+
+        this.applyQueryParams();
       });
 
     this.userService.stateChanged
@@ -173,8 +160,15 @@ export class GfAccountsComponent implements OnInit {
           );
 
           this.changeDetectorRef.markForCheck();
+
+          this.applyQueryParams();
         }
       });
+
+    // Re-evaluated once the device is known, so a request that was already on the
+    // URL when this module was created is honoured now that it can be honoured
+    // correctly.
+    this.applyQueryParams();
 
     this.fetchAccounts();
   }
@@ -195,16 +189,16 @@ export class GfAccountsComponent implements OnInit {
           this.totalBalanceInBaseCurrency = totalBalanceInBaseCurrency;
           this.totalValueInBaseCurrency = totalValueInBaseCurrency;
 
-          if (this.accounts?.length <= 0) {
-            void this.router.navigate([], {
-              queryParams: {
-                createDialog: true,
-                dialogModule: DashboardModuleType.ACCOUNTS
-              },
-              queryParamsHandling: 'merge',
-              relativeTo: this.route
-            });
-          }
+          // Nothing is opened automatically. On the route-per-screen shell the
+          // accounts screen was the only thing on it, so greeting a user who had
+          // no accounts with the create dialog was unambiguous. On one canvas the
+          // activities module makes the same offer for the same user at the same
+          // moment, and which of the two responses arrives first decides whether
+          // one onboarding dialog appears or two appear stacked - an outcome the
+          // previous shell could not produce. The offer is made by the empty state
+          // this module already renders and by its floating action button, both of
+          // which the viewer chooses to act on.
+          this.applyQueryParams();
 
           this.changeDetectorRef.markForCheck();
         }
@@ -316,6 +310,114 @@ export class GfAccountsComponent implements OnInit {
   }
 
   /**
+   * Opens whatever the current query parameters ask this module for, once it is in
+   * a position to open it properly.
+   *
+   * Reached from four places - a parameter change, the device becoming known, the
+   * viewer resolving, and the impersonation state settling - because any of them
+   * can be the last one to arrive. That makes idempotence a requirement rather
+   * than a nicety, and {@link openedDialogAddress} is what provides it: the
+   * address a dialog was opened for is remembered until it closes, so being told
+   * the same thing four times opens one dialog.
+   *
+   * Idempotence is also what makes merging safe. Every producer merges rather than
+   * replaces - it has to, or it would drop a sibling module's parameters and the
+   * shared-portfolio identifier - so `route.queryParams` emits again whenever any
+   * *other* module writes to the URL, and a handler that opened on every emission
+   * would stack a second copy of a dialog that is already up.
+   *
+   * Waiting on the viewer is deliberate even for the paths that do not read a
+   * permission: the account detail dialog is handed `hasPermissionToCreateActivity`
+   * and an impersonation flag, so opening it early would grant or deny an action
+   * on the strength of state that had not been read.
+   */
+  private applyQueryParams() {
+    if (!this.deviceType || !this.user) {
+      return;
+    }
+
+    const {
+      accountDetailDialog,
+      accountId,
+      createDialog,
+      dialogModule,
+      editDialog,
+      transferBalanceDialog
+    } = this.queryParams ?? {};
+
+    // On the single-canvas shell every module observes the same query
+    // parameters at once, so a flag that does not say who it is for is
+    // seen by all of them. `dialogModule` is what says it, and the two
+    // kinds of flag need it differently.
+    //
+    // `createDialog` and `editDialog` name no dialog of their own, so they
+    // are honoured here ONLY when addressed to this module. That gate is
+    // fail-safe by construction - an unqualified or foreign-qualified flag
+    // opens nothing - and it is what stops one module's floating action
+    // button from opening another's dialog. Same gate as in
+    // `components/user-account-access/user-account-access.component.ts`.
+    //
+    // `accountDetailDialog` and `transferBalanceDialog` do name a dialog,
+    // but naming a dialog is not the same as naming an owner: the account
+    // detail dialog is opened from three unqualified producers - the
+    // accounts table rendered inside this module, the assistant, and the
+    // allocations module - and the allocations module hosts a second copy
+    // of the very same dialog. Honouring these flags unconditionally
+    // therefore opened TWO identical dialogs whenever both modules were on
+    // the canvas. This module stays the default owner, because the two
+    // unqualified producers belong to it, but it now stands down when the
+    // request names someone else.
+    const isAddressed = dialogModule === DashboardModuleType.ACCOUNTS;
+    const isAddressedElsewhere = !!dialogModule && !isAddressed;
+
+    if (accountId && accountDetailDialog && !isAddressedElsewhere) {
+      this.serveDialogRequest(`accountDetailDialog:${accountId}`, () => {
+        this.openAccountDetailDialog(accountId);
+      });
+    } else if (
+      isAddressed &&
+      createDialog &&
+      this.hasPermissionToCreateAccount
+    ) {
+      this.serveDialogRequest('createDialog', () => {
+        this.openCreateAccountDialog();
+      });
+    } else if (isAddressed && editDialog) {
+      const account = this.accounts?.find(({ id }) => {
+        return id === accountId;
+      });
+
+      // An account that cannot be found is the only outcome besides
+      // opening the dialog. Passing it on regardless would destructure
+      // `undefined` and throw, which is exactly what an `editDialog`
+      // addressed to this module before its accounts had loaded - or
+      // naming an account that has since been deleted - used to do.
+      if (account) {
+        this.serveDialogRequest(`editDialog:${account.id}`, () => {
+          this.openUpdateAccountDialog(account);
+        });
+      } else if (this.accounts) {
+        // Only once the accounts are known. Before that an `editDialog` is a
+        // request this module cannot yet resolve, and clearing it would discard
+        // the request instead of waiting for the data that would satisfy it.
+        // Deliberately not recorded as served either, so that the request is
+        // still honoured when the accounts arrive.
+        this.clearDialogQueryParams();
+      }
+    } else if (transferBalanceDialog && !isAddressedElsewhere) {
+      this.serveDialogRequest('transferBalanceDialog', () => {
+        this.openTransferBalanceDialog();
+      });
+    } else {
+      // Nothing is being asked of this module. Forgetting what was last served is
+      // what lets the viewer ask for the same dialog a second time: the close
+      // handler removes the parameters it travelled on, this branch observes their
+      // absence, and the next identical request is therefore new again.
+      this.serveDialogRequest(null);
+    }
+  }
+
+  /**
    * Removes the query parameters this module's dialogs travel on, and only
    * those.
    *
@@ -345,7 +447,8 @@ export class GfAccountsComponent implements OnInit {
   private openAccountDetailDialog(aAccountId: string) {
     const dialogRef = this.dialog.open<
       GfAccountDetailDialogComponent,
-      AccountDetailDialogParams
+      AccountDetailDialogParams,
+      AccountDetailDialogResult | undefined
     >(GfAccountDetailDialogComponent, {
       autoFocus: false,
       data: {
@@ -364,8 +467,20 @@ export class GfAccountsComponent implements OnInit {
     dialogRef
       .afterClosed()
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
+      .subscribe((result) => {
         this.fetchAccounts();
+
+        // A dialog that closed itself in order to open another module's has
+        // already written that request onto the URL, and it wrote it onto the very
+        // parameters this clear removes. Clearing anyway would strip
+        // `createDialog`/`editDialog`, `activityId` and `dialogModule` back off
+        // again, and a lazily loaded activities module - which subscribes after
+        // this runs - would find nothing addressed to it and open nothing at all.
+        // The hand-off already cleared the two keys that identify this dialog, so
+        // there is nothing left here to clean up either.
+        if (result?.hasHandedOver) {
+          return;
+        }
 
         this.clearDialogQueryParams();
       });
@@ -463,6 +578,30 @@ export class GfAccountsComponent implements OnInit {
 
         this.clearDialogQueryParams();
       });
+  }
+
+  /**
+   * Opens a dialog unless the same request has already been served.
+   *
+   * The request the URL is making - not the dialog's own lifecycle - is what this
+   * is keyed on, and that is the whole point. `applyQueryParams` is reached from
+   * five places, and one of them is `fetchAccounts`, which every close handler
+   * calls; keying on the dialog instead would let a close re-open the dialog that
+   * had just closed, because the parameters asking for it are removed by a
+   * navigation that has not necessarily been applied yet.
+   *
+   * The address is what makes this precise rather than merely a lock: asking for a
+   * *different* account's detail dialog is a genuine second request and is
+   * honoured, while being re-notified about the one already served is not.
+   */
+  private serveDialogRequest(aAddress: string, aOpen?: () => void) {
+    if (this.openedDialogAddress === aAddress) {
+      return;
+    }
+
+    this.openedDialogAddress = aAddress;
+
+    aOpen?.();
   }
 
   private reset() {

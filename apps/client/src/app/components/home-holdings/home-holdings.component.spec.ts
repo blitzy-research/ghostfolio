@@ -7,7 +7,7 @@ import { DataService } from '@ghostfolio/ui/services';
 
 import { CommonModule } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
 import { BehaviorSubject, of } from 'rxjs';
 
@@ -74,6 +74,10 @@ describe('GfHomeHoldingsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [GfHomeHoldingsComponent],
       providers: [
+        // Reached because the holding-detail request is now merged relative to the
+        // current route rather than replacing the whole query map. Only the snapshot
+        // identity is used, so a bare object is a faithful stand-in.
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
         { provide: DashboardIntentService, useValue: dashboardIntentService },
         {
           provide: DataService,
@@ -153,18 +157,26 @@ describe('GfHomeHoldingsComponent', () => {
 
       component.onHoldingClicked({ dataSource: 'YAHOO', symbol: 'AAPL' });
 
-      expect(navigations).toEqual([
-        {
-          commands: [],
-          extras: {
-            queryParams: {
-              dataSource: 'YAHOO',
-              holdingDetailDialog: true,
-              symbol: 'AAPL'
-            }
-          }
-        }
-      ]);
+      expect(navigations).toHaveLength(1);
+      expect(navigations[0].commands).toEqual([]);
+
+      // Merged, so that opening this dialog cannot discard what the rest of the
+      // canvas put on the URL - a sibling module's open dialog, the
+      // shared-portfolio access identifier, the sign-in token hand-off.
+      expect(navigations[0].extras.queryParamsHandling).toBe('merge');
+
+      // Merging is what makes the two nulls necessary. `dataSource` and `symbol`
+      // are shared identifiers: three flags read that same pair, the other two
+      // belonging to the market data administration module and to the benchmark
+      // table. Leaving either up would re-point *their* dialog at this holding
+      // rather than merely leaving it alone.
+      expect(navigations[0].extras.queryParams).toEqual({
+        assetProfileDialog: null,
+        benchmarkDetailDialog: null,
+        dataSource: 'YAHOO',
+        holdingDetailDialog: true,
+        symbol: 'AAPL'
+      });
     });
 
     it('names no route, so the request survives the single-route collapse', async () => {

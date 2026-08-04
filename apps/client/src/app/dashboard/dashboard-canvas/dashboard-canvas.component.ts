@@ -2,7 +2,11 @@ import { GfPublicPortfolioComponent } from '@ghostfolio/client/components/public
 import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { User, UserDashboardLayout } from '@ghostfolio/common/interfaces';
+import {
+  DashboardModuleLayoutItem,
+  User,
+  UserDashboardLayout
+} from '@ghostfolio/common/interfaces';
 import { hasPermission } from '@ghostfolio/common/permissions';
 
 import { HttpErrorResponse } from '@angular/common/http';
@@ -39,7 +43,11 @@ import type {
 import { GfModuleCatalogComponent } from '../module-catalog/module-catalog.component';
 import { GfModuleRegistryService } from '../module-registry.service';
 import { GfDashboardLayoutService } from '../services/dashboard-layout.service';
-import { createDashboardCanvasConfig } from './dashboard-canvas.config';
+import {
+  createDashboardCanvasConfig,
+  GRID_COLUMNS,
+  GRID_ROWS
+} from './dashboard-canvas.config';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host/dashboard-module-host.component';
 import { GfDashboardToolbarComponent } from './dashboard-toolbar/dashboard-toolbar.component';
 import { GfEmptyCanvasStateComponent } from './empty-canvas-state/empty-canvas-state.component';
@@ -55,6 +63,17 @@ import { GfSignInPromptComponent } from './sign-in-prompt/sign-in-prompt.compone
  * the comparison below both warning-free and free of a type assertion.
  */
 const UNAUTHORIZED_STATUS: number = StatusCodes.UNAUTHORIZED;
+
+/**
+ * The one layout document shape this build can interpret.
+ *
+ * It is the same number `GfDashboardLayoutService` stamps onto every write, and
+ * the same one the API refuses to serve anything else for. Restating it here is
+ * what lets the canvas refuse a document from a newer build rather than rewriting
+ * it in an older shape — a check it must be able to make on its own, because it is
+ * the component that would do the rewriting.
+ */
+const SUPPORTED_LAYOUT_VERSION = 1;
 
 /**
  * The single canvas the application is mounted on, and the only component the
@@ -215,18 +234,30 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   private hasHydratedLayout = false;
 
   /**
-   * The arrangement exactly as it was last fetched, kept so that a module the
-   * viewer was not entitled to see can be admitted later without a second
-   * round trip.
+   * The viewer's arrangement in full, including the modules that are not on the
+   * canvas because they are not currently permitted.
    *
-   * It is a record of what the server holds, never a second authority over what
-   * is on the canvas: nothing reads it to decide a position, and grid state
-   * remains the only source of truth for geometry. It is needed because
-   * `applyLayout` deliberately drops entries this viewer may not see, so the
-   * live array alone cannot answer "what would this arrangement look like with
-   * one more permission".
+   * Kept because the live grid array cannot express the whole arrangement.
+   * `applyLayout` deliberately places only the modules this viewer may see, so
+   * without this the next ordinary edit would report the visible subset as the
+   * entire arrangement and the server would *delete* every module a lapsed
+   * subscription or a withdrawn admin role had hidden - permanently, and as a
+   * side effect of dragging something unrelated. It is also the only place a
+   * module that has never been on screen still has a saved position, which is
+   * what lets a permission granted mid-session put it back where the viewer
+   * left it.
+   *
+   * It is not a second authority over geometry, and Rule 2 depends on that
+   * distinction: for every module that *is* on the canvas, the entry here is
+   * overwritten from grid state each time a change is reported, so the grid
+   * remains the only thing that decides where a visible module sits. What this
+   * holds on its own is the saved geometry of modules the grid has no cell for.
+   *
+   * Restricted to discriminators the registry still knows. An unknown one is
+   * dropped once, on hydration, which is how an arrangement saved before a
+   * module was withdrawn stops carrying it.
    */
-  private hydratedLayout: UserDashboardLayout | null = null;
+  private canonicalModules: DashboardModuleLayoutItem[] = [];
 
   /**
    * Whether the viewer has been asked for. Guards the network call alone, so
@@ -377,12 +408,22 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         // The complete current arrangement, every time, stamped with the viewer
-        // it belongs to. What to send and when to send it is the layout
-        // service's business, not this component's - but *whose* arrangement it
-        // is can only be answered here, and it has to travel with the snapshot
-        // because the write happens after a debounce, by which time the token
-        // that authorises it may belong to somebody else.
-        this.dashboardLayoutService.scheduleSave(this.user?.id, this.modules);
+        // it belongs to. `canonicalModules` rather than `modules`, because the
+        // complete arrangement is not necessarily all on the canvas: a module
+        // the viewer is not currently entitled to see has a saved position and
+        // no cell, and sending only what has a cell would erase it. It is
+        // recomputed from grid state by `notifyLayoutChange` immediately before
+        // this fires, so what is read here is current by construction.
+        //
+        // What to send and when to send it is the layout service's business, not
+        // this component's - but *whose* arrangement it is can only be answered
+        // here, and it has to travel with the snapshot because the write happens
+        // after a debounce, by which time the token that authorises it may belong
+        // to somebody else.
+        this.dashboardLayoutService.scheduleSave(
+          this.user?.id,
+          this.canonicalModules
+        );
       });
   }
 
@@ -467,6 +508,7 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.isInitialized = false;
 
     this.modules.length = 0;
+    this.canonicalModules = [];
     this.lastReportedLayout = null;
 
     this.changeDetectorRef.markForCheck();
@@ -739,14 +781,33 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    *
    * The array is emptied and refilled rather than replaced, so the one array
    * this component owns keeps its identity.
+   *
+   * A document that cannot be interpreted is refused rather than partially
+   * applied, and refusing it is what keeps it safe: it is reported as a failed
+   * read, which offers a retry and permits no write at all, so the stored
+   * arrangement survives. Reporting it as an empty one instead would open the
+   * catalog as though this were a first visit, and the first module added
+   * afterwards would be written out as the viewer's whole arrangement, destroying
+   * the document that could not be read. The API refuses the same two shapes at
+   * its own boundary; this check is what makes the canvas independent of that
+   * rather than reliant on it.
    */
   private applyLayout(aLayout: UserDashboardLayout | null) {
-    const items = this.createLayoutItems(aLayout);
+    if (aLayout && !this.isReadableLayout(aLayout)) {
+      this.hasLayoutError = true;
+      this.isInitialized = true;
 
-    // Recorded before the entries this viewer may not see are dropped, so that a
-    // permission granted later can still admit its module at the position it was
-    // saved at. See `hydratedLayout`.
-    this.hydratedLayout = aLayout ?? null;
+      this.changeDetectorRef.markForCheck();
+
+      return;
+    }
+
+    // Recorded before the entries this viewer may not see are filtered out, so
+    // that a permission granted later can still admit its module at the position
+    // it was saved at. See `canonicalModules`.
+    this.canonicalModules = this.createCanonicalModules(aLayout);
+
+    const items = this.createLayoutItems(this.canonicalModules);
 
     this.modules.length = 0;
     this.modules.push(...items);
@@ -781,9 +842,17 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * Both directions have to be honoured, and they are handled separately
    * because they draw on different sources. A revocation is answered from the
    * live array, which keeps every surviving module's current geometry and its
-   * render order; a grant is answered from the last fetched arrangement, which
-   * is the only place a module that was never placed still has a saved position.
-   * Newly admitted modules are appended, so nothing already on screen moves.
+   * render order; a grant is answered from the canonical arrangement, which is
+   * the only place a module that has no cell still has a saved position. Newly
+   * admitted modules are appended, so nothing already on screen moves.
+   *
+   * An admitted module is offered to the grid engine before it is appended, at
+   * its own footprint, exactly as a module added from the catalog is. Its saved
+   * cell may well be occupied by something the viewer has moved since it was
+   * hidden, and appending it unscreened would put two modules in one place; the
+   * engine either confirms the saved cell or finds the nearest one that fits, and
+   * a module it can place nowhere at all is left in the canonical arrangement
+   * rather than overlapped onto the canvas.
    *
    * Deduplication is by discriminator, matching `createLayoutItems`, because the
    * template keys its cells on it and a repeat would collide.
@@ -791,7 +860,9 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * Nothing is reported to the layout service. A change in what a viewer is
    * allowed to see is not a change the viewer made, and persisting it would
    * erase a module from their saved arrangement the moment a subscription
-   * lapsed.
+   * lapsed. The canonical arrangement is still refreshed at the end, because a
+   * module that has just become visible now takes its geometry from the grid and
+   * must stop being carried as a hidden entry.
    */
   private applyPermittedModules() {
     const retained = this.modules.filter((item) =>
@@ -802,9 +873,12 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       retained.map(({ moduleType }) => moduleType)
     );
 
-    const admitted = this.createLayoutItems(this.hydratedLayout).filter(
-      ({ moduleType }) => {
-        return !retainedModuleTypes.has(moduleType);
+    const admitted = this.createLayoutItems(this.canonicalModules).filter(
+      (item) => {
+        return (
+          !retainedModuleTypes.has(item.moduleType) &&
+          this.settleItemPosition(item, { x: item.x, y: item.y })
+        );
       }
     );
 
@@ -820,6 +894,8 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     if (this.modules.length === 0) {
       this.isCatalogOpen = true;
     }
+
+    this.canonicalModules = this.mergeCanonicalModules();
 
     // Recorded last, over the arrangement this re-screen actually produced, so
     // that the grid callbacks its own render and teardown fire measure as
@@ -921,37 +997,100 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
-   * Turns a saved arrangement into grid items, dropping everything it cannot
-   * honour.
+   * Reduces a fetched document to the arrangement this canvas will work with.
    *
-   * Three entries are dropped in silence, and each of them has to be: a
+   * Two entries are dropped in silence, and each of them has to be: a
    * discriminator the registry no longer knows, which is how an arrangement saved
-   * before a module was renamed or withdrawn still loads; one whose module declares
-   * a permission this viewer does not hold; and a repeated discriminator, which the
-   * template's own cell key could not tell apart from the first.
+   * before a module was renamed or withdrawn still loads; and a repeated
+   * discriminator, which the template's own cell key could not tell apart from
+   * the first. Permission is deliberately *not* considered - that is what
+   * separates this from {@link createLayoutItems}, and the separation is the whole
+   * point: an entry the viewer may not currently see has to stay in the
+   * arrangement or the next edit would delete it from the server.
+   *
+   * Every surviving entry is normalized before it is admitted. The stored
+   * geometry is whatever some earlier client wrote, and the checks below are the
+   * only thing standing between it and the grid:
+   *
+   * - a coordinate that is not a whole number cannot describe a cell at all, so
+   *   the entry is dropped;
+   * - a footprint smaller than the module's own declared minimum is grown to it.
+   *   The engine enforces that minimum for every resize and every drop through
+   *   `itemValidateCallback`, but it is never consulted for an item that arrives
+   *   already placed, so a document written before a minimum was raised - or by
+   *   hand - would otherwise draw a module at a size no person could have resized
+   *   it to;
+   * - a footprint or an origin outside the grid is clamped back inside it, so an
+   *   entry can never span past the twelfth column or the hundredth row.
+   *
+   * Normalizing rather than dropping is what keeps a module the viewer placed on
+   * their canvas. Nothing is written as a result: `applyLayout` records the
+   * normalized arrangement as the last one reported, so the correction reaches the
+   * server only when the viewer next changes something themselves.
    *
    * The persisted discriminator is a plain string on purpose - the wire contract
    * has to tolerate a value written by an older client - and the registry lookup is
    * what narrows it, so nothing is asserted or cast on this path.
    */
-  private createLayoutItems(
+  private createCanonicalModules(
     aLayout: UserDashboardLayout | null
-  ): DashboardLayoutItem[] {
+  ): DashboardModuleLayoutItem[] {
     const definitions = this.getDefinitionsByModuleType();
-    const items: DashboardLayoutItem[] = [];
+    const modules: DashboardModuleLayoutItem[] = [];
+    // Kept as a set of plain strings rather than checked by scanning the
+    // accumulator, so the repeat test compares a persisted discriminator against
+    // persisted discriminators and never against the registry's typed one.
+    const placedModuleTypes = new Set<string>();
 
     for (const { cols, moduleType, rows, x, y } of aLayout?.modules ?? []) {
       const definition = definitions.get(moduleType);
 
-      if (!definition || !this.isModulePermitted(definition)) {
+      if (!definition || placedModuleTypes.has(moduleType)) {
         continue;
       }
 
-      const isAlreadyPlaced = items.some((item) => {
-        return item.moduleType === definition.moduleType;
+      const geometry = this.normalizeGeometry(definition, {
+        cols,
+        rows,
+        x,
+        y
       });
 
-      if (isAlreadyPlaced) {
+      if (!geometry) {
+        continue;
+      }
+
+      placedModuleTypes.add(moduleType);
+
+      modules.push({ ...geometry, moduleType: definition.moduleType });
+    }
+
+    return modules;
+  }
+
+  /**
+   * Turns the canonical arrangement into the grid items this viewer may see.
+   *
+   * The only filter applied here is permission, and every entry it lets through
+   * has already been normalized by {@link createCanonicalModules}, so the
+   * footprint carried onto the grid is one the engine's own minimum predicate
+   * accepts.
+   *
+   * The registry is consulted again rather than trusted from the earlier pass,
+   * because a module may have been withdrawn or a permission changed between a
+   * hydration and a re-screen; an entry with no definition is dropped for the
+   * same reason it was there.
+   */
+  private createLayoutItems(
+    aModules: DashboardModuleLayoutItem[]
+  ): DashboardLayoutItem[] {
+    const definitions = this.getDefinitionsByModuleType();
+    const items: DashboardLayoutItem[] = [];
+
+    for (const { cols, moduleType, rows, x, y } of aModules ?? []) {
+      const definition = definitions.get(moduleType);
+
+      if (!definition || !this.isModulePermitted(definition)) {
         continue;
       }
 
@@ -1150,6 +1289,28 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
+   * Whether a fetched document can be interpreted at all.
+   *
+   * Two things make it unreadable, and neither can be worked around by dropping
+   * an entry. A `modules` member that is not an array cannot be iterated, and the
+   * previous form did iterate it - inside the success handler of the read, which
+   * is the one place a failure must not surface, because the canvas has already
+   * concluded the read succeeded. And a version this build does not know describes
+   * a shape it cannot claim to understand; treating it as readable would let this
+   * client rewrite a document a newer one wrote, in an older shape, silently
+   * discarding whatever the newer shape carried.
+   *
+   * An absent version is readable. It is how documents written before the
+   * discriminator existed are spelled, and the shape they carry is this one.
+   */
+  private isReadableLayout({ modules, version }: UserDashboardLayout): boolean {
+    return (
+      Array.isArray(modules) &&
+      (version === undefined || version === SUPPORTED_LAYOUT_VERSION)
+    );
+  }
+
+  /**
    * Whether the URL addresses a portfolio shared by access link.
    *
    * `accessId` alone is not enough, because it is not exclusively a share-link
@@ -1188,6 +1349,69 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       aError instanceof HttpErrorResponse &&
       aError.status === UNAUTHORIZED_STATUS
     );
+  }
+
+  /**
+   * Rebuilds the whole arrangement from what is on the canvas plus what is
+   * legitimately not.
+   *
+   * This is the projection that gets persisted, and it has to answer one question
+   * exactly right: a module that is in the canonical arrangement but has no cell
+   * is either a module the viewer *removed*, which must be forgotten, or a module
+   * they are not *permitted* to see, which must be kept. Confusing the two costs
+   * something either way - forget the second and a lapsed subscription silently
+   * deletes modules from the stored arrangement; keep the first and a removed
+   * module comes back on the next load. Permission is what tells them apart, and
+   * it is the only thing that does, because both are simply absent from the grid.
+   *
+   * Visible modules come first and take their geometry from grid state, so the
+   * grid remains the single authority for everything it draws (Rule 2). Retained
+   * hidden modules keep the geometry they were saved with, which is the only
+   * geometry they have.
+   *
+   * Nothing is written from here. This produces the value; `notifyLayoutChange`
+   * decides whether a change is worth reporting at all.
+   */
+  private mergeCanonicalModules(): DashboardModuleLayoutItem[] {
+    // Annotated rather than inferred, so `moduleType` widens to the plain string
+    // the wire carries instead of staying the typed discriminator. Both halves of
+    // this merge have to be comparable, and the canonical half is only ever a
+    // string.
+    const visible: DashboardModuleLayoutItem[] = this.modules.map(
+      ({ cols, moduleType, rows, x, y }) => ({
+        cols,
+        moduleType,
+        rows,
+        x,
+        y
+      })
+    );
+
+    const visibleModuleTypes = new Set(
+      visible.map(({ moduleType }) => moduleType)
+    );
+
+    // Reached through the string-keyed map rather than the registry's own typed
+    // lookup, for the same reason every other path that starts from a persisted
+    // discriminator does: what is held here is the plain string the wire carries,
+    // and the map is what narrows it without a type assertion.
+    const definitions = this.getDefinitionsByModuleType();
+
+    const retainedHidden = this.canonicalModules.filter(({ moduleType }) => {
+      if (visibleModuleTypes.has(moduleType)) {
+        return false;
+      }
+
+      const definition = definitions.get(moduleType);
+
+      // Kept only while it is the *permission* that is keeping it off the canvas.
+      // A definition that has disappeared from the registry is dropped for the
+      // same reason hydration drops it, and a permitted module with no cell is a
+      // module the viewer removed.
+      return !!definition && !this.isModulePermitted(definition);
+    });
+
+    return [...visible, ...retainedHidden];
   }
 
   /**
@@ -1274,7 +1498,70 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     this.lastReportedLayout = fingerprint;
 
+    // Refreshed here, and only here, so the arrangement that gets persisted is
+    // always the current one. Holding the *fetched* document instead left it
+    // stale from the first edit onwards, which mattered twice over: the snapshot
+    // sent to the server would have described the canvas as it was loaded rather
+    // than as it is, and a permission granted later would have re-admitted a
+    // module at a position the viewer had long since moved away from. Recomputing
+    // it from grid state on every reported change removes the possibility of
+    // staleness rather than shortening its window - which also subsumes
+    // refreshing it when a write is acknowledged, because the server echoes back
+    // exactly the document it was sent.
+    this.canonicalModules = this.mergeCanonicalModules();
+
     this.layoutChange$.next();
+  }
+
+  /**
+   * Fits one stored geometry to the grid and to its module's declared minimum.
+   *
+   * Returns `null` for a geometry that cannot describe a cell - a coordinate that
+   * is not a whole number - because there is nothing to clamp such a value to.
+   * Everything else is brought inside the grid rather than rejected, so a stored
+   * arrangement keeps its modules.
+   *
+   * The order of the clamping matters. The footprint is settled first, against the
+   * module's declared minimum on one side and the grid's own extent on the other;
+   * the origin is then settled against what that footprint leaves, so the result
+   * always satisfies `x + cols <= 12` and `y + rows <= 100`. Doing it the other way
+   * round would settle an origin the footprint then overflows.
+   *
+   * A module whose declared minimum exceeds the grid is not representable, and the
+   * bound below resolves that in the grid's favour rather than silently producing
+   * an item the engine would refuse: the registry is the thing at fault in that
+   * case, and every entry in it is well within twelve columns.
+   */
+  private normalizeGeometry(
+    aDefinition: DashboardModuleDefinition,
+    aGeometry: { cols: number; rows: number; x: number; y: number }
+  ): { cols: number; rows: number; x: number; y: number } | null {
+    const { cols, rows, x, y } = aGeometry;
+
+    if (
+      !Number.isInteger(cols) ||
+      !Number.isInteger(rows) ||
+      !Number.isInteger(x) ||
+      !Number.isInteger(y)
+    ) {
+      return null;
+    }
+
+    const normalizedCols = Math.min(
+      GRID_COLUMNS,
+      Math.max(cols, aDefinition.minItemCols)
+    );
+    const normalizedRows = Math.min(
+      GRID_ROWS,
+      Math.max(rows, aDefinition.minItemRows)
+    );
+
+    return {
+      cols: normalizedCols,
+      rows: normalizedRows,
+      x: Math.min(Math.max(x, 0), GRID_COLUMNS - normalizedCols),
+      y: Math.min(Math.max(y, 0), GRID_ROWS - normalizedRows)
+    };
   }
 
   /**
@@ -1344,12 +1631,18 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * viewer deleting their modules. Clearing the reported fingerprint last means
    * the incoming arrangement is compared against nothing rather than against
    * somebody else's.
+   *
+   * The canonical arrangement goes with the rest, and it must: it is what a write
+   * is built from, so an entry left behind from the outgoing viewer would be
+   * persisted into the incoming viewer's account the first time they moved
+   * anything.
    */
   private resetForViewerChange() {
     this.hasLayoutError = false;
     this.isInitialized = false;
 
     this.modules.length = 0;
+    this.canonicalModules = [];
 
     this.lastReportedLayout = null;
     this.pendingRevealItem = null;

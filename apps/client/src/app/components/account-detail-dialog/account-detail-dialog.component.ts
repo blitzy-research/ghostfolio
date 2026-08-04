@@ -52,7 +52,10 @@ import { isNumber } from 'lodash';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { forkJoin } from 'rxjs';
 
-import { AccountDetailDialogParams } from './interfaces/interfaces';
+import {
+  AccountDetailDialogParams,
+  AccountDetailDialogResult
+} from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -109,8 +112,21 @@ export class GfAccountDetailDialogComponent implements OnInit {
   private readonly dashboardIntentService = inject(DashboardIntentService);
   private readonly dataService = inject(DataService);
   private readonly destroyRef = inject(DestroyRef);
+  /**
+   * Typed with its close result, not just with its own component type. The two
+   * hand-off paths below resolve with `{ hasHandedOver: true }` and every other
+   * close resolves with nothing, and the host relies on that difference to decide
+   * whether clearing this dialog's query parameters would take the hand-off's with
+   * them - so the union has to be part of the reference rather than something the
+   * host asserts about it.
+   */
   private readonly dialogRef =
-    inject<MatDialogRef<GfAccountDetailDialogComponent>>(MatDialogRef);
+    inject<
+      MatDialogRef<
+        GfAccountDetailDialogComponent,
+        AccountDetailDialogResult | undefined
+      >
+    >(MatDialogRef);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
 
@@ -158,7 +174,11 @@ export class GfAccountDetailDialogComponent implements OnInit {
       queryParamsHandling: 'merge'
     });
 
-    this.dialogRef.close();
+    // Reported as a hand-off, because the host's own cleanup would otherwise
+    // remove `createDialog` and `dialogModule` from the URL the navigation above
+    // just wrote them onto - and a lazily loaded activities module, which
+    // subscribes after that, would find nothing addressed to it.
+    this.dialogRef.close({ hasHandedOver: true });
   }
 
   protected onClose() {
@@ -228,7 +248,9 @@ export class GfAccountDetailDialogComponent implements OnInit {
       queryParamsHandling: 'merge'
     });
 
-    this.dialogRef.close();
+    // See `onCloneActivity`: the same hand-off, with `editDialog` in place of
+    // `createDialog`, and the same reason for reporting it.
+    this.dialogRef.close({ hasHandedOver: true });
   }
 
   protected showValuesInPercentage() {

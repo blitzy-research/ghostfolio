@@ -386,5 +386,113 @@ describe('GfAccountsComponent', () => {
         queryParamsHandling: 'merge'
       });
     });
+
+    it('neutralises every competing flag when asking for a blank create form', () => {
+      // The payload the floating action button binds. `accountDetailDialog` and
+      // `accountId` are tested *ahead* of `createDialog`, so a stale pair would
+      // re-open the detail dialog instead of the create form;
+      // `transferBalanceDialog` is tested *after* it, so a stale one would open on
+      // top of the form the moment it was dismissed. Merging is what keeps that
+      // clear confined to the six keys this module owns, rather than also
+      // discarding the shared-portfolio access identifier and the sign-in token
+      // hand-off.
+      expect(component.createDialogQueryParams).toEqual({
+        accountDetailDialog: null,
+        accountId: null,
+        createDialog: true,
+        dialogModule: DashboardModuleType.ACCOUNTS,
+        editDialog: null,
+        transferBalanceDialog: null
+      });
+    });
+  });
+
+  describe('onboarding', () => {
+    it('opens nothing automatically for a viewer holding no accounts', () => {
+      (
+        TestBed.inject(DataService).fetchAccounts as unknown as jest.Mock
+      ).mockReturnValue(
+        of({
+          accounts: [],
+          activitiesCount: 0,
+          totalBalanceInBaseCurrency: 0,
+          totalValueInBaseCurrency: 0
+        })
+      );
+
+      stateChangedSubject.next({
+        user: createUser({ permissions: ['createAccount'] })
+      });
+      dialogMock.open.mockClear();
+      routerMock.navigate.mockClear();
+
+      component.fetchAccounts();
+
+      // This module used to ask for its create dialog here. The activities module
+      // made the same offer for the same viewer at the same moment, and which of
+      // the two responses arrived first decided whether one onboarding dialog
+      // appeared or two appeared stacked - an outcome the route-per-screen shell
+      // could not produce, because only one of the two screens was ever mounted.
+      // The offer is now made by the empty state this module renders and by its
+      // floating action button, both of which the viewer chooses to act on.
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+      expect(dialogMock.open).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cold placement', () => {
+    it('opens one dialog when the same request is re-observed', () => {
+      queryParamsSubject.next({
+        accountDetailDialog: 'true',
+        accountId: 'ACCOUNT_ID'
+      });
+
+      // Every producer on the canvas merges rather than replaces, so
+      // `route.queryParams` emits again whenever any *other* module writes to the
+      // URL. Four prerequisites also re-evaluate the held parameters as they
+      // arrive. Both make re-notification the norm rather than the exception.
+      queryParamsSubject.next({
+        accessId: 'ACCESS_ID',
+        accountDetailDialog: 'true',
+        accountId: 'ACCOUNT_ID'
+      });
+
+      expect(dialogMock.open).toHaveBeenCalledTimes(1);
+    });
+
+    it('honours the same request again once the parameters have been cleared', () => {
+      queryParamsSubject.next({
+        accountDetailDialog: 'true',
+        accountId: 'ACCOUNT_ID'
+      });
+
+      // What the close handler does: the parameters the dialog travelled on are
+      // removed. Observing their absence is what lets the identical request count
+      // as new, which is why the guard is keyed on the request the URL is making
+      // rather than on the dialog's own lifecycle - `fetchAccounts` re-evaluates
+      // the parameters, and every close handler calls it.
+      queryParamsSubject.next({});
+      queryParamsSubject.next({
+        accountDetailDialog: 'true',
+        accountId: 'ACCOUNT_ID'
+      });
+
+      expect(dialogMock.open).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not re-open the dialog that has just closed', () => {
+      // The close path in full: the stubbed dialog reports itself closed
+      // synchronously, its handler calls `fetchAccounts`, and the stubbed data
+      // service answers synchronously too - so the whole cycle runs inside this
+      // one emission, with the clearing navigation still unapplied because the
+      // router is a stub. That is the tightest form of the race, and it used to
+      // reopen the dialog without bound.
+      queryParamsSubject.next({
+        accountDetailDialog: 'true',
+        accountId: 'ACCOUNT_ID'
+      });
+
+      expect(dialogMock.open).toHaveBeenCalledTimes(1);
+    });
   });
 });

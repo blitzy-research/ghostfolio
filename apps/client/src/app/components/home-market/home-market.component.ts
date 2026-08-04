@@ -1,6 +1,7 @@
 import { GfFearAndGreedIndexComponent } from '@ghostfolio/client/components/fear-and-greed-index/fear-and-greed-index.component';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { ghostfolioFearAndGreedIndexSymbol } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { resetHours } from '@ghostfolio/common/helper';
 import {
   Benchmark,
@@ -35,6 +36,17 @@ import { DeviceDetectorService } from 'ngx-device-detector';
   templateUrl: './home-market.html'
 })
 export class GfHomeMarketComponent implements OnInit {
+  /**
+   * The module this component stands for, passed to the benchmark table so that its
+   * detail dialog request names an owner.
+   *
+   * The benchmark table is mounted by three modules and all three can be on the
+   * canvas at once, all three observe the same query parameters, and
+   * `benchmarkDetailDialog` said nothing about which of them a request was for - so
+   * one click opened the dialog up to three times over.
+   */
+  public readonly benchmarkDialogModule = DashboardModuleType.MARKETS;
+
   public benchmarks: Benchmark[];
   public deviceType: string;
   public fearAndGreedIndex: number;

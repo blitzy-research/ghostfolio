@@ -1,3 +1,5 @@
+import { getDashboardModule } from '@ghostfolio/common/dashboard';
+
 import {
   IsInt,
   IsNotEmpty,
@@ -47,6 +49,69 @@ export class IsWithinDashboardGridConstraint implements ValidatorConstraintInter
   }
 }
 
+/**
+ * Rejects a grid item smaller than the footprint its own module declares.
+ *
+ * The per-field `@Min(2)` bounds below are the *global* floor, which every module
+ * shares, and they are all this request used to be measured against. Individual
+ * modules declare stricter minimums in the shared metadata — the AI chat module
+ * needs three columns by five rows, the analysis module six by six — and those
+ * minimums are what the grid engine enforces on screen through
+ * `itemValidateCallback`. Enforcing them only on screen left the wire open: a
+ * hand-written request could store the AI chat module at two by two, and a client
+ * hydrating that document would draw a module at a size the engine would never
+ * have let a person resize it to. This constraint closes that gap, so the declared
+ * minimum is enforced end to end rather than in the browser alone.
+ *
+ * Declared on `moduleType` because the module is what determines the minimum, and
+ * because the resulting message can then name it — "'ai-chat' requires at least 3
+ * columns by 5 rows" is actionable in a way that a bare bound on `cols` is not.
+ *
+ * Two cases defer by returning `true`, and both are deliberate:
+ *
+ * - **An unknown discriminator.** There is no metadata to measure it against, and
+ *   failing the whole request would make a layout containing a withdrawn module
+ *   unwritable. Such an entry is dropped per item when the layout is read, which
+ *   is the behaviour the surrounding class documents for a retired type.
+ * - **A non-integer dimension.** `@IsInt()` on `cols` and `rows` already reports
+ *   that, and a second error about the same item would bury it.
+ */
+@ValidatorConstraint({ name: 'satisfiesDashboardModuleMinimum' })
+export class SatisfiesDashboardModuleMinimumConstraint implements ValidatorConstraintInterface {
+  public defaultMessage(validationArguments: ValidationArguments) {
+    const { moduleType } =
+      validationArguments.object as DashboardModuleLayoutItemDto;
+
+    const dashboardModule = getDashboardModule(moduleType);
+
+    return dashboardModule
+      ? `module '${moduleType}' requires at least ${dashboardModule.minItemCols} columns by ${dashboardModule.minItemRows} rows`
+      : 'module is smaller than its declared minimum';
+  }
+
+  public validate(
+    aModuleType: string,
+    validationArguments: ValidationArguments
+  ) {
+    const { cols, rows } =
+      validationArguments.object as DashboardModuleLayoutItemDto;
+
+    const dashboardModule = getDashboardModule(aModuleType);
+
+    if (!dashboardModule) {
+      return true;
+    }
+
+    if (!Number.isInteger(cols) || !Number.isInteger(rows)) {
+      return true;
+    }
+
+    return (
+      cols >= dashboardModule.minItemCols && rows >= dashboardModule.minItemRows
+    );
+  }
+}
+
 export class DashboardModuleLayoutItemDto {
   @IsInt()
   @Max(12)
@@ -70,6 +135,7 @@ export class DashboardModuleLayoutItemDto {
     message: 'moduleType must not contain control characters'
   })
   @MaxLength(64)
+  @Validate(SatisfiesDashboardModuleMinimumConstraint)
   moduleType: string;
 
   @IsInt()
