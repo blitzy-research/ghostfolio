@@ -44,8 +44,15 @@
 
     // This class must match gridster's dragHandleClass; preserve cursor and
     // text-selection behavior.
+    //
+    // The resting tone is the stronger of the two surface-text tokens, and the
+    // glyph is stepped up one tokenised type-scale step, because this is where
+    // the handle's type size is established: the glyph is stroked at 32/512, so
+    // at the smaller step its stroke lands on a sub-pixel line and renders below
+    // the 3:1 non-text minimum however dark the nominal tone is. The module host
+    // restates both so the two files cannot drift apart.
     .gf-dashboard-module-drag-handle {
-      color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+      color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
       cursor: move;
       font: var(
         --mat-sys-title-small,
@@ -53,9 +60,8 @@
       );
       user-select: none;
 
-      &:focus-visible,
-      &:hover {
-        color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+      ion-icon {
+        font-size: var(--mat-sys-title-medium-size, 1rem);
       }
     }
   }
@@ -90,12 +96,7 @@
       }
 
       .gf-dashboard-module-drag-handle {
-        color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
-
-        &:focus-visible,
-        &:hover {
-          color: var(--mat-sys-on-surface, #ffffff);
-        }
+        color: var(--mat-sys-on-surface, #ffffff);
       }
     }
   }

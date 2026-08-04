@@ -12,7 +12,7 @@ import {
 } from '@angular/material/dialog';
 import { MatSliderModule } from '@angular/material/slider';
 
-import { RuleSettingsDialogParams } from './interfaces/interfaces';
+import type { RuleSettingsDialogParams } from './interfaces/interfaces';
 
 @Component({
   imports: [

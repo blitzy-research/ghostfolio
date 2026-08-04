@@ -26,51 +26,28 @@ const sharedDashboardModules: Record<DashboardModuleType, DashboardModule> =
   dashboardModules;
 
 /**
- * The one and only way a module type can reach the dashboard canvas.
+ * How a module type reaches the dashboard canvas: the canvas resolves a persisted
+ * `moduleType` discriminator here, awaits the definition's loader and hands the
+ * resulting component type to `NgComponentOutlet`, so it imports no module
+ * component and no module component imports it. Routing every module through this
+ * map is the convention that keeps that true; nothing in the build enforces it.
  *
- * The canvas never imports a module component and no module component imports
- * the canvas. Instead the canvas resolves a persisted `moduleType`
- * discriminator through this registry, awaits the definition's loader and hands
- * the resulting component type to `NgComponentOutlet`. That indirection is what
- * makes module isolation structural rather than conventional: because the only
- * handle on a module's component class is a thunk held in this map, there is no
- * expression a developer could write to insert a component into the grid
- * without registering it first.
- *
- * Composition of a definition is deliberately split across two sources:
+ * A definition is composed from two sources, neither of which duplicates the other,
+ * so a module's declared minimum footprint has exactly one definition site and the
+ * grid's enforcement of it cannot drift from what the catalog advertises:
  *
  * - `dashboardModuleRegistrations` supplies the application-side half - which
  *   component a discriminator resolves to, and how to fetch it lazily;
- * - `@ghostfolio/common/dashboard` supplies the framework-neutral half - the
- *   localized display name, the default footprint, the minimum footprint and
- *   the optional visibility permission - so that `libs/ui` can read the same
- *   metadata without importing application code.
+ * - `@ghostfolio/common/dashboard` supplies the framework-neutral half - display
+ *   name, default and minimum footprint, optional visibility permission - so that
+ *   `libs/ui` can read the same metadata without importing application code.
  *
- * Neither half is ever duplicated, so a module's declared minimum footprint has
- * exactly one definition site and the grid engine's enforcement of it cannot
- * drift from what the catalog advertises.
- *
- * Registration is validated rather than trusted. A missing loader, a
- * discriminator with no shared metadata and a duplicate discriminator each
- * throw immediately, because every one of them is a static wiring mistake that
- * would otherwise surface much later as a cell that never paints. Lookup, by
- * contrast, is forgiving: an unknown discriminator returns `undefined` so that
- * a layout persisted before a module was renamed or withdrawn loses that one
- * entry instead of failing the whole canvas.
- *
- * @example
- * ```typescript
- * const definition = this.moduleRegistry.get(item.moduleType);
- *
- * if (!definition) {
- *   return; // A stale persisted entry; drop it and keep rendering.
- * }
- *
- * const moduleComponent = await definition.loadComponent();
- * ```
+ * Registration throws and lookup does not, deliberately: a wiring mistake is static
+ * and should fail loudly, whereas an unknown discriminator has to be survivable
+ * because a saved layout outlives the module it names.
  */
 @Injectable({ providedIn: 'root' })
-export class DashboardModuleRegistryService {
+export class GfModuleRegistryService {
   /**
    * Definitions keyed by discriminator.
    *
@@ -111,17 +88,14 @@ export class DashboardModuleRegistryService {
   }
 
   /**
-   * Resolves one definition, or `undefined` when the discriminator is unknown.
+   * `undefined` rather than a throw for an unknown discriminator, so a layout saved
+   * before a module was renamed or withdrawn loses that one entry instead of failing
+   * the whole canvas.
    *
-   * Returning `undefined` instead of throwing is the behaviour that lets a
-   * saved layout survive the removal or rename of a module: the canvas drops
-   * the entry it cannot resolve and renders everything else.
-   *
-   * The returned object is the stored definition itself, not a copy. Consumers
-   * rely on that identity - the module host compares successive definitions to
-   * decide whether it must fetch a component again - so a defensive clone here
-   * would make every change-detection pass look like a new module and refetch
-   * it.
+   * The stored definition is returned, not a copy: the module host compares
+   * successive definitions by reference to decide whether it must fetch a component
+   * again, so a defensive clone would refetch every module on every
+   * change-detection pass.
    */
   public get(
     aModuleType: DashboardModuleType
@@ -130,31 +104,21 @@ export class DashboardModuleRegistryService {
   }
 
   /**
-   * Every registered definition, in registration order.
-   *
-   * A fresh array on every call: the catalog sorts and filters what it is given,
-   * and handing out the backing collection would let a caller reorder or empty
-   * the registry as a side effect of drawing a list.
+   * A fresh array on every call, because the catalog sorts and filters what it is
+   * given and handing out the backing collection would let it reorder or empty the
+   * registry as a side effect of drawing a list.
    */
   public getAll(): DashboardModuleDefinition[] {
     return Array.from(this.definitions.values());
   }
 
   /**
-   * Adds one module type to the registry.
+   * The three checks run in this order on purpose: loader, then shared metadata, then
+   * duplicate discriminator. Checking for a duplicate first would mask a malformed
+   * registration behind a duplicate-key message and send whoever has to fix it
+   * looking in the wrong place.
    *
-   * The three checks run in this order on purpose. The loader is validated
-   * first, then the shared metadata, and only then is the discriminator
-   * checked for a duplicate - so a genuinely malformed registration is always
-   * reported as malformed, even when its discriminator happens to be one that
-   * is already registered. Reversing the order would mask a missing loader
-   * behind a duplicate-key message and send whoever has to fix it looking in
-   * the wrong place.
-   *
-   * @throws Error when the registration carries no callable loader, when its
-   * discriminator has no entry in the shared metadata map, or when its
-   * discriminator is already registered. Every message names the offending
-   * discriminator.
+   * @throws Error naming the offending discriminator.
    */
   public register(aRegistration: DashboardModuleRegistration): void {
     const { loadComponent, moduleType } = aRegistration;
@@ -165,10 +129,10 @@ export class DashboardModuleRegistryService {
       );
     }
 
-    // Guarded even though the index type reports a value for every key: a
-    // discriminator can arrive from a persisted layout or from a table that was
-    // edited without its shared counterpart, and neither of those is something
-    // the type system sees.
+    // Guarded even though the widened index type reports a value for every key.
+    // This method is public and is exercised with hand-built registrations, so
+    // without the guard a discriminator absent from the shared map would spread
+    // `undefined` into a definition instead of failing.
     const sharedModule = sharedDashboardModules[moduleType];
 
     if (!sharedModule) {

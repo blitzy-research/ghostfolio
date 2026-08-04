@@ -26,7 +26,7 @@ import { format } from 'date-fns';
 
 import { GfLineChartComponent } from '../../line-chart/line-chart.component';
 import { GfValueComponent } from '../../value/value.component';
-import { BenchmarkDetailDialogParams } from './interfaces/interfaces';
+import type { BenchmarkDetailDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

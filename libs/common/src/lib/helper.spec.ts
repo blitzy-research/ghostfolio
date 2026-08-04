@@ -1,7 +1,10 @@
 import {
   extractNumberFromString,
-  getNumberFormatGroup
+  getNumberFormatGroup,
+  isKnownDataSource
 } from '@ghostfolio/common/helper';
+
+import { DataSource } from '@prisma/client';
 
 describe('Helper', () => {
   describe('Extract number from string', () => {
@@ -114,6 +117,31 @@ describe('Helper', () => {
     it('Get zh-CN number format group when it is default', () => {
       languageGetter.mockReturnValue('zh-CN');
       expect(getNumberFormatGroup()).toEqual(',');
+    });
+  });
+
+  describe('Is known data source', () => {
+    it('Accept every member of the vocabulary', () => {
+      for (const dataSource of Object.values(DataSource)) {
+        expect(isKnownDataSource(dataSource)).toBe(true);
+      }
+    });
+
+    it('Reject a value outside the vocabulary', () => {
+      expect(isKnownDataSource('GHOSTFOLIO_')).toBe(false);
+      expect(isKnownDataSource('yahoo')).toBe(false);
+    });
+
+    it('Reject a value carrying path traversal', () => {
+      expect(isKnownDataSource('../../admin/demo-user/sync?')).toBe(false);
+      expect(isKnownDataSource('YAHOO/../..')).toBe(false);
+    });
+
+    it('Reject an absent or non-string value', () => {
+      expect(isKnownDataSource(undefined)).toBe(false);
+      expect(isKnownDataSource(null)).toBe(false);
+      expect(isKnownDataSource('')).toBe(false);
+      expect(isKnownDataSource(1)).toBe(false);
     });
   });
 });

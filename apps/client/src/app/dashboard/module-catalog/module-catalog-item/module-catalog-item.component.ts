@@ -14,20 +14,29 @@ import {
 } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 
-import { DashboardModuleDefinition } from '../../interfaces/interfaces';
+// Type-only: this interface is named in a decorated `@Input()` signature, and
+// with `isolatedModules` and decorator metadata both on, a value import there
+// is a spec-compilation error (TS1272). The sibling module host imports it the
+// same way for the same reason.
+import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
 
 /**
- * A single row of the dashboard module catalog. The parent catalog renders one
- * instance per module it has already narrowed down by permission and by the
- * active search term, so this row draws whatever definition it is handed.
+ * A single row of the dashboard module catalog, drawing whatever definition the
+ * parent hands it - already narrowed by permission and by the active search term.
  *
- * The row plays three roles at the same time:
+ * It is three things at once: a click target that emits an add-module intent, a
+ * native HTML5 drag source whose payload the canvas reads on drop, and a
+ * `FocusableOption` so the parent's `FocusKeyManager` can move a roving focus across
+ * the rows with wraparound.
  *
  * 1. a click target that emits an add-module intent;
  * 2. a native HTML5 drag source whose payload the dashboard canvas reads when
  *    the row is dropped onto an empty grid cell;
- * 3. a `FocusableOption`, so the parent's `FocusKeyManager` can move a roving
- *    virtual focus across the rows with wraparound.
+ * 3. a `FocusableOption`, so the parent's `FocusKeyManager` can move focus
+ *    across the rows with wraparound. The focus is real DOM focus on the row's
+ *    button, which is what a key manager assumes: it calls `focus()` on the
+ *    option it moves to and does nothing else, so an option that only painted a
+ *    highlight would leave keyboard focus stranded wherever it started.
  *
  * Everything else is deliberately out of reach. The row holds no layout
  * geometry, resolves no module component, checks no permission and persists
@@ -59,13 +68,6 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
   @HostBinding('attr.role') role = 'listitem';
 
   /**
-   * Keeps the row out of the natural tab order while leaving it
-   * programmatically focusable. Focus here is a roving virtual focus driven by
-   * the parent, not a per-row tab stop.
-   */
-  @HostBinding('attr.tabindex') tabindex = -1;
-
-  /**
    * Registry metadata for the module this row offers.
    *
    * Only `name` and `moduleType` are ever read. Materialising the module's
@@ -76,16 +78,19 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
   @Input() definition: DashboardModuleDefinition;
 
   /**
-   * The actionable element inside the row. The parent scrolls it into view as
-   * focus moves between rows and clicks it to action the focused row on Enter,
-   * which is why the click handler is bound to this element rather than to the
-   * component host: a second binding on the host would add the module twice.
+   * The actionable element inside the row: a real button, which is what
+   * `focus()` focuses and what activates on Enter and Space without this
+   * component or its parent handling either key.
    *
-   * `read: ElementRef` is required, not decorative. The referenced element
-   * hosts a component, so an unqualified query would hand back that component
-   * instance instead of an element reference, leaving the parent's
-   * `nativeElement?.click()` and `nativeElement?.scrollIntoView()` to no-op
-   * silently against an undefined property.
+   * The parent also scrolls it into view as focus moves between rows. It does
+   * not synthesise clicks on it any more - a focused native button needs no help
+   * being activated, and helping it would add the module twice.
+   *
+   * The host around it is deliberately NOT focusable: a focusable wrapper about
+   * a focusable control would be a second tab stop announcing the same command
+   * twice. The button carries `tabindex="-1"` instead, keeping the rows out of
+   * the natural tab order while leaving them programmatically focusable, which
+   * is the roving pattern the parent's key manager drives.
    */
   @ViewChild('row', { read: ElementRef })
   public rowElement: ElementRef<HTMLElement>;
@@ -107,10 +112,47 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
     return this.hasFocus;
   }
 
-  public focus() {
-    this.hasFocus = true;
+  /**
+   * The row's accessible name. Composed here because it interpolates the module
+   * name, and Angular's `i18n-` attribute localization applies only to static
+   * attributes; a bound one has to be localized in code.
+   *
+   * The module name arrives already translated from the shared metadata, so it
+   * is interpolated as a placeholder rather than re-translated.
+   */
+  public get ariaLabel() {
+    return $localize`Add ${this.definition?.name}:moduleName: module`;
+  }
 
-    this.changeDetectorRef.markForCheck();
+  /**
+   * Moves real DOM focus to the row's button.
+   *
+   * This is the `FocusableOption` contract and the parent's key manager is its
+   * only caller.
+   *
+   * The highlight is recorded here as well as from the button's own `focus`
+   * event, and both are needed. The event covers focus this component never
+   * asked for - a click, or the browser restoring it - while this path covers
+   * the case the event cannot: focusing an element that already holds focus
+   * fires nothing at all. That happens whenever the key manager returns to the
+   * row it is already on, which a single-row result list does on every step, and
+   * so does a results update that leaves the focused row in place. Without this,
+   * the highlight would go missing while the focus ring stayed put. Both paths
+   * write the same value, so they cannot disagree.
+   */
+  public focus() {
+    const element = this.rowElement?.nativeElement;
+
+    // Guarded rather than assumed, and the highlight is recorded only once the
+    // focus call has actually been made - a highlight on a row that could not
+    // take focus would be describing focus that is somewhere else.
+    if (!element) {
+      return;
+    }
+
+    element.focus();
+
+    this.onFocus();
   }
 
   public onClick() {
@@ -129,17 +171,14 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
   }
 
   /**
-   * Publishes the module type as the drag payload for the canvas.
+   * The payload is the bare discriminator under `text/plain`, with no wrapper and no
+   * encoding: `text/plain` is the transfer type every browser supports, and the bare
+   * value is what the module registry resolves against when the canvas reads it back
+   * in its drop callback. The grid engine itself never inspects the payload - while a
+   * drag hovers it only decides, geometrically, whether a cell is free.
    *
-   * The payload is written under `text/plain` as the bare discriminator, with
-   * no wrapper and no encoding, for two reasons: `text/plain` is the one
-   * transfer key browsers still expose while a drag is merely hovering, which
-   * is when the grid engine inspects the payload to decide whether to accept a
-   * drop, and the bare value is what the module registry resolves against.
-   *
-   * `dataTransfer` is guarded rather than assumed. The workspace compiles with
-   * `strictNullChecks` disabled, so nothing but this check stands between an
-   * event without a transfer object and a runtime failure.
+   * `dataTransfer` is guarded rather than assumed, because the workspace compiles with
+   * `strictNullChecks` disabled.
    */
   public onDragStart(event: DragEvent) {
     if (!event.dataTransfer) {
@@ -149,9 +188,16 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
     event.dataTransfer.effectAllowed = 'copy';
     event.dataTransfer.setData('text/plain', this.definition.moduleType);
 
-    // Flagged only once the payload is attached, so the drag-active styling
-    // never advertises a drag the canvas would be unable to act on.
     this.isDragging = true;
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Records that this row holds focus, whatever moved it here.
+   */
+  public onFocus() {
+    this.hasFocus = true;
 
     this.changeDetectorRef.markForCheck();
   }

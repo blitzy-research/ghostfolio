@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfAdminSettingsComponent],
   selector: 'gf-admin-settings-module',
+  styleUrls: ['./admin-settings.module.scss'],
   templateUrl: './admin-settings.module.html'
 })
 export class GfAdminSettingsModuleComponent {}

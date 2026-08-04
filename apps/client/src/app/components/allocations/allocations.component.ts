@@ -1,8 +1,10 @@
 import { GfAccountDetailDialogComponent } from '@ghostfolio/client/components/account-detail-dialog/account-detail-dialog.component';
 import { AccountDetailDialogParams } from '@ghostfolio/client/components/account-detail-dialog/interfaces/interfaces';
+import type { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { MAX_TOP_HOLDINGS, UNKNOWN_KEY } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { prettifySymbol } from '@ghostfolio/common/helper';
 import {
   AssetProfileIdentifier,
@@ -136,11 +138,30 @@ export class GfAllocationsComponent implements OnInit {
   ) {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => {
-        if (params['accountId'] && params['accountDetailDialog']) {
-          this.openAccountDetailDialog(params['accountId']);
+      .subscribe(
+        ({
+          accountDetailDialog,
+          accountId,
+          dialogModule
+        }: GfAppQueryParams) => {
+          // This module hosts its own copy of the account detail dialog, and so
+          // does the accounts module. On the single-canvas shell both observe the
+          // same query parameters, so honouring a bare `accountDetailDialog`
+          // opened the dialog twice over whenever both modules were placed.
+          //
+          // The accounts module is the default owner - the accounts table and the
+          // assistant both produce this flag unqualified, and both belong to it -
+          // so this module answers only when the request names it. Its own
+          // producer, `onAccountChartClicked`, is what names it.
+          if (
+            accountId &&
+            accountDetailDialog &&
+            dialogModule === DashboardModuleType.ALLOCATIONS
+          ) {
+            this.openAccountDetailDialog(accountId);
+          }
         }
-      });
+      );
   }
 
   public ngOnInit() {
@@ -190,16 +211,29 @@ export class GfAllocationsComponent implements OnInit {
 
   public onAccountChartClicked({ symbol }: AssetProfileIdentifier) {
     if (symbol && symbol !== UNKNOWN_KEY) {
-      this.router.navigate([], {
-        queryParams: { accountId: symbol, accountDetailDialog: true }
+      // Names this module, so the dialog opens here and not also in the accounts
+      // module, which hosts the same dialog and would otherwise answer too.
+      void this.router.navigate([], {
+        queryParams: {
+          accountDetailDialog: true,
+          accountId: symbol,
+          dialogModule: DashboardModuleType.ALLOCATIONS
+        },
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
       });
     }
   }
 
   public onSymbolChartClicked({ dataSource, symbol }: AssetProfileIdentifier) {
     if (dataSource && symbol) {
-      this.router.navigate([], {
-        queryParams: { dataSource, symbol, holdingDetailDialog: true }
+      // Deliberately unqualified: the holding detail dialog is owned by the
+      // application shell rather than by any module, so its parameters name
+      // themselves and there is only ever one consumer.
+      void this.router.navigate([], {
+        queryParams: { dataSource, symbol, holdingDetailDialog: true },
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
       });
     }
   }
@@ -349,8 +383,6 @@ export class GfAllocationsComponent implements OnInit {
       };
 
       if (position.assetClass !== AssetClass.LIQUIDITY) {
-        // Prepare analysis data by continents, countries, holdings and sectors except for liquidity
-
         if (position.countries.length > 0) {
           for (const country of position.countries) {
             const { code, continent, name, weight } = country;
@@ -593,8 +625,31 @@ export class GfAllocationsComponent implements OnInit {
       .afterClosed()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        this.router.navigate(['.'], { relativeTo: this.route });
+        this.clearDialogQueryParams();
       });
+  }
+
+  /**
+   * Removes the query parameters this module's dialog travels on, and only
+   * those.
+   *
+   * The empty command array keeps the request on the current URL - the
+   * workspace's route-agnostic convention - and merging is what makes the clear
+   * safe on a single canvas. The reset this replaced named a route segment
+   * instead, which dropped every query parameter on the canvas: closing this
+   * module's dialog also closed a sibling module's, and discarded the
+   * shared-portfolio access identifier along with it.
+   */
+  private clearDialogQueryParams() {
+    void this.router.navigate([], {
+      queryParams: {
+        accountDetailDialog: null,
+        accountId: null,
+        dialogModule: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
+    });
   }
 
   public showValuesInPercentage() {

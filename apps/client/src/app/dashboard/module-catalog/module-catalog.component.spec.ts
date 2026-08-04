@@ -4,35 +4,12 @@ import { permissions } from '@ghostfolio/common/permissions';
 import { A, DOWN_ARROW, ENTER, UP_ARROW } from '@angular/cdk/keycodes';
 import { Component, reflectComponentType } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-// The catalog marks its static strings for translation and the shared metadata it
-// is typed against reads its own display names the same way, both of which
-// compile to `$localize` calls evaluated at module scope. Nothing installs that
-// global in a jsdom test environment - `apps/client/src/polyfills.ts` installs it
-// for the application and no test setup file stands in for that - so it is
-// installed here.
-//
-// Its position is load-bearing rather than cosmetic, and it constrains the two
-// groups around it. Prettier sorts imports into `@ghostfolio/*`, then third
-// party, then relative, and it sorts side-effect imports along with the rest, so
-// this statement can never precede the `@ghostfolio/*` group above. Two
-// consequences follow, both of them measured rather than assumed:
-//
-//  - the module type enum is reached through the relative group below, which is
-//    evaluated after this line. `../enums/dashboard-module-type` re-exports the
-//    very same symbol from `@ghostfolio/common/dashboard` - it is neither a deep
-//    path into the shared library nor a relative path into `libs/` - whereas
-//    naming that shared entry point directly up in the first group would
-//    evaluate the metadata map before `$localize` exists;
-//  - the user service really is named through its workspace alias in the first
-//    group, which is only viable because the dialog that drags the shared route
-//    metadata in behind it is cut below.
-import '@angular/localize/init';
 import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 
 import { DashboardModuleType } from '../enums/dashboard-module-type';
 import type { DashboardModuleDefinition } from '../interfaces/interfaces';
-import { DashboardModuleRegistryService } from '../module-registry.service';
+import { GfModuleRegistryService } from '../module-registry.service';
 import { GfModuleCatalogItemComponent } from './module-catalog-item/module-catalog-item.component';
 import { GfModuleCatalogComponent } from './module-catalog.component';
 
@@ -47,16 +24,6 @@ jest.mock(
   () => ({ GfSubscriptionInterstitialDialogComponent: class {} })
 );
 
-/**
- * The shape of the viewer state the catalog actually reads.
- *
- * Deliberately narrower than the real store's state. The catalog reads exactly
- * one path out of it - the current viewer's permissions - so describing that path
- * and nothing else keeps the harness from implying a dependency on the rest of a
- * user object. Both levels are optional because both are genuinely absent at
- * times: the store primes itself with no viewer before the fetch that replaces
- * it resolves.
- */
 interface CatalogViewerState {
   user?: { permissions?: string[] };
 }
@@ -99,55 +66,30 @@ class GfTestModuleCatalogHostComponent {
 }
 
 /**
- * Unit specification for the searchable dashboard module catalog.
+ * Four properties of this harness are load-bearing.
  *
- * The catalog answers one question - which modules may this viewer add, and which
- * of those match what is being searched for - and reports one thing: that a
- * module type was chosen. Almost every test below is therefore about narrowing
- * (by permission, then by term) or about that single emission.
+ * **The registry stub hands back everything, gated definitions included.** The real
+ * service does not hide entries from a viewer - narrowing is the catalog's own job -
+ * so a stub that pre-filtered would make every permission test vacuous. It is stubbed
+ * at all because constructing the real one would pull every module component tree
+ * into this compilation and undo the lazy boundary the registry exists to hold.
  *
- * Four properties of this harness are load-bearing, and each was established by
- * measurement rather than convention:
+ * **Fake timers are installed before the component is created, not per test.** The
+ * catalog seeds its search stream during initialization and that seed travels through
+ * the same debounce. `debounceTime` only schedules a new task while it has none
+ * pending, so a seed created outside the fake time domain never fires, stays pending
+ * and silently swallows every later term.
  *
- * **The registry is stubbed, and it hands back everything.** The real service
- * builds its map from the application-side registration table, so constructing it
- * would pull all twenty-one module component trees into this compilation and
- * quietly undo the lazy boundary the registry exists to hold. More importantly,
- * the real service does not hide entries from a viewer - narrowing to the current
- * viewer is the catalog's own job - so the stub returns the gated definitions
- * too. A stub that pre-filtered would make every permission test below vacuous.
+ * **Keyboard events carry an explicit `keyCode`.** The CDK key manager switches on the
+ * legacy `keyCode`, which jsdom leaves at zero for an event built from `key` alone, so
+ * the obvious construction reaches the component and does nothing.
  *
- * **Fake timers are installed before the component is created, not inside each
- * test.** The catalog seeds its own search stream during initialization, and that
- * seed travels through the same debounce every later term does. `debounceTime`
- * only schedules a new task while it has none pending, so a seed task created
- * outside the fake time domain never fires, stays pending, and silently swallows
- * every subsequent term - which looks exactly like a search that does not work.
- * Installing Jest's fake timers first puts the seed task in the same clock the
- * tests advance, and `afterEach` hands the real timers back.
- *
- * **Keyboard events carry an explicit `keyCode`.** The CDK key manager the
- * catalog delegates to switches on the legacy `keyCode`, which jsdom leaves at
- * zero for an event constructed from `key` alone, so an event built the obvious
- * way reaches the component and then does nothing. The codes come from the CDK's
- * own constants so that the spec compares against the same values the key manager
- * does.
- *
- * **No router and no persistence collaborator is provided, and none is needed.**
- * That absence is the assertion, so please do not "fix" a future failure by
- * adding either one. The URL no longer selects a screen, so a catalog that
- * reached for a router API would fail to instantiate here; and saving an
- * arrangement is triggered only by grid state changing on the canvas, so a
- * catalog that reached for a data service, an HTTP client or the layout store
- * would fail here too. Both are structural properties of this harness rather than
- * claims made in a comment.
+ * **No router and no persistence collaborator is provided, and that absence is the
+ * assertion.** Do not "fix" a future failure by adding one: a catalog that reached for
+ * a router API, a data service, an HTTP client or the layout store would fail to
+ * instantiate here, which is what makes those structural rather than asserted.
  */
 describe('GfModuleCatalogComponent', () => {
-  /**
-   * The debounce window the catalog applies to its search term. Named so the
-   * boundary either side of it - held at one millisecond less, applied at exactly
-   * this value - is legible as one contract rather than two magic numbers.
-   */
   const debounceInMilliseconds = 300;
 
   let catalogElement: HTMLElement;
@@ -161,24 +103,6 @@ describe('GfModuleCatalogComponent', () => {
   let scrollIntoViewMock: jest.Mock;
   let userServiceMock: { stateChanged: BehaviorSubject<CatalogViewerState> };
 
-  /**
-   * The registered modules this spec exercises: three that declare no permission
-   * and one behind each of the three permissions the real registry actually uses.
-   *
-   * Built fresh per test so that the loader assertions cannot leak between tests.
-   * Every loader is a mock that must never be called - listing a module's name
-   * must not fetch its component - and the display names are the real ones, which
-   * is what makes the search assertions meaningful rather than arbitrary.
-   *
-   * `markets` is present specifically because it declares no permission while
-   * `markets-premium` shares its display name and does declare one. That pairing
-   * is the difference between a viewer who may see a free module and one who may
-   * see both.
-   *
-   * The four dimension members exist only to satisfy the shared contract. Nothing
-   * below reads them, and nothing below should: a module's footprint belongs to
-   * the grid, and the catalog neither renders nor emits it.
-   */
   const createDefinitions = (): DashboardModuleDefinition[] => {
     return [
       {
@@ -262,14 +186,20 @@ describe('GfModuleCatalogComponent', () => {
 
     registryServiceMock = {
       getAll: jest.fn(() => {
-        // A fresh array of fresh objects on every call, mirroring the real
-        // service. Handing back the same mutable array would hide a catalog that
-        // sorted or spliced what it was given, so each array is kept and checked
-        // afterwards. The loader is copied by reference on purpose: that is what
-        // lets the "no loader was ever called" assertion reach the mocks above.
-        const handedOut = definitions.map((definition) => {
-          return { ...definition };
-        });
+        // A fresh array holding the very same definition objects, which is
+        // exactly what the real service does: it rebuilds the array from its map
+        // on every call and shares the definitions inside it by reference,
+        // because the module chrome compares them by identity to decide whether
+        // it still has to fetch a component class.
+        //
+        // Copying the objects instead - `definitions.map((d) => ({ ...d }))` -
+        // would look safer and be strictly weaker: a catalog that wrote to a
+        // definition it was handed would only ever corrupt a throwaway clone, so
+        // the mutation would be invisible here and real in production. Each array
+        // is kept so that both halves can be checked afterwards: that the array
+        // was not reordered or emptied, and that the definitions inside it were
+        // not written to.
+        const handedOut = [...definitions];
 
         handedOutDefinitions.push(handedOut);
 
@@ -287,7 +217,7 @@ describe('GfModuleCatalogComponent', () => {
       imports: [GfModuleCatalogComponent],
       providers: [
         {
-          provide: DashboardModuleRegistryService,
+          provide: GfModuleRegistryService,
           useValue: registryServiceMock
         },
         { provide: UserService, useValue: userServiceMock }
@@ -321,20 +251,12 @@ describe('GfModuleCatalogComponent', () => {
     jest.useRealTimers();
   });
 
-  /**
-   * Advances the fake clock and then lets the view catch up.
-   *
-   * Both halves are required. The results arrive from a stream rather than from a
-   * template-triggered check, and the catalog is `OnPush`, so without the second
-   * half a correct component looks broken.
-   */
   function advance(milliseconds = debounceInMilliseconds) {
     jest.advanceTimersByTime(milliseconds);
 
     fixture.detectChanges();
   }
 
-  /** Publishes a new viewer and lets the view catch up. */
   function emitViewerState(state: CatalogViewerState) {
     userServiceMock.stateChanged.next(state);
 
@@ -351,7 +273,6 @@ describe('GfModuleCatalogComponent', () => {
     );
   }
 
-  /** The rendered rows as component instances, in display order. */
   function rowComponents() {
     return fixture.debugElement
       .queryAll(By.directive(GfModuleCatalogItemComponent))
@@ -361,35 +282,39 @@ describe('GfModuleCatalogComponent', () => {
   }
 
   /**
-   * The actionable element of each rendered row.
+   * The actionable element of each rendered row: a real button inside the row's
+   * card.
    *
-   * The row binds its click and its drag to an element inside itself rather than
-   * to its own host, so an interaction has to be dispatched there to travel the
-   * path a real one takes.
+   * The row binds its click, its drag and its focus to that button rather than to
+   * its own host or to the card, so an interaction has to be dispatched there to
+   * travel the path a real one takes. Dispatching on the card instead would go
+   * nowhere - an event on an ancestor does not reach a listener on a descendant.
    */
   function rowElements() {
-    return queryElements('gf-module-catalog-item mat-card');
+    return queryElements<HTMLButtonElement>('gf-module-catalog-item button');
   }
 
-  /** The display names on screen, in render order. */
   function renderedModuleNames() {
     return queryElements('gf-module-catalog-item').map((row) => {
       return row.textContent.trim();
     });
   }
 
-  /** The module types the component is currently displaying, in display order. */
   function displayedModuleTypes() {
     return component.modules.map(({ moduleType }) => {
       return moduleType;
     });
   }
 
-  /** The index of every row that currently holds the roving focus. */
+  /**
+   * The index of every row that currently holds the roving focus.
+   *
+   * The state this reads is recorded by each row from its own button's focus and
+   * blur events, so it reports where the browser actually put focus rather than
+   * an intention recorded alongside it.
+   */
   function focusedRowIndexes() {
     return rowComponents().reduce<number[]>((indexes, row, index) => {
-      // Read as a property, never called: the row exposes its focus state as a
-      // getter, and invoking it would be truthy for every row.
       return row.getHasFocus ? [...indexes, index] : indexes;
     }, []);
   }
@@ -475,10 +400,6 @@ describe('GfModuleCatalogComponent', () => {
     });
 
     it('should fill the list on the first frame, before the debounce elapses', () => {
-      // The catalog opens by itself for a viewer with no saved layout, so it
-      // cannot afford to be blank for the length of its own debounce window. It
-      // avoids that by narrowing once, synchronously, when the viewer arrives -
-      // which is why no clock has been advanced at this point.
       expect(renderedModuleNames()).toEqual([
         'Holdings',
         'Markets',
@@ -489,9 +410,6 @@ describe('GfModuleCatalogComponent', () => {
     it('should render nothing but the display name on a row', () => {
       advance();
 
-      // Exact equality rather than a substring match, because it is also the
-      // assertion that no cell dimension reaches the screen: a module's footprint
-      // belongs to the grid, and every fixture above declares one.
       expect(renderedModuleNames()).toEqual([
         'Holdings',
         'Markets',
@@ -536,9 +454,6 @@ describe('GfModuleCatalogComponent', () => {
 
       advance(debounceInMilliseconds - 1);
 
-      // One millisecond short of the window: still the full list, and - just as
-      // importantly - not yet an empty one, because emptying the list early is
-      // what would make the no-results notice flash between keystrokes.
       expect(renderedModuleNames()).toEqual([
         'Holdings',
         'Markets',
@@ -603,9 +518,6 @@ describe('GfModuleCatalogComponent', () => {
 
       expect(displayedModuleTypes()).toEqual([DashboardModuleType.ADMIN_USERS]);
 
-      // The very same module, searched for by the discriminator that is persisted
-      // in a saved layout rather than by the name on its row. A viewer searches
-      // for what is on screen, so this has to find nothing.
       setSearchTerm('admin-users');
       advance();
 
@@ -620,9 +532,6 @@ describe('GfModuleCatalogComponent', () => {
 
       const narrowedResults = component.modules;
 
-      // Trailing whitespace is trimmed before the distinctness check, so this is
-      // the same term arriving twice. A recomputation would replace the array;
-      // holding the identical reference is what proves it did not happen.
       setSearchTerm('Hold  ');
       advance();
 
@@ -639,7 +548,6 @@ describe('GfModuleCatalogComponent', () => {
       setSearchTerm('Watch');
       advance(debounceInMilliseconds);
 
-      // Only the last term is answered, and it is answered once.
       expect(displayedModuleTypes()).toEqual([DashboardModuleType.WATCHLIST]);
     });
   });
@@ -652,9 +560,6 @@ describe('GfModuleCatalogComponent', () => {
       expect(displayedModuleTypes()).toEqual(
         expect.arrayContaining([
           DashboardModuleType.HOLDINGS,
-          // The free markets module is named explicitly because it is the
-          // designed non-premium fallback: it shares its display name with a
-          // module that is gated, and it must never be gated by association.
           DashboardModuleType.MARKETS,
           DashboardModuleType.WATCHLIST
         ])
@@ -687,9 +592,6 @@ describe('GfModuleCatalogComponent', () => {
 
       const displayed = displayedModuleTypes();
 
-      // No clock is advanced here on purpose: a viewer change re-narrows through
-      // the same helper the stream uses rather than by pushing a synthetic term
-      // into the form control, so the new list is on screen immediately.
       expect(displayed).toContain(DashboardModuleType.ADMIN_USERS);
       expect(displayed).not.toContain(DashboardModuleType.AI_CHAT);
       expect(displayed).not.toContain(DashboardModuleType.MARKETS_PREMIUM);
@@ -720,8 +622,6 @@ describe('GfModuleCatalogComponent', () => {
         }
       });
 
-      // Registry order is preserved, which is what keeps the catalog's ordering
-      // reviewable in a diff rather than dependent on a viewer's permissions.
       expect(displayedModuleTypes()).toEqual([
         DashboardModuleType.HOLDINGS,
         DashboardModuleType.MARKETS,
@@ -739,9 +639,6 @@ describe('GfModuleCatalogComponent', () => {
 
       expect(displayedModuleTypes()).toContain(DashboardModuleType.ADMIN_USERS);
 
-      // The state the real store primes itself with. This workspace compiles
-      // without strict null checks, so nothing but a test stands between an
-      // unresolved viewer and a runtime failure here.
       expect(() => emitViewerState({ user: undefined })).not.toThrow();
 
       expect(displayedModuleTypes()).toEqual([
@@ -786,9 +683,6 @@ describe('GfModuleCatalogComponent', () => {
       fixture.detectChanges();
 
       expect(host.addedModuleTypes).toEqual([DashboardModuleType.HOLDINGS]);
-      // Counted rather than merely present: a row that reported its choice both
-      // from its own click and from the parent's keyboard path would add the
-      // module twice, and only a count catches that.
       expect(host.addedModuleTypes).toHaveLength(1);
       expect(host.addedModuleTypes[0]).toBe(DashboardModuleType.HOLDINGS);
     });
@@ -820,8 +714,6 @@ describe('GfModuleCatalogComponent', () => {
       rowElements()[0].click();
       fixture.detectChanges();
 
-      // The catalog does not close itself, clear its term or drop the row: the
-      // panel belongs to the canvas, and a viewer may want the same module twice.
       expect(component.searchFormControl.value).toBe('Hold');
       expect(renderedModuleNames()).toEqual(['Holdings']);
     });
@@ -847,8 +739,6 @@ describe('GfModuleCatalogComponent', () => {
       setSearchTerm('AI');
       advance();
 
-      // Nothing to click, so nothing can be emitted: the permission check runs
-      // before a row exists rather than when one is actioned.
       expect(rowElements()).toHaveLength(0);
       expect(host.addedModuleTypes).toEqual([]);
     });
@@ -866,8 +756,6 @@ describe('GfModuleCatalogComponent', () => {
       expect(rowElements()).toHaveLength(0);
       expect(notice).toBeTruthy();
       expect(notice.textContent.trim()).toBe('No results found...');
-      // Announced without moving focus, because the list it replaces changed
-      // underneath a viewer who is still typing.
       expect(notice.getAttribute('role')).toBe('status');
     });
 
@@ -877,8 +765,6 @@ describe('GfModuleCatalogComponent', () => {
       setSearchTerm('zzzzzzzz');
       advance();
 
-      // A list role with no item to own would otherwise be announced as an empty
-      // list rather than as a failed search.
       expect(queryElement('[role="list"]')).toBeNull();
     });
 
@@ -953,21 +839,105 @@ describe('GfModuleCatalogComponent', () => {
       dispatchKeydown('ArrowDown', DOWN_ARROW);
       dispatchKeydown('ArrowUp', UP_ARROW);
 
-      // Wrapping is what keeps a short list navigable in either direction without
-      // a dead end at each edge.
       expect(focusedRowIndexes()).toEqual([2]);
     });
 
-    it('should add the focused row on Enter, exactly once', () => {
+    it('should keep the highlight when a step lands on the row that already holds focus', () => {
+      advance();
+
+      setSearchTerm('Watch');
+      advance();
+
+      expect(renderedModuleNames()).toEqual(['Watchlist']);
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      // Wrapping a one-row list steps onto the row that already holds focus, and
+      // focusing an element that already holds it fires no event at all - so a
+      // highlight recorded only from that event would be cleared on the way in
+      // and never restored, leaving the browser's focus ring on a row the list
+      // had stopped marking as active. The same thing happens when a results
+      // update leaves the focused row in place.
+      expect(focusedRowIndexes()).toEqual([0]);
+      expect(document.activeElement).toBe(rowElements()[0]);
+    });
+
+    it('should move real DOM focus onto the row it steps to', () => {
+      advance();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      // The whole point of the roving pattern: a key manager focuses the option it
+      // moves to and does nothing else, so the option has to own something the
+      // browser can genuinely focus. A row that only painted a highlight would
+      // leave keyboard focus stranded wherever it started, and the highlight would
+      // be describing focus that is somewhere else entirely.
+      expect(document.activeElement).toBe(rowElements()[0]);
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      expect(document.activeElement).toBe(rowElements()[1]);
+    });
+
+    it('should paint the highlight from real focus rather than in place of it', () => {
+      advance();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      // Focus and highlight have to name the same row. They are not set together:
+      // the row records its state from its button's own focus and blur events, so
+      // the highlight follows focus however it arrived.
+      expect(focusedRowIndexes()).toEqual([0]);
+      expect(document.activeElement).toBe(rowElements()[0]);
+    });
+
+    it('should offer the add command as a real button that names its module', () => {
+      advance();
+
+      const [row] = rowElements();
+
+      // Activation is the browser's job from here. A real `<button>` fires a click
+      // for Enter and for Space with no key handling of ours, which is why neither
+      // key is handled anywhere in this component - and jsdom does not implement
+      // that translation, so the keystroke half is proven in a browser rather than
+      // here. What this asserts is the part that makes it true: the element really
+      // is a button, it is not a submit button that would post something, it is
+      // reachable by the key manager, and it announces the command rather than
+      // just the module name.
+      expect(row.tagName).toBe('BUTTON');
+      expect(row.type).toBe('button');
+      expect(row.disabled).toBe(false);
+      expect(row.tabIndex).toBe(-1);
+      expect(row.getAttribute('aria-label')).toBe('Add Holdings module');
+    });
+
+    it('should add the row exactly once when its button is activated', () => {
+      advance();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      (document.activeElement as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(host.addedModuleTypes).toEqual([DashboardModuleType.HOLDINGS]);
+      expect(host.addedModuleTypes).toHaveLength(1);
+    });
+
+    it('should leave Enter to the focused button instead of handling it', () => {
       advance();
 
       dispatchKeydown('ArrowDown', DOWN_ARROW);
 
       const event = dispatchKeydown('Enter', ENTER);
 
-      expect(host.addedModuleTypes).toEqual([DashboardModuleType.HOLDINGS]);
-      expect(host.addedModuleTypes).toHaveLength(1);
-      expect(event.defaultPrevented).toBe(true);
+      // Enter reaching the host has to be a no-op here. The focused button already
+      // activates on it, so acting on it a second time would add the module twice;
+      // swallowing it would break plain Enter in the search field. The row keeps
+      // its focus either way.
+      expect(host.addedModuleTypes).toEqual([]);
+      expect(event.defaultPrevented).toBe(false);
+      expect(focusedRowIndexes()).toEqual([0]);
     });
 
     it('should leave Enter alone when no row is focused', () => {
@@ -975,8 +945,6 @@ describe('GfModuleCatalogComponent', () => {
 
       const event = dispatchKeydown('Enter', ENTER);
 
-      // Plain Enter in the search field has to keep behaving normally, so the key
-      // is neither acted on nor swallowed while nothing is highlighted.
       expect(host.addedModuleTypes).toEqual([]);
       expect(event.defaultPrevented).toBe(false);
     });
@@ -1017,15 +985,10 @@ describe('GfModuleCatalogComponent', () => {
       setSearchTerm('Watch');
       advance();
 
-      // A highlighted row may not survive the next term at all, so the highlight
-      // is dropped rather than carried over onto whichever row now sits there.
       expect(focusedRowIndexes()).toEqual([]);
     });
 
     it('should resume stepping from the top after the results change', () => {
-      // A viewer entitled to everything, so that a term can narrow the list to
-      // more than one row and the assertion below is about where stepping resumes
-      // rather than about there being only one row left to resume onto.
       emitViewerState({
         user: {
           permissions: [
@@ -1049,9 +1012,6 @@ describe('GfModuleCatalogComponent', () => {
 
       dispatchKeydown('ArrowDown', DOWN_ARROW);
 
-      // The index the next movement is measured from is reset alongside the
-      // highlight, so a step after an update starts at the first row rather than
-      // resuming from a position measured against a list that no longer exists.
       expect(focusedRowIndexes()).toEqual([0]);
     });
   });
@@ -1064,10 +1024,6 @@ describe('GfModuleCatalogComponent', () => {
 
       dispatchDragStart(rowElements()[0], dataTransfer);
 
-      // `text/plain` and the bare value are both required rather than
-      // incidental: it is the one transfer key a browser still exposes while a
-      // drag is merely hovering, which is when the grid engine inspects the
-      // payload, and the bare value is what the registry resolves against.
       expect(dataTransfer.setData).toHaveBeenCalledTimes(1);
       expect(dataTransfer.setData).toHaveBeenCalledWith(
         'text/plain',
@@ -1102,8 +1058,6 @@ describe('GfModuleCatalogComponent', () => {
 
       expect(() => dispatchDragStart(rowElements()[0])).not.toThrow();
 
-      // Never advertised as an active drag, because the canvas would have nothing
-      // to act on when it landed.
       expect(rowComponents()[0].isDragging).toBe(false);
     });
 
@@ -1119,8 +1073,6 @@ describe('GfModuleCatalogComponent', () => {
       row.dispatchEvent(new Event('dragend', { bubbles: true }));
       fixture.detectChanges();
 
-      // `dragend` is the only dependable place to clear it: a drag can also end
-      // in a cancel or outside the grid, and neither of those fires a drop.
       expect(rowComponents()[0].isDragging).toBe(false);
     });
 
@@ -1129,8 +1081,6 @@ describe('GfModuleCatalogComponent', () => {
 
       dispatchDragStart(rowElements()[0], createDataTransferStub());
 
-      // Dragging bypasses this component entirely - the canvas reads the payload
-      // on drop - so a drag that also emitted would place the module twice.
       expect(host.addedModuleTypes).toEqual([]);
     });
   });
@@ -1140,8 +1090,6 @@ describe('GfModuleCatalogComponent', () => {
       const mirror = reflectComponentType(GfModuleCatalogComponent);
 
       expect(mirror.selector).toBe('gf-module-catalog');
-      // No input at all, which is the structural form of "the canvas owns the
-      // panel": there is no open state to hand in, and no geometry either.
       expect(mirror.inputs).toEqual([]);
       expect(mirror.outputs.map(({ propName }) => propName)).toEqual([
         'moduleAdded'
@@ -1151,7 +1099,7 @@ describe('GfModuleCatalogComponent', () => {
     it('should render no in-application address', () => {
       advance();
 
-      // The URL no longer selects a screen, so a row is a card rather than a
+      // The URL no longer selects a screen, so a row is a button rather than a
       // link. This is also why no router API, link directive or route constant is
       // named anywhere in this file: the component is created here without one
       // being provided, so reintroducing a dependency on the router would fail
@@ -1160,17 +1108,20 @@ describe('GfModuleCatalogComponent', () => {
       expect(queryElements('a')).toHaveLength(0);
       expect(queryElement('[href]')).toBeNull();
 
-      // Every interactive element is a card the row owns, never a navigation
-      // affordance handed to it from outside.
+      // Every interactive element is a button the row owns, never a navigation
+      // affordance handed to it from outside. The card around each button is
+      // presentation only, so it is the button count that has to match the rows.
       expect(queryElements('gf-module-catalog-item mat-card')).toHaveLength(3);
+      expect(rowElements()).toHaveLength(3);
+
+      for (const row of rowElements()) {
+        expect(row.tagName).toBe('BUTTON');
+      }
     });
 
     it('should render no panel chrome of its own', () => {
       advance();
 
-      // The drawer, its backdrop and the button that opens it all belong to the
-      // canvas, which decides when this content is visible - including opening it
-      // unprompted for a viewer with no saved layout.
       expect(queryElement('mat-sidenav')).toBeNull();
       expect(queryElement('mat-drawer')).toBeNull();
       expect(queryElement('.fab-container')).toBeNull();
@@ -1188,9 +1139,6 @@ describe('GfModuleCatalogComponent', () => {
       rowElements()[0].click();
       fixture.detectChanges();
 
-      // Drawing a list of names must not fetch a single module bundle. Resolving
-      // a module class belongs to the module host, and this assertion is the only
-      // mechanical guard against a future change that resolves them eagerly here.
       for (const { loadComponent } of definitions) {
         expect(loadComponent).not.toHaveBeenCalled();
       }
@@ -1209,12 +1157,41 @@ describe('GfModuleCatalogComponent', () => {
       expect(handedOutDefinitions.length).toBeGreaterThan(0);
 
       for (const handedOut of handedOutDefinitions) {
-        // Filtering and sorting a list to draw it must not reorder or empty the
-        // registry as a side effect.
         expect(handedOut.map(({ moduleType }) => moduleType)).toEqual(
           definitions.map(({ moduleType }) => moduleType)
         );
       }
+    });
+
+    it('should not write to a definition the registry hands it', () => {
+      // Captured before anything is drawn, and captured per field rather than as
+      // a reference, because the arrays above hold the definitions themselves:
+      // comparing them to each other could only ever succeed.
+      const before = definitions.map((definition) => ({ ...definition }));
+
+      advance();
+
+      setSearchTerm('Hold');
+      advance();
+
+      emitViewerState({
+        user: { permissions: [permissions.accessAdminControl] }
+      });
+      advance();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+      dispatchDragStart(rowElements()[0], createDataTransferStub());
+      rowElements()[0].click();
+      fixture.detectChanges();
+
+      // The registry owns this metadata and every consumer shares it, so a
+      // catalog that annotated a definition - with a match score, a visibility
+      // flag, a display order - would change what the canvas and the module
+      // chrome read. Asserted field by field over the whole set, so a write to any
+      // one of them fails here.
+      expect(definitions.map((definition) => ({ ...definition }))).toEqual(
+        before
+      );
     });
   });
 });

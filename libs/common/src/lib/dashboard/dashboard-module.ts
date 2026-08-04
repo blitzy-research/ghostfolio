@@ -252,10 +252,6 @@ export const dashboardModules = {
   }
 } satisfies Record<DashboardModuleType, DashboardModule>;
 
-/**
- * Applies the shared UI visibility rule; absence of a permission means visible,
- * while server authorization remains independent.
- */
 export function isDashboardModulePermitted(
   aModule: Pick<DashboardModule, 'permission'>,
   aPermissions: string[] = []

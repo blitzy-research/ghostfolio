@@ -1,24 +1,42 @@
 import { Component, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-// The chrome marks its static strings for translation and the template compiler
-// turns those into `$localize` calls. Nothing installs that global in a jsdom
-// test environment, so it is installed here - and its position matters: this
-// group is evaluated before the relative imports below, one of which reaches the
-// shared module metadata that localizes its display names at module scope.
-import '@angular/localize/init';
+import { setImmediate } from 'node:timers';
 
 import { DashboardModuleType } from '../../enums/dashboard-module-type';
 import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host.component';
 
+// Cuts the one dependency of the chrome that this environment cannot load.
+// `@ionic/angular/standalone` re-exports `@ionic/core`, which ships plain `.js`
+// ES modules rather than `.mjs`, and this project's Jest transform deliberately
+// admits only `.mjs` from `node_modules` - the workspace-wide setting that
+// `libs/ui` shares - so importing the chrome, which names `IonIcon` among its own
+// `imports`, would fail this suite before a single test ran. The accommodation
+// belongs here rather than in that global configuration, which every other spec
+// in this project is transformed by.
+//
+// A bare class would not do: Angular validates every entry of an `imports`
+// array, so the stand-in is a real standalone component carrying the same
+// `ion-icon` selector, which also keeps the rendered markup identical in shape.
+// The decorator is applied as a function because this factory is hoisted above
+// the file's own imports, so no class declared here would exist yet.
+jest.mock('@ionic/angular/standalone', () => {
+  // Reached through the namespace rather than destructured, so that `Component`
+  // is not shadowed in the files that name it for their own stand-ins.
+  const angularCore =
+    jest.requireActual<typeof import('@angular/core')>('@angular/core');
+
+  return {
+    IonIcon: angularCore.Component({ selector: 'ion-icon', template: '' })(
+      class IonIcon {}
+    )
+  };
+});
+
 /**
- * Stands in for a registered module.
- *
- * Declared here rather than imported from `modules/**` deliberately. The host
- * exists to keep module code behind a lazy boundary now that the lazy route
- * boundaries are gone, so a spec that reached for a real wrapper would pull that
- * wrapper and its whole dependency tree into the compilation graph and quietly
- * undo the property it is meant to be proving.
+ * Declared here rather than imported from `modules/**`: reaching for a real wrapper
+ * would pull its whole dependency tree into the compilation graph and undo the lazy
+ * boundary this spec exists to prove.
  */
 @Component({
   selector: 'gf-first-test-module',
@@ -26,10 +44,6 @@ import { GfDashboardModuleHostComponent } from './dashboard-module-host.componen
 })
 class GfFirstTestModuleComponent {}
 
-/**
- * A second, visually distinguishable stand-in, used where a test has to tell one
- * resolved module from another.
- */
 @Component({
   selector: 'gf-second-test-module',
   template: '<p class="gf-second-test-module-body">Second module body</p>'
@@ -46,6 +60,7 @@ describe('GfDashboardModuleHostComponent', () => {
 
   let component: GfDashboardModuleHostComponent;
   let fixture: ComponentFixture<GfDashboardModuleHostComponent>;
+  let unhandledRejectionListener: ((reason: unknown) => void) | undefined;
 
   /**
    * Builds a definition that satisfies the shared contract in full.
@@ -99,6 +114,48 @@ describe('GfDashboardModuleHostComponent', () => {
   };
 
   /**
+   * Presses a key on the drag handle itself.
+   *
+   * Dispatched on the real element rather than by calling the handler, so the
+   * template binding is part of what each assertion covers.
+   *
+   * @returns The dispatched event, so a test can assert whether the default
+   * action was suppressed - which is the difference between a key this handle
+   * acts on and one it leaves to the page.
+   */
+  const pressOnHandle = (key: string, shiftKey = false) => {
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key,
+      shiftKey
+    });
+
+    query<HTMLButtonElement>('.gf-dashboard-module-drag-handle').dispatchEvent(
+      event
+    );
+
+    fixture.detectChanges();
+
+    return event;
+  };
+
+  /**
+   * Binds a definition whose module resolves immediately and renders it, which is
+   * the starting point for every interaction test below.
+   */
+  const bindResolvingDefinition = async () => {
+    fixture.componentRef.setInput(
+      'definition',
+      createDefinition(() =>
+        Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent)
+      )
+    );
+
+    await settle();
+  };
+
+  /**
    * Two render passes with a microtask drain between them: the first delivers the
    * bound input and paints the pending state, the second paints whatever the
    * loader settled into.
@@ -111,10 +168,6 @@ describe('GfDashboardModuleHostComponent', () => {
     fixture.detectChanges();
   };
 
-  /**
-   * The frame around a module - the part that has to survive whatever the module
-   * itself does.
-   */
   const expectChromeToBeRendered = () => {
     expect(query('mat-card')).toBeTruthy();
     expect(query('mat-card-header')).toBeTruthy();
@@ -122,7 +175,32 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(query('button[mat-icon-button]')).toBeTruthy();
   };
 
+  /**
+   * Registers a process-level listener for rejections nothing handled, and
+   * records it so that it is removed no matter how the test that installed it
+   * ends.
+   *
+   * A listener left behind is not a tidiness problem: it is process-global, so it
+   * would keep collecting rejections raised by every later test in this file and
+   * attribute them to an array that nobody reads any more. Registration and
+   * release are therefore separated - the caller only ever registers, and
+   * `afterEach` always releases.
+   */
+  const collectUnhandledRejections = () => {
+    const reasons: unknown[] = [];
+
+    unhandledRejectionListener = (reason: unknown) => {
+      reasons.push(reason);
+    };
+
+    process.on('unhandledRejection', unhandledRejectionListener);
+
+    return reasons;
+  };
+
   beforeEach(async () => {
+    unhandledRejectionListener = undefined;
+
     // No provider is registered, and that omission is the point rather than an
     // economy: see the construction test below.
     await TestBed.configureTestingModule({
@@ -131,6 +209,14 @@ describe('GfDashboardModuleHostComponent', () => {
 
     fixture = TestBed.createComponent(GfDashboardModuleHostComponent);
     component = fixture.componentInstance;
+  });
+
+  afterEach(() => {
+    if (unhandledRejectionListener) {
+      process.off('unhandledRejection', unhandledRejectionListener);
+
+      unhandledRejectionListener = undefined;
+    }
   });
 
   it('should create', () => {
@@ -149,12 +235,8 @@ describe('GfDashboardModuleHostComponent', () => {
 
     expectChromeToBeRendered();
 
-    // Verbatim: the name arrives already translated, so any casing, truncation
-    // or decoration applied here would corrupt thirteen locales at once.
     expect(query('mat-card-title').textContent.trim()).toBe(moduleName);
 
-    // The overflow trigger is the only route to removal, so its accessible name
-    // is part of the contract rather than incidental.
     expect(query('button[aria-label="Module actions"]')).toBeTruthy();
   });
 
@@ -170,10 +252,6 @@ describe('GfDashboardModuleHostComponent', () => {
 
     fixture.detectChanges();
 
-    // Asserted against the rendered view rather than the backing field, and that
-    // distinction is the whole value of this test: the component is `OnPush`, so
-    // a resolution that forgot to mark the view would still set the field while
-    // painting nothing at all. A field assertion would pass on that component.
     expect(query('.gf-first-test-module-body')).toBeNull();
     expect(query('ngx-skeleton-loader')).toBeTruthy();
 
@@ -182,9 +260,6 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(query('.gf-first-test-module-body')).toBeTruthy();
     expect(query('ngx-skeleton-loader')).toBeNull();
 
-    // Invocation lives here and nowhere else: the canvas hands over a thunk and
-    // never calls it, so exactly one call per placed module is the contract that
-    // keeps a module's code fetched once.
     expect(loadComponent).toHaveBeenCalledTimes(1);
   });
 
@@ -235,10 +310,6 @@ describe('GfDashboardModuleHostComponent', () => {
     // Spelled out for the same reason as the handle class above.
     expect(query('.gridster-item-content')).toBeTruthy();
 
-    // These two together are the drag contract. Everything interactive sits in
-    // the region the grid ignores, so a press on the module's own content cannot
-    // start a drag, while the handle sits outside it so a press there can. A
-    // mismatch compiles, lints and renders cleanly, then fails silently.
     expect(
       query('.gridster-item-content .gf-first-test-module-body')
     ).toBeTruthy();
@@ -277,19 +348,169 @@ describe('GfDashboardModuleHostComponent', () => {
 
     await settle();
 
-    // Exactly once: the canvas owns the placement array and the write that
-    // follows, so a second emission would cost a second persisted layout.
     expect(emitSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('should expose the drag handle as a real button that advertises what its keys do', async () => {
+    await bindResolvingDefinition();
+
+    const handle = query<HTMLButtonElement>('.gf-dashboard-module-drag-handle');
+
+    // The handle was already focusable before it did anything, which is the exact
+    // shape of a dead tab stop: reachable, announced, and leading nowhere. It is a
+    // button now because it genuinely acts on keys, and it says which ones.
+    expect(handle.tagName).toBe('BUTTON');
+    expect(handle.disabled).toBe(false);
+    expect(handle.getAttribute('aria-label')).toBe('Move or resize module');
+    expect(handle.getAttribute('aria-keyshortcuts')).toBe(
+      'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'
+    );
+
+    // Not a submit button. It sits in no form here, but the default type would
+    // still give Enter and Space an action, and this control has none - only its
+    // arrow keys act.
+    expect(handle.type).toBe('button');
+
+    // The glyph inside carries no accessible name of its own, so the button reads
+    // as one control rather than announcing an icon name after it.
+    expect(query('.gf-dashboard-module-drag-handle ion-icon')).toBeTruthy();
+    expect(
+      query('.gf-dashboard-module-drag-handle ion-icon').getAttribute(
+        'aria-hidden'
+      )
+    ).toBe('true');
+  });
+
+  it('should request a one-cell move for each bare arrow key', async () => {
+    await bindResolvingDefinition();
+
+    const moveSteps: unknown[] = [];
+    const resizeSteps: unknown[] = [];
+
+    component.move.subscribe((step) => moveSteps.push(step));
+    component.resize.subscribe((step) => resizeSteps.push(step));
+
+    const events = [
+      pressOnHandle('ArrowUp'),
+      pressOnHandle('ArrowDown'),
+      pressOnHandle('ArrowLeft'),
+      pressOnHandle('ArrowRight')
+    ];
+
+    // Steps, never coordinates: the grid owns where a module actually is, so this
+    // host can only ask for a relative change and let the canvas resolve it.
+    expect(moveSteps).toEqual([
+      { deltaCols: 0, deltaRows: -1 },
+      { deltaCols: 0, deltaRows: 1 },
+      { deltaCols: -1, deltaRows: 0 },
+      { deltaCols: 1, deltaRows: 0 }
+    ]);
+    expect(resizeSteps).toEqual([]);
+
+    // Suppressed only for the keys that produced a step, so the arrow keys keep
+    // scrolling the canvas everywhere else.
+    for (const event of events) {
+      expect(event.defaultPrevented).toBe(true);
+    }
+  });
+
+  it('should request a one-cell resize when Shift accompanies an arrow key', async () => {
+    await bindResolvingDefinition();
+
+    const moveSteps: unknown[] = [];
+    const resizeSteps: unknown[] = [];
+
+    component.move.subscribe((step) => moveSteps.push(step));
+    component.resize.subscribe((step) => resizeSteps.push(step));
+
+    pressOnHandle('ArrowRight', true);
+    pressOnHandle('ArrowDown', true);
+    pressOnHandle('ArrowLeft', true);
+    pressOnHandle('ArrowUp', true);
+
+    // The same four steps, reinterpreted as growth and shrinkage of the
+    // bottom-right corner - the pair of edges the pointer handles expose, so the
+    // keyboard reaches exactly what a mouse reaches and no more.
+    expect(resizeSteps).toEqual([
+      { deltaCols: 1, deltaRows: 0 },
+      { deltaCols: 0, deltaRows: 1 },
+      { deltaCols: -1, deltaRows: 0 },
+      { deltaCols: 0, deltaRows: -1 }
+    ]);
+    expect(moveSteps).toEqual([]);
+  });
+
+  it('should emit exactly one step per keystroke', async () => {
+    await bindResolvingDefinition();
+
+    const moveSpy = jest.spyOn(component.move, 'emit');
+
+    pressOnHandle('ArrowRight');
+    pressOnHandle('ArrowRight');
+
+    // One request per press, and identical each time: the step carries a delta
+    // rather than an accumulating position, so a repeated press cannot drift.
+    expect(moveSpy).toHaveBeenCalledTimes(2);
+    expect(moveSpy).toHaveBeenNthCalledWith(1, { deltaCols: 1, deltaRows: 0 });
+    expect(moveSpy).toHaveBeenNthCalledWith(2, { deltaCols: 1, deltaRows: 0 });
+  });
+
+  it('should leave every key other than the arrows alone', async () => {
+    await bindResolvingDefinition();
+
+    const moveSpy = jest.spyOn(component.move, 'emit');
+    const resizeSpy = jest.spyOn(component.resize, 'emit');
+    const removeSpy = jest.spyOn(component.remove, 'emit');
+
+    const events = [
+      pressOnHandle('Enter'),
+      pressOnHandle(' '),
+      pressOnHandle('Tab'),
+      pressOnHandle('Escape'),
+      pressOnHandle('a'),
+      pressOnHandle('Home')
+    ];
+
+    // Nothing acted on and nothing swallowed. Tab has to keep moving focus,
+    // Escape has to keep reaching whatever handles it, and activation has to stay
+    // inert on a control with no activation behaviour.
+    expect(moveSpy).not.toHaveBeenCalled();
+    expect(resizeSpy).not.toHaveBeenCalled();
+    expect(removeSpy).not.toHaveBeenCalled();
+
+    for (const event of events) {
+      expect(event.defaultPrevented).toBe(false);
+    }
+  });
+
+  it('should keep the geometry request free of any placement decision', async () => {
+    const readMembers: string[] = [];
+
+    fixture.componentRef.setInput(
+      'definition',
+      createDefinition(
+        () => Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent),
+        readMembers
+      )
+    );
+
+    await settle();
+
+    pressOnHandle('ArrowRight');
+    pressOnHandle('ArrowDown', true);
+
+    // A move or resize request must not consult the declared minimum, the default
+    // size or anything else on the definition. The grid engine enforces the floor
+    // and refuses a step that would break it, and a second opinion here could
+    // only ever disagree with it.
+    expect(readMembers).toEqual([]);
+  });
+
   it('should run its whole lifecycle with no data, persistence or navigation collaborator provided', async () => {
-    // The testing module registers nothing but the component itself. Everything
-    // below therefore runs against an injector that would throw
-    // `NullInjectorError` the moment this component acquired a data service, an
-    // HTTP client, a navigation dependency or the layout store - which is what
-    // keeps the canvas the only origin of a saved layout change. Registering any
-    // of those here to be safe would satisfy the injector and silently retire
-    // the guard, so none is registered.
+    // Nothing but the component is registered, so the injector throws
+    // `NullInjectorError` the moment this component acquires a data service, HTTP
+    // client, navigation dependency or the layout store. Registering any of them
+    // here "to be safe" would satisfy the injector and retire that guard.
     const isolatedFixture = TestBed.createComponent(
       GfDashboardModuleHostComponent
     );
@@ -313,22 +534,17 @@ describe('GfDashboardModuleHostComponent', () => {
 
     component.onRemove();
 
-    // Resolution, rendering and removal all complete unaided, so the component
-    // needs no collaborator to do its job.
     expect(query('.gf-first-test-module-body')).toBeTruthy();
     expect(removeCount).toBe(1);
   });
 
   it('should contain a rejected load inside its own cell', async () => {
-    const unhandledReasons: unknown[] = [];
-    const onUnhandledRejection = (reason: unknown) => {
-      unhandledReasons.push(reason);
-    };
-
     // Captured rather than suppressed: an escaping rejection would fail the run
     // here, and in the browser it would surface from a cell that is supposed to
-    // absorb its own failure.
-    process.on('unhandledRejection', onUnhandledRejection);
+    // absorb its own failure. Released by `afterEach` rather than at the end of
+    // this body, so a failed assertion below cannot leak a process-global
+    // listener into the tests that follow.
+    const unhandledReasons = collectUnhandledRejections();
 
     fixture.componentRef.setInput(
       'definition',
@@ -336,25 +552,27 @@ describe('GfDashboardModuleHostComponent', () => {
     );
 
     await settle();
+
+    // Node decides a rejection is unhandled once the microtask queue has drained
+    // and the current turn of the event loop has completed, so the check has to
+    // happen after such a turn rather than after a wall-clock delay.
+    // `setImmediate` is that turn exactly, and it is imported from `node:timers`
+    // because the jsdom environment does not publish it as a global. A
+    // `setTimeout(…, 0)` would instead be a timer, whose duration a fake clock
+    // could stall and whose ordering here is only incidentally right.
     await new Promise((resolve) => {
-      setTimeout(resolve, 0);
+      setImmediate(resolve);
     });
 
     fixture.detectChanges();
 
-    process.off('unhandledRejection', onUnhandledRejection);
-
     expect(unhandledReasons).toEqual([]);
 
-    // An existing source message, reused character for character so the notice
-    // is already translated in every shipped locale.
     expect(
       query('.gridster-item-content [role="alert"]').textContent.trim()
     ).toBe('Oops! Something went wrong.');
     expect(query('ngx-skeleton-loader')).toBeNull();
 
-    // The failure is confined to the body region: the frame survives, so the
-    // cell can still be moved and removed instead of becoming a dead tile.
     expectChromeToBeRendered();
   });
 
@@ -374,8 +592,6 @@ describe('GfDashboardModuleHostComponent', () => {
   });
 
   it('should report a loader that resolves with nothing', async () => {
-    // A renamed or deleted export resolves successfully with `undefined`, which
-    // would otherwise leave the loading placeholder up for good.
     fixture.componentRef.setInput(
       'definition',
       createDefinition(() => Promise.resolve<Type<unknown>>(undefined))
@@ -407,8 +623,6 @@ describe('GfDashboardModuleHostComponent', () => {
       })
     );
 
-    // The first definition has to reach the component before it is replaced,
-    // otherwise its loader never runs and nothing can arrive late.
     fixture.detectChanges();
 
     fixture.componentRef.setInput(
@@ -441,8 +655,6 @@ describe('GfDashboardModuleHostComponent', () => {
 
     await settle();
 
-    // The grid owns size and position and the layers above own who may see a
-    // module, so touching either here would create a second opinion.
     expect(readMembers).toEqual([]);
   });
 
@@ -458,8 +670,6 @@ describe('GfDashboardModuleHostComponent', () => {
       'y'
     ];
 
-    // Checked across the prototype chain, so a computed accessor is caught as
-    // readily as a field.
     expect(placementMembers.filter((member) => member in component)).toEqual(
       []
     );

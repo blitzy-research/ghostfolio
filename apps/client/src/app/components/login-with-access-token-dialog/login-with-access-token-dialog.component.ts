@@ -22,7 +22,7 @@ import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { eyeOffOutline, eyeOutline } from 'ionicons/icons';
 
-import { LoginWithAccessTokenDialogParams } from './interfaces/interfaces';
+import type { LoginWithAccessTokenDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

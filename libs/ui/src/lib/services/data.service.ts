@@ -86,6 +86,50 @@ import { cloneDeep, groupBy, isNumber } from 'lodash';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
+/**
+ * The single encoder every request URL in this workspace is built with.
+ *
+ * Used as a template tag — ``encodeApiPath`/api/v1/account/${aId}` `` — it
+ * percent-encodes every interpolated value and leaves the surrounding literal
+ * untouched, so an identifier can only ever contribute one path segment. A tag
+ * rather than a per-argument call is deliberate: within a tagged literal there
+ * is no way to interpolate a value and bypass the encoding, whereas a helper
+ * invoked by hand can be forgotten at exactly the one call site that matters.
+ *
+ * This is a security boundary, not cosmetics. Identifiers reaching these URLs
+ * include values taken from the address bar, and a raw value carrying dot
+ * segments plus a query delimiter is normalized by the browser before the
+ * request leaves it — turning a read of one resource into a request for an
+ * entirely different endpoint, issued with the signed-in viewer's own
+ * credentials. Encoding strips the reserved meaning from `/`, `?`, `#` and `%`,
+ * so `../..` can no longer climb out of the intended path.
+ *
+ * Legitimate identifiers are unaffected, because the values used here are
+ * uuids, enum members, ISO dates and asset symbols, none of which contains a
+ * reserved character. Encoding additionally repairs a latent defect for the
+ * ones that can: a manually maintained asset may legitimately carry `/` or `#`
+ * in its symbol, which until now produced a malformed request path.
+ *
+ * Exported as a function rather than held on the service because it depends on
+ * no instance state, which lets `AdminService` reach the very same encoder
+ * without a second definition.
+ *
+ * @param aStrings the literal chunks of the tagged template. They are authored
+ * in this workspace and are therefore trusted verbatim.
+ * @param aValues the interpolated identifiers, each encoded as one segment.
+ */
+export function encodeApiPath(
+  aStrings: TemplateStringsArray,
+  ...aValues: (number | string)[]
+): string {
+  return aStrings.reduce((path, literalChunk, index) => {
+    const encodedValue =
+      index < aValues.length ? encodeURIComponent(`${aValues[index]}`) : '';
+
+    return `${path}${literalChunk}${encodedValue}`;
+  }, '');
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -195,12 +239,14 @@ export class DataService {
   }
 
   public fetchAccount(aAccountId: string) {
-    return this.http.get<AccountResponse>(`/api/v1/account/${aAccountId}`);
+    return this.http.get<AccountResponse>(
+      encodeApiPath`/api/v1/account/${aAccountId}`
+    );
   }
 
   public fetchAccountBalances(aAccountId: string) {
     return this.http.get<AccountBalancesResponse>(
-      `/api/v1/account/${aAccountId}/balances`
+      encodeApiPath`/api/v1/account/${aAccountId}/balances`
     );
   }
 
@@ -266,7 +312,7 @@ export class DataService {
 
   public fetchActivity(aActivityId: string) {
     return this.http
-      .get<ActivityResponse>(`/api/v1/activities/${aActivityId}`)
+      .get<ActivityResponse>(encodeApiPath`/api/v1/activities/${aActivityId}`)
       .pipe(
         map((activity) => {
           activity.createdAt = parseISO(
@@ -302,7 +348,7 @@ export class DataService {
 
   public fetchDividendsImport({ dataSource, symbol }: AssetProfileIdentifier) {
     return this.http.get<ImportResponse>(
-      `/api/v1/import/dividends/${dataSource}/${symbol}`
+      encodeApiPath`/api/v1/import/dividends/${dataSource}/${symbol}`
     );
   }
 
@@ -314,20 +360,22 @@ export class DataService {
     symbol: string;
   }) {
     return this.http.get<DataProviderHistoricalResponse>(
-      `/api/v1/exchange-rate/${symbol}/${format(date, DATE_FORMAT, { in: utc })}`
+      encodeApiPath`/api/v1/exchange-rate/${symbol}/${format(date, DATE_FORMAT, { in: utc })}`
     );
   }
 
   public deleteAccess(aId: string) {
-    return this.http.delete<AccessModel>(`/api/v1/access/${aId}`);
+    return this.http.delete<AccessModel>(encodeApiPath`/api/v1/access/${aId}`);
   }
 
   public deleteAccount(aId: string) {
-    return this.http.delete<Account>(`/api/v1/account/${aId}`);
+    return this.http.delete<Account>(encodeApiPath`/api/v1/account/${aId}`);
   }
 
   public deleteAccountBalance(aId: string) {
-    return this.http.delete<AccountBalance>(`/api/v1/account-balance/${aId}`);
+    return this.http.delete<AccountBalance>(
+      encodeApiPath`/api/v1/account-balance/${aId}`
+    );
   }
 
   public deleteActivities({ filters }: { filters?: Filter[] }) {
@@ -337,12 +385,12 @@ export class DataService {
   }
 
   public deleteActivity(aId: string) {
-    return this.http.delete<Order>(`/api/v1/activities/${aId}`);
+    return this.http.delete<Order>(encodeApiPath`/api/v1/activities/${aId}`);
   }
 
   public deleteBenchmark({ dataSource, symbol }: AssetProfileIdentifier) {
     return this.http.delete<Partial<SymbolProfile>>(
-      `/api/v1/benchmarks/${dataSource}/${symbol}`
+      encodeApiPath`/api/v1/benchmarks/${dataSource}/${symbol}`
     );
   }
 
@@ -351,15 +399,17 @@ export class DataService {
   }
 
   public deleteTag(aId: string) {
-    return this.http.delete<Tag>(`/api/v1/tags/${aId}`);
+    return this.http.delete<Tag>(encodeApiPath`/api/v1/tags/${aId}`);
   }
 
   public deleteUser(aId: string) {
-    return this.http.delete<UserModel>(`/api/v1/user/${aId}`);
+    return this.http.delete<UserModel>(encodeApiPath`/api/v1/user/${aId}`);
   }
 
   public deleteWatchlistItem({ dataSource, symbol }: AssetProfileIdentifier) {
-    return this.http.delete<void>(`/api/v1/watchlist/${dataSource}/${symbol}`);
+    return this.http.delete<void>(
+      encodeApiPath`/api/v1/watchlist/${dataSource}/${symbol}`
+    );
   }
 
   public fetchAccesses() {
@@ -370,14 +420,16 @@ export class DataService {
     dataSource,
     symbol
   }: AssetProfileIdentifier): Observable<AssetResponse> {
-    return this.http.get<any>(`/api/v1/asset/${dataSource}/${symbol}`).pipe(
-      map((data) => {
-        for (const item of data.marketData) {
-          item.date = parseISO(item.date);
-        }
-        return data;
-      })
-    );
+    return this.http
+      .get<any>(encodeApiPath`/api/v1/asset/${dataSource}/${symbol}`)
+      .pipe(
+        map((data) => {
+          for (const item of data.marketData) {
+            item.date = parseISO(item.date);
+          }
+          return data;
+        })
+      );
   }
 
   public fetchBenchmarkForUser({
@@ -402,7 +454,7 @@ export class DataService {
     }
 
     return this.http.get<BenchmarkMarketDataDetailsResponse>(
-      `/api/v1/benchmarks/${dataSource}/${symbol}/${format(startDate, DATE_FORMAT, { in: utc })}`,
+      encodeApiPath`/api/v1/benchmarks/${dataSource}/${symbol}/${format(startDate, DATE_FORMAT, { in: utc })}`,
       { params }
     );
   }
@@ -413,7 +465,7 @@ export class DataService {
 
   public fetchDataProviderHealth(dataSource: DataSource) {
     return this.http.get<DataProviderHealthResponse>(
-      `/api/v1/health/data-provider/${dataSource}`
+      encodeApiPath`/api/v1/health/data-provider/${dataSource}`
     );
   }
 
@@ -449,7 +501,7 @@ export class DataService {
     symbol: string;
   }) {
     return this.http.get<PortfolioHoldingResponse>(
-      `/api/v1/portfolio/holding/${dataSource}/${symbol}`
+      encodeApiPath`/api/v1/portfolio/holding/${dataSource}/${symbol}`
     );
   }
 
@@ -494,7 +546,7 @@ export class DataService {
     symbol: string;
   }): Observable<MarketDataDetailsResponse> {
     return this.http
-      .get<any>(`/api/v1/market-data/${dataSource}/${symbol}`)
+      .get<any>(encodeApiPath`/api/v1/market-data/${dataSource}/${symbol}`)
       .pipe(
         map((data) => {
           for (const item of data.marketData) {
@@ -689,14 +741,24 @@ export class DataService {
   }) {
     const params = this.buildFiltersAsQueryParams({ filters });
 
-    return this.http.get<AiPromptResponse>(`/api/v1/ai/prompt/${mode}`, {
-      params
-    });
+    return this.http.get<AiPromptResponse>(
+      encodeApiPath`/api/v1/ai/prompt/${mode}`,
+      {
+        params
+      }
+    );
   }
 
   public fetchPublicPortfolio(aAccessId: string) {
+    // Encoded rather than interpolated raw. The identifier reaches this method
+    // from a URL a visitor can edit, and an unencoded separator or query
+    // delimiter in it would change which path this same-origin request actually
+    // addresses. Encoding is a no-op for the generated identifiers this endpoint
+    // expects, so it costs nothing and removes the possibility.
     return this.http
-      .get<PublicPortfolioResponse>(`/api/v1/public/${aAccessId}/portfolio`)
+      .get<PublicPortfolioResponse>(
+        encodeApiPath`/api/v1/public/${aAccessId}/portfolio`
+      )
       .pipe(
         map((response) => {
           if (response.holdings) {
@@ -729,9 +791,12 @@ export class DataService {
       params = params.append('includeHistoricalData', includeHistoricalData);
     }
 
-    return this.http.get<SymbolItem>(`/api/v1/symbol/${dataSource}/${symbol}`, {
-      params
-    });
+    return this.http.get<SymbolItem>(
+      encodeApiPath`/api/v1/symbol/${dataSource}/${symbol}`,
+      {
+        params
+      }
+    );
   }
 
   public fetchSymbols({
@@ -814,7 +879,7 @@ export class DataService {
     marketData: UpdateBulkMarketDataDto;
     symbol: string;
   }) {
-    const url = `/api/v1/market-data/${dataSource}/${symbol}`;
+    const url = encodeApiPath`/api/v1/market-data/${dataSource}/${symbol}`;
 
     return this.http.post<MarketData>(url, marketData);
   }
@@ -832,19 +897,31 @@ export class DataService {
   }
 
   public putAccess(aAccess: UpdateAccessDto) {
-    return this.http.put<Access>(`/api/v1/access/${aAccess.id}`, aAccess);
+    return this.http.put<Access>(
+      encodeApiPath`/api/v1/access/${aAccess.id}`,
+      aAccess
+    );
   }
 
   public putAccount(aAccount: UpdateAccountDto) {
-    return this.http.put<UserItem>(`/api/v1/account/${aAccount.id}`, aAccount);
+    return this.http.put<UserItem>(
+      encodeApiPath`/api/v1/account/${aAccount.id}`,
+      aAccount
+    );
   }
 
   public putActivity(aOrder: UpdateOrderDto) {
-    return this.http.put<UserItem>(`/api/v1/activities/${aOrder.id}`, aOrder);
+    return this.http.put<UserItem>(
+      encodeApiPath`/api/v1/activities/${aOrder.id}`,
+      aOrder
+    );
   }
 
   public putAdminSetting(key: string, aData: UpdatePropertyDto) {
-    return this.http.put<void>(`/api/v1/admin/settings/${key}`, aData);
+    return this.http.put<void>(
+      encodeApiPath`/api/v1/admin/settings/${key}`,
+      aData
+    );
   }
 
   public putHoldingTags({
@@ -853,13 +930,13 @@ export class DataService {
     tags
   }: { tags: Tag[] } & AssetProfileIdentifier) {
     return this.http.put<void>(
-      `/api/v1/portfolio/holding/${dataSource}/${symbol}/tags`,
+      encodeApiPath`/api/v1/portfolio/holding/${dataSource}/${symbol}/tags`,
       { tags }
     );
   }
 
   public putTag(aTag: UpdateTagDto) {
-    return this.http.put<Tag>(`/api/v1/tags/${aTag.id}`, aTag);
+    return this.http.put<Tag>(encodeApiPath`/api/v1/tags/${aTag.id}`, aTag);
   }
 
   public putUserSetting(aData: UpdateUserSettingDto) {
@@ -893,7 +970,7 @@ export class DataService {
 
   public updateUserAccessToken(aUserId: string) {
     return this.http.post<AccessTokenResponse>(
-      `/api/v1/user/${aUserId}/access-token`,
+      encodeApiPath`/api/v1/user/${aUserId}/access-token`,
       {}
     );
   }

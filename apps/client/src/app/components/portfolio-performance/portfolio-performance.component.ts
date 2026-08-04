@@ -4,7 +4,7 @@ import {
   getNumberFormatGroup
 } from '@ghostfolio/common/helper';
 import {
-  PortfolioPerformance,
+  type PortfolioPerformance,
   ResponseError
 } from '@ghostfolio/common/interfaces';
 import { NotificationService } from '@ghostfolio/ui/notifications';

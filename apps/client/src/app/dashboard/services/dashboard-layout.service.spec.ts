@@ -3,18 +3,21 @@ import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 import { DataService } from '@ghostfolio/ui/services';
 
 import { TestBed } from '@angular/core/testing';
+import { ObservableStore } from '@codewithdan/observable-store';
+import type { StateHistory } from '@codewithdan/observable-store';
 import { Observable, of, throwError } from 'rxjs';
 
 import { DashboardModuleType } from '../enums/dashboard-module-type';
 import { DashboardLayoutItem } from '../interfaces/interfaces';
 import { DashboardLayoutStoreActions } from './dashboard-layout-store.actions';
+import type { DashboardLayoutStoreState } from './dashboard-layout-store.state';
 import { GfDashboardLayoutService } from './dashboard-layout.service';
 
 /**
- * `GfDashboardLayoutService` is the single origin of every dashboard layout
- * write, so this spec is where the persistence contract is pinned down. Four
- * properties of the service carry consequences that no compiler can catch and
- * that only assertions here can protect:
+ * A burst of triggers inside the debounce window must collapse to one request
+ * carrying the newest *complete* snapshot. Cancelling an in-flight save is only safe
+ * because the payload is a whole layout rather than a delta, so a later snapshot
+ * always supersedes an earlier one.
  *
  * 1. The wire projection. `DashboardLayoutItem` extends the grid engine's
  *    own item configuration type, which declares fourteen optional members
@@ -35,24 +38,42 @@ import { GfDashboardLayoutService } from './dashboard-layout.service';
  * 4. Trigger exclusivity. Every one of the four grid callbacks feeds one
  *    subject, and a burst inside the debounce window must collapse to a single
  *    request carrying the newest complete snapshot.
+ * 5. Viewer isolation. The service is provided in the root injector, so it
+ *    outlives every individual viewer, while the canvas that feeds it is never
+ *    rebuilt across a change of identity. A snapshot therefore has to be bound
+ *    to the viewer who authored it and refused once that viewer is gone -
+ *    otherwise one account's arrangement is written into another's row. Nothing
+ *    about that is visible in a type, and no other test in the workspace can
+ *    detect it.
  *
- * Two library facts shape the harness and are asserted through the public
- * surface rather than assumed:
- *
- * - `ObservableStore.getState()` is `protected`, so store contents are read
- *   here through the public, fully typed `stateHistory` getter (the service
- *   enables `trackStateHistory`) and through the service's own `get()`
- *   contract. That is strictly stronger than reading state, because it also
+ * - `ObservableStore.getState()` is `protected`, so store contents are read through
+ *   the public `stateHistory` getter (the service enables `trackStateHistory`) and
+ *   through `get()`. That is strictly stronger than reading state, because it also
  *   pins the dispatched action name.
- * - `ObservableStore` keeps one shared store for the whole module registry, and
- *   its deep clone drops `undefined` values, so a freshly constructed service
- *   cannot reset `layout` to the not-yet-fetched sentinel. Every test that
- *   needs a network read therefore forces it with `get(true)`, and the
- *   unforced `get()` is used only to prove a cache hit after a known write.
- *   That keeps every test independent of execution order without resetting
- *   state that other services share.
+ * - `ObservableStore` keeps one shared store, and one shared state history, for
+ *   the whole module registry: `stateHistory` is a getter that hands back the
+ *   very array every store instance appends to. Both are therefore reset in
+ *   `beforeEach`, *before* the service under test is constructed, so that
+ *   `stateHistory[0]` is this test's own initialization rather than whichever
+ *   test happened to run first. Without that reset the sentinel assertion below
+ *   would be order-dependent, and a store left populated by a previous test
+ *   would serve its layout to the next one as a cache hit.
+ *   Tests that need a network read still force it with `get(true)` where the
+ *   read is the subject, and the unforced `get()` is used to prove a cache hit
+ *   after a known write.
  */
 describe('GfDashboardLayoutService', () => {
+  /**
+   * The viewer every scheduled snapshot in this file belongs to, and the one the
+   * service is told to authorise writes for in `beforeEach`.
+   *
+   * Named rather than inlined because the identity is now half of the write
+   * contract: a snapshot is only ever dispatched when the identity it was
+   * produced under is still the authorised one, so a test that scheduled under
+   * some other value would be asserting the refusal path by accident.
+   */
+  const VIEWER_ID = 'viewer-1';
+
   let consoleErrorSpy: jest.SpyInstance;
   let dataServiceMock: {
     fetchUserDashboardLayout: jest.Mock<Observable<UserDashboardLayout>, []>;
@@ -62,18 +83,10 @@ describe('GfDashboardLayoutService', () => {
     >;
   };
   let service: GfDashboardLayoutService;
+  let sharedStateHistory: StateHistory<DashboardLayoutStoreState>[];
 
-  /**
-   * The complete wire contract for one persisted grid item, in sorted order.
-   * Nothing else may reach the endpoint, and nothing here may be missing.
-   */
   const wireFields = ['cols', 'moduleType', 'rows', 'x', 'y'];
 
-  /**
-   * Every member of the grid engine's item configuration that the canvas may
-   * hand over and the endpoint would reject, plus two arbitrary keys the index
-   * signature allows.
-   */
   const strippedFields = [
     'callbackSpy',
     'compactEnabled',
@@ -93,17 +106,6 @@ describe('GfDashboardLayoutService', () => {
     'resizeEnabled'
   ];
 
-  /**
-   * Builds a grid item the way the canvas hands one over: the five persisted
-   * coordinates surrounded by the engine's own bookkeeping. Every extra member
-   * below is a real property of the grid engine's item configuration, so the
-   * projection has
-   * something to strip in every test rather than only in the one that checks
-   * for stripping.
-   *
-   * The spread is deliberate and belongs to a fixture builder. It is precisely
-   * what the service must never do when building the request body.
-   */
   const createGridItem = (
     overrides: Partial<DashboardLayoutItem> = {}
   ): DashboardLayoutItem => ({
@@ -134,21 +136,35 @@ describe('GfDashboardLayoutService', () => {
     return TestBed.inject(GfDashboardLayoutService);
   };
 
+  /**
+   * Returns the shared store and its shared history to their pristine state.
+   *
+   * Both are process-global in `@codewithdan/observable-store`: `clearState`
+   * nulls the one store every service slices, and `stateHistory` is a getter that
+   * returns the one array every service appends to - which is why the array is
+   * emptied in place rather than reassigned. Called before the service under test
+   * is constructed, so that service's own initialization is the first entry.
+   *
+   * The very first call has nothing to clear, because a Jest test file gets its
+   * own module registry; every later call is what makes this suite independent of
+   * execution order.
+   */
+  const resetObservableStore = () => {
+    ObservableStore.clearState(false);
+
+    sharedStateHistory?.splice(0);
+  };
+
   /** The request body of the n-th PATCH the service issued. */
   const readPatchedDto = (index: number): UpdateUserDashboardLayoutDto =>
     dataServiceMock.patchUserDashboardLayout.mock.calls[index][0];
 
-  /**
-   * The store action most recently dispatched. `trackStateHistory` appends one
-   * entry per `setState`, so the last entry always describes the current store.
-   */
   const readStoreAction = (): string => {
     const history = service.stateHistory;
 
     return history[history.length - 1].action;
   };
 
-  /** The layout currently held by the store, read through the same entry. */
   const readStoreLayout = (): UserDashboardLayout => {
     const history = service.stateHistory;
 
@@ -163,8 +179,6 @@ describe('GfDashboardLayoutService', () => {
     });
 
     dataServiceMock = {
-      // An absent row is the default because it is what every brand-new user
-      // has: the layout column is nullable and nothing seeds it.
       fetchUserDashboardLayout: jest.fn(() => of(null)),
       // The endpoint answers a write with the layout it stored, so the default
       // mock echoes the request back. Declaring the parameter also keeps the
@@ -175,7 +189,17 @@ describe('GfDashboardLayoutService', () => {
       )
     };
 
+    resetObservableStore();
+
     service = createService();
+
+    // Writes are refused until an identity has been adopted, which is what makes
+    // a snapshot produced across a token replacement undispatchable. Every test
+    // that expects a PATCH therefore has to start from an authorised identity,
+    // exactly as the canvas establishes one the moment it adopts a viewer.
+    service.adoptIdentity(VIEWER_ID);
+
+    sharedStateHistory = service.stateHistory;
   });
 
   afterEach(() => {
@@ -192,12 +216,14 @@ describe('GfDashboardLayoutService', () => {
     });
 
     it('seeds the store as not yet fetched, which is distinct from an absent layout', () => {
-      // The first entry in the shared history belongs to the first service ever
-      // constructed in this module registry, so it is the only place where the
-      // pristine store is observable regardless of test order. Its begin state
-      // is the uninitialised store and its end state carries no layout at all —
-      // `undefined`, not `null`. That distinction is what lets `get()` tell a
-      // never-read store from one that read an absent row.
+      // The history was emptied immediately before this test's service was
+      // constructed, so its first - and, before anything else runs, only - entry
+      // is that construction. Its begin state is the cleared store and its end
+      // state carries no layout at all: `undefined`, not `null`. That distinction
+      // is what lets `get()` tell a never-read store from one that read an absent
+      // row.
+      expect(service.stateHistory).toHaveLength(1);
+
       const bootEntry = service.stateHistory[0];
 
       expect(bootEntry.action).toBe(DashboardLayoutStoreActions.Initialize);
@@ -220,8 +246,6 @@ describe('GfDashboardLayoutService', () => {
       expect(emissions).toBe(1);
       expect(emitted).toBeNull();
       expect(emitted).not.toBeUndefined();
-      // A missing row must not be dressed up as an empty layout: the canvas owns
-      // that interpretation and needs the two states to stay distinguishable.
       expect(emitted).not.toEqual({ modules: [] });
       expect(readStoreAction()).toBe(
         DashboardLayoutStoreActions.GetDashboardLayout
@@ -259,8 +283,6 @@ describe('GfDashboardLayoutService', () => {
 
       service.get(true).subscribe((layout) => (emitted = layout));
 
-      // A returning user's canvas hydrates from exactly what was stored, so the
-      // read path must be a pass-through in both directions.
       expect(emitted).toEqual(persisted);
       expect(readStoreLayout()).toEqual(persisted);
       expect(readStoreAction()).toBe(
@@ -297,10 +319,6 @@ describe('GfDashboardLayoutService', () => {
     });
 
     it('serves a cached null from cache without re-fetching', () => {
-      // Every brand-new user has no persisted row, so `null` is the single most
-      // common cached value. A truthiness-based cache check would treat it as a
-      // miss and re-read the endpoint on every access for precisely the users
-      // this feature exists to onboard.
       dataServiceMock.fetchUserDashboardLayout.mockReturnValue(of(null));
 
       let cached: UserDashboardLayout;
@@ -328,7 +346,7 @@ describe('GfDashboardLayoutService', () => {
       // deliberately shorter than the ones before it.
 
       // itemInitCallback: the canvas hydrated two modules.
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem(),
         createGridItem({
           moduleType: DashboardModuleType.HOLDINGS,
@@ -337,7 +355,7 @@ describe('GfDashboardLayoutService', () => {
       ]);
 
       // itemChangeCallback: the second module was dragged one row down.
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem(),
         createGridItem({
           moduleType: DashboardModuleType.HOLDINGS,
@@ -347,7 +365,7 @@ describe('GfDashboardLayoutService', () => {
       ]);
 
       // itemResizeCallback: the second module was widened to the full grid.
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem(),
         createGridItem({
           cols: 12,
@@ -358,7 +376,7 @@ describe('GfDashboardLayoutService', () => {
       ]);
 
       // itemRemovedCallback: the first module was removed, leaving one behind.
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem({
           cols: 12,
           moduleType: DashboardModuleType.HOLDINGS,
@@ -367,8 +385,6 @@ describe('GfDashboardLayoutService', () => {
         })
       ]);
 
-      // The 499/1 split pins the boundary at exactly 500 ms rather than merely
-      // "eventually": a burst of four callbacks costs one request, not four.
       jest.advanceTimersByTime(499);
 
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
@@ -376,9 +392,6 @@ describe('GfDashboardLayoutService', () => {
       jest.advanceTimersByTime(1);
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-      // Only the newest snapshot survives, and it is complete rather than a
-      // delta — the removed module is absent because the canvas no longer holds
-      // it, not because a difference was computed.
       expect(readPatchedDto(0)).toEqual({
         modules: [{ cols: 12, moduleType: 'holdings', rows: 4, x: 0, y: 4 }],
         version: 1
@@ -388,7 +401,7 @@ describe('GfDashboardLayoutService', () => {
     it('projects each item to exactly the five wire fields', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem({
           callbackSpy: () => undefined,
           id: 'should-not-be-sent',
@@ -401,10 +414,6 @@ describe('GfDashboardLayoutService', () => {
 
       const dto = readPatchedDto(0);
 
-      // The API validates with `forbidNonWhitelisted: true`, so one surplus
-      // property is an HTTP 400 rather than a cosmetic problem. The grid item's
-      // index signature means the compiler cannot see the leak, which is why the
-      // key set is asserted outright.
       expect(Object.keys(dto.modules[0]).sort()).toEqual(wireFields);
       expect(Object.keys(dto).sort()).toEqual(['modules', 'version']);
       expect(dto.version).toBe(1);
@@ -413,9 +422,6 @@ describe('GfDashboardLayoutService', () => {
         expect(dto.modules[0]).not.toHaveProperty(strippedField);
       }
 
-      // A surviving callback would additionally make the body unserialisable,
-      // so both properties are checked: no functions, and a lossless round trip
-      // through JSON.
       expect(
         Object.values(dto.modules[0]).every(
           (value) => typeof value !== 'function'
@@ -427,12 +433,10 @@ describe('GfDashboardLayoutService', () => {
     it('projects an empty snapshot to an empty modules array', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([]);
+      service.scheduleSave(VIEWER_ID, []);
 
       jest.advanceTimersByTime(500);
 
-      // Removing the last module is a legitimate save, not a no-op: the empty
-      // canvas has to survive a reload.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
       expect(readPatchedDto(0).modules).toEqual([]);
       expect(readPatchedDto(0).version).toBe(1);
@@ -441,16 +445,12 @@ describe('GfDashboardLayoutService', () => {
     it('does not clamp or coerce geometry values', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem({ cols: 1, rows: 1, x: 99, y: -3 })
       ]);
 
       jest.advanceTimersByTime(500);
 
-      // Minimum and maximum dimensions are enforced by the grid engine's
-      // validation callback on the client and by the DTO's bounds on the server.
-      // Silently repairing them here would hide a canvas defect behind a
-      // plausible-looking payload and make the server-side bounds untestable.
       expect(readPatchedDto(0).modules[0]).toEqual({
         cols: 1,
         moduleType: 'portfolio-overview',
@@ -463,16 +463,13 @@ describe('GfDashboardLayoutService', () => {
     it('does not translate the module type discriminator', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem({ moduleType: DashboardModuleType.AI_CHAT }),
         createGridItem({ moduleType: DashboardModuleType.X_RAY, x: 6 })
       ]);
 
       jest.advanceTimersByTime(500);
 
-      // The persisted discriminator has to stay a plain string, unmapped and
-      // unrenamed, so that the registry can resolve known types and drop
-      // retired ones per item instead of failing the whole layout.
       const persistedTypes = readPatchedDto(0).modules.map(
         (module) => module.moduleType
       );
@@ -483,13 +480,13 @@ describe('GfDashboardLayoutService', () => {
     it('persists each subsequent debounced snapshot', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(500);
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
 
-      service.scheduleSave([createGridItem({ cols: 8, x: 2 })]);
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8, x: 2 })]);
 
       jest.advanceTimersByTime(500);
 
@@ -513,14 +510,14 @@ describe('GfDashboardLayoutService', () => {
 
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(500);
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
       expect(firstTeardown).not.toHaveBeenCalled();
 
-      service.scheduleSave([createGridItem({ cols: 8 })]);
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
 
       jest.advanceTimersByTime(500);
 
@@ -544,7 +541,7 @@ describe('GfDashboardLayoutService', () => {
 
       jest.useFakeTimers();
 
-      service.scheduleSave([
+      service.scheduleSave(VIEWER_ID, [
         createGridItem({ moduleType: DashboardModuleType.HOLDINGS })
       ]);
 
@@ -561,7 +558,7 @@ describe('GfDashboardLayoutService', () => {
 
       // The canvas always hands over an array, but a save must never be the
       // thing that throws: an absent snapshot degrades to an empty layout.
-      service.scheduleSave(null);
+      service.scheduleSave(VIEWER_ID, null);
 
       jest.advanceTimersByTime(500);
 
@@ -579,20 +576,16 @@ describe('GfDashboardLayoutService', () => {
 
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       expect(() => jest.advanceTimersByTime(500)).not.toThrow();
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
       expect(consoleErrorSpy).toHaveBeenCalled();
 
-      service.scheduleSave([createGridItem({ cols: 8 })]);
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
 
       jest.advanceTimersByTime(500);
 
-      // A second save only happens if the recovery sits *inside* the switched
-      // request. On the outer pipe it would have terminated the whole stream and
-      // persistence would be dead for the rest of the session — a failure mode
-      // nothing else in the suite can detect.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
       expect(readPatchedDto(1).modules[0].cols).toBe(8);
     });
@@ -604,18 +597,143 @@ describe('GfDashboardLayoutService', () => {
 
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      const actionBeforeWrite = readStoreAction();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(500);
 
       // The recovery emits nothing usable, so the store must be left exactly as
-      // the initialize action left it rather than being overwritten with a
+      // the last successful action left it rather than being overwritten with a
       // failure value.
-      expect(readStoreAction()).toBe(DashboardLayoutStoreActions.Initialize);
+      expect(readStoreAction()).toBe(actionBeforeWrite);
       expect(readStoreAction()).not.toBe(
         DashboardLayoutStoreActions.UpdateDashboardLayout
       );
       expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('publishes the failure so the canvas can report an unsaved arrangement', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => new Error('PATCH failed'))
+      );
+
+      const observed: boolean[] = [];
+
+      service.getHasSaveError().subscribe((hasSaveError) => {
+        observed.push(hasSaveError);
+      });
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      // A silent failure would leave the viewer believing an arrangement they can
+      // still see had been stored, which is the whole reason the snapshot is kept.
+      expect(observed).toEqual([false, true]);
+    });
+
+    it('retains the failed snapshot so it can still be flushed on destroy', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
+        throwError(() => new Error('PATCH failed'))
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8, x: 2 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      service.ngOnDestroy();
+
+      // Discarding the snapshot before the write was acknowledged would lose the
+      // newest arrangement permanently, with nothing left to flush.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1)).toEqual(readPatchedDto(0));
+      expect(readPatchedDto(1).modules[0]).toEqual({
+        cols: 8,
+        moduleType: 'portfolio-overview',
+        rows: 4,
+        x: 2,
+        y: 0
+      });
+    });
+
+    it('re-sends the failed snapshot through the one write origin on retry', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
+        throwError(() => new Error('PATCH failed'))
+      );
+
+      const observed: boolean[] = [];
+
+      service.getHasSaveError().subscribe((hasSaveError) => {
+        observed.push(hasSaveError);
+      });
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      service.retryFailedSave();
+
+      // The retry is debounced exactly like every other write, because it
+      // re-enters through the same subject rather than calling the facade itself.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1)).toEqual(readPatchedDto(0));
+      expect(observed).toEqual([false, true, false]);
+    });
+
+    it('does nothing on retry when every snapshot has been acknowledged', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      service.retryFailedSave();
+      service.retryFailedSave();
+
+      jest.advanceTimersByTime(500);
+
+      // Safe to press twice, and never a source of a duplicate write.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+
+    it('lets a newer arrangement supersede one whose write failed', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
+        throwError(() => new Error('PATCH failed'))
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 10 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1).modules[0].cols).toBe(10);
+
+      service.ngOnDestroy();
+
+      // The newer snapshot replaced the failed one and was then acknowledged, so
+      // there is nothing outstanding and the stale arrangement is never replayed.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
     });
 
     it('propagates a fetch failure to the caller', () => {
@@ -639,9 +757,6 @@ describe('GfDashboardLayoutService', () => {
 
       expect(receivedError).toBe(failure);
       expect(consoleErrorSpy).toHaveBeenCalled();
-      // Swallowing a failed read into an empty layout would impersonate a
-      // brand-new user and wrongly open the module catalog over a canvas whose
-      // modules are merely unreachable.
       expect(emissions).toBe(0);
       expect(emitted).toBeUndefined();
       expect(emitted).not.toEqual({ modules: [] });
@@ -655,7 +770,7 @@ describe('GfDashboardLayoutService', () => {
     it('flushes a still-debounced snapshot on destroy', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem({ cols: 8 })]);
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
 
       jest.advanceTimersByTime(200);
 
@@ -680,23 +795,20 @@ describe('GfDashboardLayoutService', () => {
     it('does not flush twice when destroyed repeatedly', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(200);
 
       service.ngOnDestroy();
       service.ngOnDestroy();
 
-      // The environment injector destroys the service again after this test
-      // body, so the pending flag has to be cleared on the first flush rather
-      // than merely on the first timer tick.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
     it('does not flush after the debounced save already dispatched', () => {
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(500);
 
@@ -721,7 +833,7 @@ describe('GfDashboardLayoutService', () => {
 
       jest.useFakeTimers();
 
-      service.scheduleSave([createGridItem()]);
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(200);
 
@@ -731,6 +843,179 @@ describe('GfDashboardLayoutService', () => {
       expect(() => service.ngOnDestroy()).not.toThrow();
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
       expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The identity boundary.
+   *
+   * A layout write is authorised by whichever bearer token is in storage when the
+   * request is created, and the debounce puts half a second between the
+   * arrangement being reported and that moment. Signing in, signing out and
+   * creating an account all replace the token inside that window, so without an
+   * identity stamped onto each snapshot the previous viewer's arrangement would be
+   * written to the account that just arrived. Nothing about that is observable
+   * from the request body — the projection is identical either way — so these
+   * assertions are the only guard that exists.
+   */
+  describe('the identity boundary', () => {
+    it('refuses a snapshot scheduled before any identity was adopted', () => {
+      jest.useFakeTimers();
+
+      service.beginIdentityTransition();
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      // No identity holds write authorisation between a transition beginning and
+      // the viewer that follows it being adopted, and an arrangement reported in
+      // that interval belongs to whoever was there before. It is dropped rather
+      // than deferred.
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('refuses a snapshot whose viewer no longer holds write authorisation', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      // The token is replaced mid-debounce. This is the exact defect the stamp
+      // exists for: the request below would be authorised as `viewer-2` while
+      // carrying `viewer-1`'s arrangement.
+      service.adoptIdentity('viewer-2');
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('keeps the save stream alive after refusing a stale snapshot', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.adoptIdentity('viewer-2');
+
+      jest.advanceTimersByTime(500);
+
+      service.scheduleSave('viewer-2', [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      // A refusal must not terminate the stream, or one identity change would
+      // disable persistence for the rest of the session.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(readPatchedDto(0).modules[0].cols).toBe(8);
+    });
+
+    it('persists a snapshot for a newly adopted identity', () => {
+      jest.useFakeTimers();
+
+      service.adoptIdentity('viewer-2');
+      service.scheduleSave('viewer-2', [createGridItem({ cols: 10 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(readPatchedDto(0).modules[0].cols).toBe(10);
+      // The identity is a client-side authorisation check and never travels: the
+      // server derives it from the request itself, and the strict endpoint would
+      // reject an unrecognised property outright.
+      expect(Object.keys(readPatchedDto(0).modules[0]).sort()).toEqual(
+        wireFields
+      );
+      expect(Object.keys(readPatchedDto(0)).sort()).toEqual([
+        'modules',
+        'version'
+      ]);
+    });
+
+    it('discards pending work when a different identity is adopted', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.adoptIdentity('viewer-2');
+      service.ngOnDestroy();
+
+      // The teardown flush reads the same pending snapshot the debounce would
+      // have sent, so it has to be discarded at the point the identity changes
+      // rather than only screened at dispatch.
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('discards pending work when a transition begins', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.beginIdentityTransition();
+      service.ngOnDestroy();
+
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('refuses the teardown flush of a snapshot that names no viewer', () => {
+      jest.useFakeTimers();
+
+      // What the canvas reports when a grid callback fires before a viewer has
+      // resolved: a real arrangement belonging to nobody in particular. The flush
+      // applies the same check the debounced dispatch does rather than trusting
+      // that its caller already screened it, because destruction is one of the
+      // ways an identity ends.
+      service.scheduleSave(undefined, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.ngOnDestroy();
+
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('adopting the identity already held changes nothing', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(200);
+
+      // The viewer store emits for reasons that have nothing to do with identity
+      // — a settings write, a refreshed subscription — and the canvas re-asserts
+      // the identity on each of them. Doing so must not discard a save the viewer
+      // has just made.
+      service.adoptIdentity(VIEWER_ID);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(readPatchedDto(0).modules[0].cols).toBe(8);
+    });
+
+    it('announces a transition to whoever is producing arrangements', () => {
+      let announcements = 0;
+
+      const subscription = service.identityTransition$.subscribe(() => {
+        announcements += 1;
+      });
+
+      service.beginIdentityTransition();
+      service.adoptIdentity('viewer-2');
+
+      subscription.unsubscribe();
+
+      // Only a transition announces itself. Adopting an identity is the *end* of
+      // one, and its caller has already quiesced what it owns, so emitting there
+      // would ask the canvas to invalidate an arrangement it is in the middle of
+      // hydrating.
+      expect(announcements).toBe(1);
     });
   });
 });

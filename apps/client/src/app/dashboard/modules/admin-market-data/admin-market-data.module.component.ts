@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfAdminMarketDataComponent],
   selector: 'gf-admin-market-data-module',
+  styleUrls: ['./admin-market-data.module.scss'],
   templateUrl: './admin-market-data.module.html'
 })
 export class GfAdminMarketDataModuleComponent {}

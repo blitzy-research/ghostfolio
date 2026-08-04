@@ -48,6 +48,24 @@ export class GfUserAccountMembershipComponent {
   public hasPermissionToUpdateUserSettings: boolean;
   public price: number;
   public priceId: string;
+  /**
+   * The plan page on the hosted deployment, as an absolute URL.
+   *
+   * Its predecessor was `publicRoutes.pricing.routerLink`, and that route no
+   * longer exists here - the public marketing surface is gone - so a router
+   * target would resolve through the wildcard to the canvas. The page itself is
+   * still published, so the link is retargeted rather than dropped, exactly as
+   * the sibling admin settings component already does for the same page.
+   *
+   * The route *constant* is still consulted deliberately:
+   * `publicRoutes.pricing.path` is a `$localize`-tagged per-locale segment, so
+   * writing "pricing" literally here would break twelve translations. The member
+   * is not bound by this component's own template - upstream's `routerLinkPricing`
+   * was not either, because the pricing affordances on this panel belong to the
+   * nested membership card and premium indicator, each of which computes its own
+   * link - and it is kept so that the value any future binding reads is the
+   * external one.
+   */
   public pricingUrl: string;
   public trySubscriptionMail =
     'mailto:hi@ghostfol.io?Subject=Ghostfolio Premium Trial&body=Hello%0D%0DI am interested in Ghostfolio Premium. Can you please send me a coupon code to try it for some time?%0D%0DKind regards';

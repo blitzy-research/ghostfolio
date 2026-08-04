@@ -1,4 +1,3 @@
-/* eslint-disable */
 export default {
   displayName: 'client',
 
@@ -17,41 +16,30 @@ export default {
   // written report confirms. Do NOT silence the warning by removing the key:
   // without it Jest builds no coverage map, `coverageThreshold` below is never
   // evaluated, and the run still exits 0, so the gate would be disarmed with no
-  // outward sign. The sibling `apps/api/jest.config.ts` sets the same flag from
-  // `targets.test.options.codeCoverage` in its `project.json` and so avoids the
-  // warning; that is deliberately not mirrored here, because
-  // `apps/client/project.json` stays unmodified.
+  // outward sign. The sibling `apps/api/jest.config.ts` arms its own gate the
+  // same way and carries the same warning, deliberately: both `project.json`
+  // files stay unmodified, so each gate is expressed entirely in the one Jest
+  // config the transformation plan declares for it.
   collectCoverage: true,
-  // Matched against paths relative to `rootDir`, which is this file's own
-  // directory (`apps/client`), because `jest.preset.js` declares none. Naming
-  // the dashboard tree guarantees the gated units are instrumented even along
-  // code paths no spec reaches, so they enter the coverage map and are measured
-  // rather than skipped. Scoped to that one tree on purpose: a project-wide
-  // pattern would instrument every pre-existing client component to no purpose,
-  // because there is no aggregate threshold group for them to satisfy.
+  // Paths are relative to `rootDir` (`apps/client`). Naming the dashboard tree
+  // instruments the gated units even along code paths no spec reaches, so they are
+  // measured rather than skipped; a project-wide pattern would instrument every
+  // pre-existing component with no threshold group to satisfy.
   collectCoverageFrom: [
     'src/app/dashboard/**/*.ts',
     '!src/app/dashboard/**/*.spec.ts'
   ],
   coverageDirectory: '../../coverage/apps/client',
-  // Keyed per path, and intentionally with NO aggregate `global` group. Jest
-  // sorts every file matched by a path or glob key out of the aggregate group,
-  // so adding one would apply this threshold to the whole project instead —
-  // including every component that has no coverage baseline — and fail the
-  // target immediately.
+  // Keyed per path with no aggregate `global` group on purpose: Jest sorts every
+  // file matched by a path key out of the `global` group, so adding one would
+  // impose this threshold on every pre-existing component in the project.
   //
-  // These keys are resolved with `path.resolve()` against the process working
-  // directory and are NOT subject to `<rootDir>` substitution. That is why they
-  // are workspace-relative while `collectCoverageFrom` above is
-  // `rootDir`-relative, and it means this target must be RUN FROM THE WORKSPACE
-  // ROOT — which is where `npm test` and CI run it. Invoked from `apps/client`
-  // instead, the keys match nothing and Jest fails the run with `Coverage data
-  // for … was not found` even though the report shows the units covered. A key
-  // that matches nothing failing closed is the point of writing them out: it is
-  // what makes silent non-enforcement impossible.
-  //
-  // Only `lines` is asserted, matching the stated requirement of at least 80 %
-  // line coverage for these units and nothing beyond it.
+  // These keys are resolved against the process working directory and are not
+  // subject to `<rootDir>` substitution, which is why they are workspace-relative
+  // while `collectCoverageFrom` above is `rootDir`-relative. The target must
+  // therefore run from the workspace root, as `npm test` and CI do; run from
+  // `apps/client` the keys match nothing and Jest fails with `Coverage data for …
+  // was not found`.
   coverageThreshold: {
     'apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts':
       {
@@ -78,12 +66,31 @@ export default {
       }
     ]
   },
-  // `@ionic/angular/standalone` re-exports `@ionic/core`, which ships plain
-  // `.js` ES modules rather than `.mjs`, so those packages have to be
-  // transformed as well or every spec that transitively imports an Ionicon
-  // fails to parse.
+  // Dependencies that ship ES modules under a plain `.js` extension rather than
+  // `.mjs` have to be transformed as well, or every spec that transitively
+  // imports one fails to parse with `Cannot use import statement outside a
+  // module` before a single assertion runs. Two families qualify:
+  //
+  //  - `@ionic/angular/standalone` re-exports `@ionic/core`, which is built by
+  //    `@stencil` and reached by every component that registers an Ionicon;
+  //  - `color` (and its `color-convert` / `color-name` / `color-string`
+  //    dependencies) is `"type": "module"` from v5 onwards. It is reached
+  //    through `@ghostfolio/ui`'s chart components, which puts it in the import
+  //    graph of the shared public portfolio, the account and holding detail
+  //    dialogs, the activities screen, the application shell and the route
+  //    table. Naming it here is what lets those specs exercise the real
+  //    components instead of standing in for them.
+  //
+  // The alternatives are matched immediately after `node_modules/`, so the
+  // `color` entry is written out in full rather than as a bare prefix: `color`
+  // alone would also exempt unrelated packages whose name merely starts with it.
+  //
+  // Every alternative here is load-bearing, measured rather than assumed: with the
+  // baseline `node_modules/(?!.*.mjs$)` alone, 15 of the 22 client suites fail to
+  // parse on `@ionic/core/components/index.js`; adding the Ionic and Stencil
+  // families but not `color` leaves 4 of them failing on `color/index.js`.
   transformIgnorePatterns: [
-    'node_modules/(?!(.*\\.mjs$|@ionic|@stencil|ionicons))'
+    'node_modules/(?!(.*\\.mjs$|@ionic|@stencil|color(-convert|-name|-string)?/|ionicons))'
   ],
   preset: '../../jest.preset.js'
 };

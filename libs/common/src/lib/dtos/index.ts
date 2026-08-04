@@ -1,4 +1,4 @@
-import { AuthDeviceDto } from './auth-device.dto';
+import type { AuthDeviceDto } from './auth-device.dto';
 import { CreateAccessDto } from './create-access.dto';
 import { CreateAccountBalanceDto } from './create-account-balance.dto';
 import { CreateAccountWithBalancesDto } from './create-account-with-balances.dto';
@@ -25,8 +25,15 @@ import { UpdateTagDto } from './update-tag.dto';
 import { UpdateUserDashboardLayoutDto } from './update-user-dashboard-layout.dto';
 import { UpdateUserSettingDto } from './update-user-setting.dto';
 
+// `AuthDeviceDto` is an interface rather than a decorated class, so it exists
+// only in the type system. Re-exporting it through the value export below is
+// rejected as TS1205 wherever `isolatedModules` is enabled — the client's spec
+// compilation, for one — because a single-file compilation cannot tell that the
+// binding carries no runtime value. Naming it in its own `export type` clause
+// states that explicitly and leaves every consumer's import untouched.
+export type { AuthDeviceDto };
+
 export {
-  AuthDeviceDto,
   CreateAccessDto,
   CreateAccountBalanceDto,
   CreateAccountDto,

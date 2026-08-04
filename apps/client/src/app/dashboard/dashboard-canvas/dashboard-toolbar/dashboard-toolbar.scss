@@ -1,6 +1,43 @@
 // Material system tokens require fallbacks because the current theme does not
 // emit the --mat-sys layer.
 
+// Keyboard focus ring for every control this bar declares.
+//
+// Two things remove it otherwise: the global stylesheet resets `button:focus`,
+// and this theme builds with `mat.define-theme()` rather than opting into
+// Material's strong focus indicators, leaving only the state layer - which
+// measures roughly 1.2:1 against the surface behind it, far short of the 3:1
+// advisory for a non-text indicator.
+//
+// Deliberately NOT nested inside `:host`. The menu rows declared in this
+// template are moved into an overlay attached to the document body, so no
+// `:host`-prefixed selector could ever reach them. Emulated encapsulation still
+// stamps them as this component's content, which is what keeps a bare `button`
+// selector from leaking: it matches the elements this template writes, in the bar
+// and in its menus, and nothing a child component renders.
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  outline-offset: 2px;
+
+  // Drawn inside the row for a menu item, not around it. A menu panel is sized
+  // to its widest row and clips its overflow, so an outward offset here is
+  // trimmed on the left and right and only the top and bottom edges of the ring
+  // survive. A negative offset keeps all four edges inside the clip.
+  &.mat-mdc-menu-item {
+    outline-offset: -2px;
+  }
+}
+
+// `.theme-dark` sits on the document body, which is an ancestor of both the bar
+// and the overlay its menus render into, so the mirror needs no host either.
+.theme-dark {
+  button:focus-visible,
+  a:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+}
+
 :host {
   display: block;
 
@@ -29,6 +66,28 @@
       &.rotate-90 {
         transform: rotate(90deg);
       }
+    }
+
+    // The discount mark. Drawn rather than delegated to the utility class the
+    // deleted page chrome used, because that class carries a literal colour of
+    // its own and every value here has to resolve through a system token first.
+    //
+    // The fallbacks are that class's own values, so the mark is
+    // indistinguishable from the one it replaces until the theme populates the
+    // system layer: the amber the shared stylesheet defines for a warning, and
+    // the dark ink that same stylesheet contrasts it with. They are deliberately
+    // not mirrored for the dark theme - the pair is already legible against both
+    // surfaces and the chrome this bar replaces drew it identically in both, so
+    // splitting it would introduce a difference rather than preserve one.
+    .gf-promotion-mark {
+      background: var(--mat-sys-tertiary-container, #ffc107);
+      border-radius: var(--mat-sys-corner-small, 4px);
+      color: var(--mat-sys-on-tertiary-container, #212529);
+      font: var(
+        --mat-sys-label-small,
+        700 0.75rem/1rem var(--font-family-sans-serif)
+      );
+      padding: 0.25em 0.4em;
     }
   }
 }

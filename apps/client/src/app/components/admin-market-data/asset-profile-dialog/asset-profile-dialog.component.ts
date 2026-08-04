@@ -92,7 +92,7 @@ import ms from 'ms';
 import { EMPTY } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
-import { AssetProfileDialogParams } from './interfaces/interfaces';
+import type { AssetProfileDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

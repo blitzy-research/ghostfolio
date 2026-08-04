@@ -12,7 +12,6 @@ export class SitemapService {
   // The sitemap template interpolates this value unconditionally; return an
   // empty string so a missing section never renders as "undefined".
   public getBlogPosts({ currentDate }: { currentDate: string }): string {
-    // Preserve the controller call signature while this section emits no URLs.
     void currentDate;
 
     return '';
@@ -25,7 +24,6 @@ export class SitemapService {
   }: {
     currentDate: string;
   }): string {
-    // Preserve the controller call signature while this section emits no URLs.
     void currentDate;
 
     return '';

@@ -1,5 +1,4 @@
 import { HasPermissionGuard } from '@ghostfolio/api/guards/has-permission.guard';
-import { PerformanceLoggingInterceptor } from '@ghostfolio/api/interceptors/performance-logging/performance-logging.interceptor';
 import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
 import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 import type { RequestWithUser } from '@ghostfolio/common/types';
@@ -9,10 +8,10 @@ import {
   Controller,
   Get,
   Inject,
+  Logger,
   Patch,
   Res,
-  UseGuards,
-  UseInterceptors
+  UseGuards
 } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
@@ -39,15 +38,45 @@ export class UserDashboardLayoutController {
    *
    * Writing the value keeps `null` as `null` and `{ modules: [] }` as
    * `{ modules: [] }`, both as `application/json`, and leaves the status at 200.
+   *
+   * The read is timed, because this endpoint carries a stated latency budget and
+   * a budget nobody can observe is not a budget. The measurement is taken here
+   * rather than by `PerformanceLoggingInterceptor`, and that is the whole point
+   * of doing it by hand: the shared interceptor reports through
+   * `PerformanceLoggingService`, which logs at `debug`, and the default
+   * production logger is `['error', 'log', 'warn']` — so decorating this handler
+   * with it would produce a measurement that exists everywhere except the
+   * environment the budget applies to. `LOG_LEVELS` can widen that set, but it is
+   * optional and unset by default, so it cannot be relied on; and raising the
+   * shared service's level would change `PortfolioController`, which is not this
+   * refactor's to change. `Logger.log` is enabled by both the production and the
+   * development default, so the line below is emitted in every environment.
+   *
+   * What it emits is deliberately minimal: the handler's own name and the elapsed
+   * time. No user id, no token, no query string and no part of the layout
+   * document — none of which would help an operator read a latency distribution,
+   * and all of which would put viewer data into the log.
    */
   @Get('layout')
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
-  @UseInterceptors(PerformanceLoggingInterceptor)
   public async getUserDashboardLayout(@Res() response: Response) {
+    const startTime = performance.now();
+
     const userDashboardLayout: UserDashboardLayout | null =
       await this.userDashboardLayoutService.getLayout(this.request.user.id);
 
     response.json(userDashboardLayout);
+
+    // Wording and units are copied from `PerformanceLoggingService` on purpose,
+    // so this line groups with every other performance line an operator greps
+    // for even though it is emitted at a level they can actually see.
+    Logger.log(
+      `Completed execution of getUserDashboardLayout() in ${(
+        (performance.now() - startTime) /
+        1000
+      ).toFixed(3)} seconds`,
+      'UserDashboardLayoutController'
+    );
   }
 
   @Patch('layout')

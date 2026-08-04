@@ -4,8 +4,15 @@ import {
   dashboardModules,
   isDashboardModulePermitted
 } from '@ghostfolio/common/dashboard';
-import { getAssetProfileIdentifier } from '@ghostfolio/common/helper';
-import { Filter, PortfolioPosition, User } from '@ghostfolio/common/interfaces';
+import {
+  getAssetProfileIdentifier,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
+import {
+  Filter,
+  PortfolioPosition,
+  type User
+} from '@ghostfolio/common/interfaces';
 import { AccountWithPlatform, DateRange } from '@ghostfolio/common/types';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 
@@ -137,13 +144,11 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
   protected readonly filtersChanged = output<Filter[]>();
 
   /**
-   * Re-emits the dashboard module a quick link or account result stands for.
-   * Search results no longer carry a route, and the assistant lives in the
-   * shared library and therefore cannot reach the application that hosts those
-   * modules, so this output is the only channel through which the selection
-   * intent leaves this library; the consuming application decides how to
-   * surface the module. It is emitted before
-   * {@link GfAssistantComponent.closed}, so a consumer that closes the
+   * The only channel through which a module selection leaves this library: it lives
+   * in the shared library and so cannot reach the application that hosts the
+   * modules, leaving the consumer to decide how to surface one.
+   *
+   * Emitted before {@link GfAssistantComponent.closed}, so a consumer that closes the
    * assistant on selection never observes the close ahead of the selection.
    */
   protected readonly moduleSelected = output<DashboardModuleType>();
@@ -266,7 +271,10 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                 )
               })),
               catchError((error) => {
-                console.error('Error fetching accounts for assistant:', error);
+                reportSanitizedError(
+                  'GF-ASSISTANT-ACCOUNTS-SEARCH-FAILED',
+                  error
+                );
                 return of({ accounts: [] as SearchResultItem[] });
               }),
               tap(() => {
@@ -285,8 +293,8 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                   )
                 })),
                 catchError((error) => {
-                  console.error(
-                    'Error fetching asset profiles for assistant:',
+                  reportSanitizedError(
+                    'GF-ASSISTANT-ASSET-PROFILES-SEARCH-FAILED',
                     error
                   );
                   return of({ assetProfiles: [] as SearchResultItem[] });
@@ -312,7 +320,10 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                 )
               })),
               catchError((error) => {
-                console.error('Error fetching holdings for assistant:', error);
+                reportSanitizedError(
+                  'GF-ASSISTANT-HOLDINGS-SEARCH-FAILED',
+                  error
+                );
                 return of({ holdings: [] as SearchResultItem[] });
               }),
               tap(() => {
@@ -362,7 +373,7 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
           this.changeDetectorRef.markForCheck();
         },
         error: (error) => {
-          console.error('Assistant search stream error:', error);
+          reportSanitizedError('GF-ASSISTANT-SEARCH-FAILED', error);
           this.searchResults = {
             accounts: [],
             assetProfiles: [],
@@ -569,15 +580,6 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
     this.onCloseAssistant();
   }
 
-  /**
-   * Forwards a module intent raised by a result row to this component's own
-   * consumer and does nothing else. Deliberately free of any close or reset
-   * behaviour: the row emits its module intent ahead of its click, so closing
-   * and resetting stay with the existing `clicked` handler and
-   * `onCloseAssistant` remains solely responsible for tearing the assistant
-   * down. A consumer therefore never observes the close ahead of the selection
-   * it belongs to.
-   */
   public onSelectModule(moduleType: DashboardModuleType) {
     this.moduleSelected.emit(moduleType);
   }
@@ -704,7 +706,15 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                 name,
                 symbol,
                 assetSubClassString: translate(assetSubClass ?? ''),
-                mode: SearchMode.ASSET_PROFILE as const
+                mode: SearchMode.ASSET_PROFILE as const,
+                // The dialog these results open belongs to the market data
+                // administration module, so each result names it. Without the
+                // discriminator the result would only be able to set query
+                // parameters, which nothing reads unless that module happens
+                // to be on the canvas already. This branch only runs for a
+                // viewer who may access administration, so the module named
+                // here is always one they are permitted to see.
+                moduleType: DashboardModuleType.ADMIN_MARKET_DATA
               };
             }
           );

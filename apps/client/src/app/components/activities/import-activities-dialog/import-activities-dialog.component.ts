@@ -5,6 +5,7 @@ import {
   CreateAssetProfileWithMarketDataDto,
   CreateTagDto
 } from '@ghostfolio/common/dtos';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { Activity, PortfolioPosition } from '@ghostfolio/common/interfaces';
 import { GfSymbolPipe } from '@ghostfolio/common/pipes';
 import { GfActivitiesTableComponent } from '@ghostfolio/ui/activities-table';
@@ -55,7 +56,7 @@ import ms from 'ms';
 import { DeviceDetectorService } from 'ngx-device-detector';
 
 import { ImportStep } from './enums/import-step';
-import { ImportActivitiesDialogParams } from './interfaces/interfaces';
+import type { ImportActivitiesDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -269,7 +270,6 @@ export class GfImportActivitiesDialogComponent {
     input.type = 'file';
 
     input.onchange = (event) => {
-      // Getting the file reference
       const file = (event.target as HTMLInputElement).files[0];
       this.handleFile({ file, stepper });
     };
@@ -292,7 +292,6 @@ export class GfImportActivitiesDialogComponent {
   }): Promise<void> {
     this.snackBar.open('⏳ ' + $localize`Validating data...`);
 
-    // Setting up the reader
     const reader = new FileReader();
     reader.readAsText(file, 'UTF-8');
 
@@ -347,7 +346,7 @@ export class GfImportActivitiesDialogComponent {
             this.pageIndex = 0;
             this.totalItems = activities.length;
           } catch (error) {
-            console.error(error);
+            reportSanitizedError('GF-ACTIVITIES-IMPORT-JSON-FAILED', error);
             this.handleImportError({ error, activities: content.activities });
           }
 
@@ -369,7 +368,7 @@ export class GfImportActivitiesDialogComponent {
             this.pageIndex = 0;
             this.totalItems = activities.length;
           } catch (error) {
-            console.error(error);
+            reportSanitizedError('GF-ACTIVITIES-IMPORT-CSV-FAILED', error);
             this.handleImportError({
               activities: error?.activities ?? content,
               error: {
@@ -383,7 +382,7 @@ export class GfImportActivitiesDialogComponent {
 
         throw new Error();
       } catch (error) {
-        console.error(error);
+        reportSanitizedError('GF-ACTIVITIES-IMPORT-FAILED', error);
         this.handleImportError({
           activities: [],
           error: { error: { message: ['Unexpected format'] } }

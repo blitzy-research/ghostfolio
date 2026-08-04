@@ -71,7 +71,6 @@ export class SubscriptionController {
       userId: this.request.user.id
     });
 
-    // Destroy coupon
     coupons = coupons.filter((currentCoupon) => {
       return currentCoupon.code !== couponCode;
     });

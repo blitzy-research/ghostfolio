@@ -3,17 +3,34 @@
   events. `is-dragging` is the drag-active state hook the stylesheet paints, and
   it is cleared from dragend because a drag can also end in a cancel or an
   out-of-bounds drop, neither of which fires a drop event.
+
+  The card is presentation; the button inside it is the actionable element. That
+  split is deliberate: a `FocusKeyManager` focuses the option it moves to, so the
+  option has to own something the browser can actually focus, and a real button
+  is what announces the add command and activates on Enter and Space without any
+  key handling of our own. The card cannot be that element - it renders a div -
+  so the button carries the focus, the drag and the activation, and the card
+  keeps drawing every state around it.
 -->
-<mat-card
-  #row
-  appearance="outlined"
-  draggable="true"
-  [class.is-dragging]="isDragging"
-  (click)="onClick()"
-  (dragend)="onDragEnd()"
-  (dragstart)="onDragStart($event)"
->
-  <div class="align-items-center d-flex px-3 py-2">
+<mat-card appearance="outlined" [class.is-dragging]="isDragging">
+  <!--
+    The accessible name is composed in the class rather than declared here,
+    because it interpolates the module name and Angular cannot localize a bound
+    attribute - `i18n-aria-label` only applies to a static one.
+  -->
+  <button
+    #row
+    class="align-items-center d-flex px-3 py-2 text-left w-100"
+    draggable="true"
+    tabindex="-1"
+    type="button"
+    [attr.aria-label]="ariaLabel"
+    (blur)="removeFocus()"
+    (click)="onClick()"
+    (dragend)="onDragEnd()"
+    (dragstart)="onDragStart($event)"
+    (focus)="onFocus()"
+  >
     <span class="text-truncate">{{ definition.name }}</span>
-  </div>
+  </button>
 </mat-card>

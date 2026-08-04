@@ -19,7 +19,7 @@ import {
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
-import { CreateOrUpdatePlatformDialogParams } from './interfaces/interfaces';
+import type { CreateOrUpdatePlatformDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

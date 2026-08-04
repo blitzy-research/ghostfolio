@@ -5,7 +5,7 @@ import {
 import { primaryColorRgb } from '@ghostfolio/common/config';
 import { getLocale } from '@ghostfolio/common/helper';
 import { FireCalculationCompleteEvent } from '@ghostfolio/common/interfaces';
-import { ColorScheme } from '@ghostfolio/common/types';
+import type { ColorScheme } from '@ghostfolio/common/types';
 
 import { CommonModule } from '@angular/common';
 import {

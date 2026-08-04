@@ -87,10 +87,6 @@ describe('UserDashboardLayoutService', () => {
       ).resolves.toBeNull();
     });
 
-    // An absent layout and a stored empty layout are different states: null
-    // means the user has never saved one, whereas an empty modules array means
-    // a saved layout whose last module was removed. Conflating them would make
-    // the catalog auto-open for a user who deliberately emptied the canvas.
     it('keeps a stored empty layout distinct from an absent one', async () => {
       const layoutData: UserDashboardLayout = { modules: [], version: 1 };
 
@@ -223,14 +219,6 @@ describe('UserDashboardLayoutService', () => {
       expect(layout).not.toHaveProperty('version');
     });
 
-    // A failed read is not the same state as a user who has never saved a
-    // layout, and the service deliberately has no `catch` that could conflate
-    // them. Were the rejection ever turned into `null`, a database outage would
-    // look exactly like a brand-new user: the catalog would auto-open on an
-    // empty canvas and the next debounced write would overwrite the layout that
-    // is still stored. Asserting the identity of the rejection reason is what
-    // makes that regression impossible to introduce quietly, because it fails
-    // for a swallowed, a replaced and a wrapped error alike.
     it('propagates a read failure instead of reporting it as an absent layout', async () => {
       const readFailure = new Error('connection terminated unexpectedly');
 
@@ -270,13 +258,6 @@ describe('UserDashboardLayoutService', () => {
       expect(prismaServiceMock.$transaction).not.toHaveBeenCalled();
     });
 
-    // A brand-new user always starts with no row, so the very first save always
-    // takes the create branch. Prisma only compiles an upsert into a single
-    // atomic `INSERT … ON CONFLICT … DO UPDATE` when the create branch contains
-    // no nested relation write; a `user: { connect: … }` there makes it fall
-    // back to a read-then-write transaction, and two concurrent first writes
-    // then collide on the primary key and answer 500. The shape is therefore
-    // pinned here rather than left to the round-trip assertions above.
     it('keys the create branch by the foreign key scalar, so the write stays a single atomic statement', async () => {
       upsert.mockResolvedValue({ layoutData: userDashboardLayout, userId });
 
@@ -449,10 +430,6 @@ describe('UserDashboardLayoutService', () => {
       expect(calledDelegateMethods()).toEqual(['upsert']);
     });
 
-    // The canvas writes through a debounced write-behind pipeline, so a
-    // rejection is the only signal that a snapshot did not reach the database.
-    // Reporting the submitted document as persisted anyway would leave the
-    // client believing its layout is saved when it is not.
     it('propagates a write failure instead of reporting the layout as persisted', async () => {
       const writeFailure = new Error(
         'could not serialize access due to concurrent update'

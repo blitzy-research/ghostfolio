@@ -10,7 +10,7 @@ import {
   getTextColor
 } from '@ghostfolio/common/helper';
 import { LineChartItem } from '@ghostfolio/common/interfaces';
-import { ColorScheme } from '@ghostfolio/common/types';
+import type { ColorScheme } from '@ghostfolio/common/types';
 
 import { CommonModule } from '@angular/common';
 import {

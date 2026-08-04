@@ -23,7 +23,26 @@ import {
 } from 'ionicons/icons';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 
-import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
+import type {
+  DashboardModuleDefinition,
+  DashboardModuleGeometryStep
+} from '../../interfaces/interfaces';
+
+/**
+ * One-cell geometry steps keyed by arrow key.
+ *
+ * Frozen and declared once at module scope so the mapping cannot be mutated by a
+ * handler and is not rebuilt on every keystroke. A key absent from this map
+ * produces no step, which is how the handler decides to keep its hands off.
+ */
+const GEOMETRY_STEPS_BY_KEY: Readonly<
+  Record<string, DashboardModuleGeometryStep>
+> = Object.freeze({
+  ArrowDown: { deltaCols: 0, deltaRows: 1 },
+  ArrowLeft: { deltaCols: -1, deltaRows: 0 },
+  ArrowRight: { deltaCols: 1, deltaRows: 0 },
+  ArrowUp: { deltaCols: 0, deltaRows: -1 }
+});
 
 /**
  * Chrome for one module placed on the dashboard: the card, its header and the
@@ -31,20 +50,13 @@ import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
  *
  * No module class is imported here. It arrives as a lazy thunk on the definition
  * handed in by the canvas, is awaited at runtime and is instantiated by
- * `NgComponentOutlet`. Every registered module therefore receives identical
- * chrome, none can be special-cased, and a module never learns that it is drawn
- * inside a grid cell. That inversion is also what keeps code splitting intact
- * now that the lazy route boundaries are gone: a module's code is fetched when,
- * and only when, that module is placed.
+ * `NgComponentOutlet`, so every module receives identical chrome, none can be
+ * special-cased, a module never learns it is drawn inside a grid cell, and its code
+ * is fetched only when it is placed.
  *
- * What this component deliberately cannot do. It holds no placement state, so it
- * neither reads nor writes where a module sits or how large it is - the grid owns
- * both, and the grid's own item validation enforces the declared floor. It
- * reaches no persistence API: removal emits an output and stops there, leaving
- * the canvas as the only origin of a saved change. It resolves no metadata of its
- * own beyond the two members it renders, so visibility filtering stays in the
- * layers that already perform it. And it navigates nowhere, because the URL no
- * longer selects a screen.
+ * It holds no placement state - the grid owns where a module sits and how large it
+ * is - and reaches no persistence API: removal emits an output and stops there,
+ * leaving the canvas the only origin of a saved change.
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -62,19 +74,29 @@ import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
   templateUrl: './dashboard-module-host.html'
 })
 export class GfDashboardModuleHostComponent implements OnChanges, OnInit {
-  /**
-   * Metadata for the module this host draws. Exactly two of its members are
-   * consumed: `name`, which is already translated where the shared metadata
-   * declares it and is therefore rendered verbatim, and `loadComponent`, the
-   * lazy thunk that is the only way to obtain a module class.
-   */
   @Input() definition: DashboardModuleDefinition;
+
+  /**
+   * Emitted once per keyboard move request, as a one-cell step.
+   *
+   * The canvas resolves the step against grid state and asks the grid engine to
+   * commit it, so this host neither knows nor decides where the module ends up -
+   * and a step that would collide, leave the grid or break the module's declared
+   * minimum is simply refused there.
+   */
+  @Output() move = new EventEmitter<DashboardModuleGeometryStep>();
 
   /**
    * Emitted once per removal request. The canvas owns the placement array and
    * the write that follows it, so nothing is discarded or stored from here.
    */
   @Output() remove = new EventEmitter<void>();
+
+  /**
+   * Emitted once per keyboard resize request, as a one-cell step. Resolved the
+   * same way, and against the same limits, as {@link move}.
+   */
+  @Output() resize = new EventEmitter<DashboardModuleGeometryStep>();
 
   /**
    * Set when the current definition could not be turned into a module class.
@@ -84,10 +106,6 @@ export class GfDashboardModuleHostComponent implements OnChanges, OnInit {
    */
   public hasLoadError = false;
 
-  /**
-   * The resolved module class, left undefined while resolution is in flight so
-   * that the template shows its loading placeholder.
-   */
   public resolvedComponent: Type<unknown>;
 
   /**
@@ -117,6 +135,37 @@ export class GfDashboardModuleHostComponent implements OnChanges, OnInit {
     // was ever bound, which would otherwise leave the loading placeholder up
     // forever with nothing on its way to replace it.
     void this.resolveModule();
+  }
+
+  /**
+   * Turns the arrow keys on the drag handle into geometry steps: bare arrows move
+   * the module, Shift with an arrow resizes it from its bottom-right, which is
+   * the pair of edges the pointer handles expose.
+   *
+   * This is what makes the handle honest. It was already focusable, so keyboard
+   * users could reach it, but repositioning was a pointer-only gesture - the stop
+   * led nowhere. Rather than remove the stop and leave keyboard users with no way
+   * to arrange their dashboard at all, the handle now does what its focusability
+   * advertises.
+   *
+   * The default action is suppressed only for keys that produce a step, so the
+   * arrow keys still scroll the canvas everywhere else, and every other key -
+   * Tab, Escape, activation - is left alone.
+   */
+  public onDragHandleKeydown(event: KeyboardEvent) {
+    const step = GEOMETRY_STEPS_BY_KEY[event.key];
+
+    if (!step) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (event.shiftKey) {
+      this.resize.emit(step);
+    } else {
+      this.move.emit(step);
+    }
   }
 
   public onRemove() {

@@ -140,19 +140,12 @@ export class GfHomeHoldingsComponent implements OnInit {
 
   public onHoldingClicked({ dataSource, symbol }: AssetProfileIdentifier) {
     if (dataSource && symbol) {
-      this.router.navigate([], {
+      void this.router.navigate([], {
         queryParams: { dataSource, symbol, holdingDetailDialog: true }
       });
     }
   }
 
-  /**
-   * Publishes a reveal-module intent for the activities module. This replaces
-   * the cross-screen route navigation this component performed before the
-   * single-canvas dashboard existed: the canvas subscribes to the intent bus
-   * and decides how to surface the module, so this component stays unaware of
-   * the canvas, the module registry and the grid.
-   */
   public onManageActivities() {
     this.dashboardIntentService
       .getRevealModuleSubject()

@@ -25,7 +25,7 @@ import ms from 'ms';
 import { interval } from 'rxjs';
 import { take, tap } from 'rxjs/operators';
 
-import { SubscriptionInterstitialDialogParams } from './interfaces/interfaces';
+import type { SubscriptionInterstitialDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

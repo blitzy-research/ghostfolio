@@ -98,14 +98,19 @@ export class GfSignInPromptComponent implements OnInit {
   }
 
   /**
-   * Opens the shared sign-in dialog. Keep localized message text stable to
-   * preserve translation IDs; EMPTY consumes a failed token exchange after the
-   * alert.
+   * `EMPTY` after the alert is what stops a rejected token exchange from reaching
+   * the success branch; the alert is the whole of the failure handling.
    */
   public openLoginDialog() {
+    // The third type argument is what the dialog actually resolves with. Without
+    // it `afterClosed()` yields `any`, and every read of the token below is an
+    // unchecked one. The shape is the dialog's own: it closes with
+    // `{ accessToken }` when a token was entered and with nothing otherwise,
+    // which is exactly what the union states.
     const dialogRef = this.dialog.open<
       GfLoginWithAccessTokenDialogComponent,
-      LoginWithAccessTokenDialogParams
+      LoginWithAccessTokenDialogParams,
+      { accessToken: string } | undefined
     >(GfLoginWithAccessTokenDialogComponent, {
       autoFocus: false,
       data: {
@@ -142,14 +147,14 @@ export class GfSignInPromptComponent implements OnInit {
       });
   }
 
-  /**
-   * Opens registration, persists the returned token, and refetches the user so
-   * authenticated state updates without relying on navigation.
-   */
   public openShowAccessTokenDialog() {
+    // Resolves with the freshly issued token, or with nothing when the dialog is
+    // cancelled - its template closes on `authToken` and on `undefined`
+    // respectively - so the result is declared rather than inferred as `any`.
     const dialogRef = this.dialog.open<
       GfUserAccountRegistrationDialogComponent,
-      UserAccountRegistrationDialogParams
+      UserAccountRegistrationDialogParams,
+      string | undefined
     >(GfUserAccountRegistrationDialogComponent, {
       data: {
         deviceType: this.deviceType,
@@ -194,7 +199,11 @@ export class GfSignInPromptComponent implements OnInit {
         if (userLanguage && document.documentElement.lang !== userLanguage) {
           window.location.href = `../${userLanguage}`;
         } else {
-          this.router.navigate(['/']);
+          // Voided deliberately rather than awaited. The request is already
+          // satisfied on the collapsed route table, so it resolves immediately
+          // and there is nothing to sequence after it; the re-read of the viewer
+          // above is what the canvas rehydrates from.
+          void this.router.navigate(['/']);
         }
       });
   }

@@ -1,7 +1,9 @@
 import { GfAccountDetailDialogComponent } from '@ghostfolio/client/components/account-detail-dialog/account-detail-dialog.component';
 import { AccountDetailDialogParams } from '@ghostfolio/client/components/account-detail-dialog/interfaces/interfaces';
+import type { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import {
   CreateAccountDto,
   TransferBalanceDto,
@@ -46,6 +48,17 @@ export class GfAccountsComponent implements OnInit {
   public accounts: AccountModel[];
   public activitiesCount = 0;
   public deviceType: string;
+  /**
+   * The discriminator this module's dialog flags are addressed with.
+   *
+   * Exposed so the template can bind it instead of repeating the literal. The
+   * discriminator has to match what this component's own query-parameter handler
+   * compares against, and a repeated literal is a match that no compiler
+   * checks - renaming the enum member would leave the control silently opening
+   * nothing.
+   */
+  public readonly dialogModule = DashboardModuleType.ACCOUNTS;
+
   public hasImpersonationId: boolean;
   public hasPermissionToCreateAccount: boolean;
   public hasPermissionToUpdateAccount: boolean;
@@ -68,28 +81,68 @@ export class GfAccountsComponent implements OnInit {
   ) {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => {
-        if (params['accountId'] && params['accountDetailDialog']) {
-          this.openAccountDetailDialog(params['accountId']);
-        } else if (
-          params['createDialog'] &&
-          this.hasPermissionToCreateAccount
-        ) {
-          this.openCreateAccountDialog();
-        } else if (params['editDialog']) {
-          if (this.accounts) {
-            const account = this.accounts.find(({ id }) => {
-              return id === params['accountId'];
+      .subscribe(
+        ({
+          accountDetailDialog,
+          accountId,
+          createDialog,
+          dialogModule,
+          editDialog,
+          transferBalanceDialog
+        }: GfAppQueryParams) => {
+          // On the single-canvas shell every module observes the same query
+          // parameters at once, so a flag that does not say who it is for is
+          // seen by all of them. `dialogModule` is what says it, and the two
+          // kinds of flag need it differently.
+          //
+          // `createDialog` and `editDialog` name no dialog of their own, so they
+          // are honoured here ONLY when addressed to this module. That gate is
+          // fail-safe by construction - an unqualified or foreign-qualified flag
+          // opens nothing - and it is what stops one module's floating action
+          // button from opening another's dialog. Same gate as in
+          // `components/user-account-access/user-account-access.component.ts`.
+          //
+          // `accountDetailDialog` and `transferBalanceDialog` do name a dialog,
+          // but naming a dialog is not the same as naming an owner: the account
+          // detail dialog is opened from three unqualified producers - the
+          // accounts table rendered inside this module, the assistant, and the
+          // allocations module - and the allocations module hosts a second copy
+          // of the very same dialog. Honouring these flags unconditionally
+          // therefore opened TWO identical dialogs whenever both modules were on
+          // the canvas. This module stays the default owner, because the two
+          // unqualified producers belong to it, but it now stands down when the
+          // request names someone else.
+          const isAddressed = dialogModule === DashboardModuleType.ACCOUNTS;
+          const isAddressedElsewhere = !!dialogModule && !isAddressed;
+
+          if (accountId && accountDetailDialog && !isAddressedElsewhere) {
+            this.openAccountDetailDialog(accountId);
+          } else if (
+            isAddressed &&
+            createDialog &&
+            this.hasPermissionToCreateAccount
+          ) {
+            this.openCreateAccountDialog();
+          } else if (isAddressed && editDialog) {
+            const account = this.accounts?.find(({ id }) => {
+              return id === accountId;
             });
 
-            this.openUpdateAccountDialog(account);
-          } else {
-            this.router.navigate(['.'], { relativeTo: this.route });
+            // An account that cannot be found is the only outcome besides
+            // opening the dialog. Passing it on regardless would destructure
+            // `undefined` and throw, which is exactly what an `editDialog`
+            // addressed to this module before its accounts had loaded - or
+            // naming an account that has since been deleted - used to do.
+            if (account) {
+              this.openUpdateAccountDialog(account);
+            } else {
+              this.clearDialogQueryParams();
+            }
+          } else if (transferBalanceDialog && !isAddressedElsewhere) {
+            this.openTransferBalanceDialog();
           }
-        } else if (params['transferBalanceDialog']) {
-          this.openTransferBalanceDialog();
         }
-      });
+      );
 
     addIcons({ addOutline });
   }
@@ -143,7 +196,14 @@ export class GfAccountsComponent implements OnInit {
           this.totalValueInBaseCurrency = totalValueInBaseCurrency;
 
           if (this.accounts?.length <= 0) {
-            this.router.navigate([], { queryParams: { createDialog: true } });
+            void this.router.navigate([], {
+              queryParams: {
+                createDialog: true,
+                dialogModule: DashboardModuleType.ACCOUNTS
+              },
+              queryParamsHandling: 'merge',
+              relativeTo: this.route
+            });
           }
 
           this.changeDetectorRef.markForCheck();
@@ -167,15 +227,37 @@ export class GfAccountsComponent implements OnInit {
       });
   }
 
+  /**
+   * Asks for the transfer-balance dialog, naming this module.
+   *
+   * The discriminator is required even though this flag has a single consumer,
+   * because the request is *merged*: a `dialogModule` left on the URL by any
+   * earlier interaction - the asset profile hand-off names
+   * `admin-market-data`, for instance - would survive the merge and make the
+   * handler stand down as "addressed elsewhere", leaving this control silently
+   * inert. Naming the owner overwrites that residue, which is also what makes
+   * the payload identical in meaning to every other producer here.
+   */
   public onTransferBalance() {
-    this.router.navigate([], {
-      queryParams: { transferBalanceDialog: true }
+    void this.router.navigate([], {
+      queryParams: {
+        dialogModule: DashboardModuleType.ACCOUNTS,
+        transferBalanceDialog: true
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
   public onUpdateAccount(aAccount: AccountModel) {
-    this.router.navigate([], {
-      queryParams: { accountId: aAccount.id, editDialog: true }
+    void this.router.navigate([], {
+      queryParams: {
+        accountId: aAccount.id,
+        dialogModule: DashboardModuleType.ACCOUNTS,
+        editDialog: true
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -229,8 +311,35 @@ export class GfAccountsComponent implements OnInit {
           this.changeDetectorRef.markForCheck();
         }
 
-        this.router.navigate(['.'], { relativeTo: this.route });
+        this.clearDialogQueryParams();
       });
+  }
+
+  /**
+   * Removes the query parameters this module's dialogs travel on, and only
+   * those.
+   *
+   * The empty command array keeps the request on the current URL - the
+   * workspace's route-agnostic convention - and merging is what makes the clear
+   * safe on a single canvas: every module observes the same query parameters, so
+   * dropping them all would close a sibling module's dialog and discard the
+   * shared-portfolio access identifier as a side effect of closing this one's.
+   * `dialogModule` is cleared with them because this module only ever opens a
+   * dialog while that discriminator names it.
+   */
+  private clearDialogQueryParams() {
+    void this.router.navigate([], {
+      queryParams: {
+        accountDetailDialog: null,
+        accountId: null,
+        createDialog: null,
+        dialogModule: null,
+        editDialog: null,
+        transferBalanceDialog: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
+    });
   }
 
   private openAccountDetailDialog(aAccountId: string) {
@@ -258,7 +367,7 @@ export class GfAccountsComponent implements OnInit {
       .subscribe(() => {
         this.fetchAccounts();
 
-        this.router.navigate(['.'], { relativeTo: this.route });
+        this.clearDialogQueryParams();
       });
   }
 
@@ -304,7 +413,7 @@ export class GfAccountsComponent implements OnInit {
           this.changeDetectorRef.markForCheck();
         }
 
-        this.router.navigate(['.'], { relativeTo: this.route });
+        this.clearDialogQueryParams();
       });
   }
 
@@ -352,7 +461,7 @@ export class GfAccountsComponent implements OnInit {
           this.changeDetectorRef.markForCheck();
         }
 
-        this.router.navigate(['.'], { relativeTo: this.route });
+        this.clearDialogQueryParams();
       });
   }
 

@@ -3,6 +3,7 @@ import { GfInvestmentChartComponent } from '@ghostfolio/client/components/invest
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
+import { openExternalWindow } from '@ghostfolio/common/helper';
 import {
   HistoricalDataItem,
   InvestmentItem,
@@ -207,7 +208,9 @@ export class GfPortfolioAnalysisComponent implements OnInit {
           .onAction()
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe(() => {
-            window.open('https://duck.ai', '_blank');
+            // Opened through the shared helper so the destination is never
+            // handed a `window.opener` reference back to this tab.
+            openExternalWindow('https://duck.ai');
           });
 
         this.actionsMenuButton.closeMenu();
@@ -300,7 +303,9 @@ export class GfPortfolioAnalysisComponent implements OnInit {
           }
         ] of chart.entries()) {
           if (index > 0 || this.user?.settings?.dateRange === 'max') {
-            // Ignore first item where value is 0
+            // The first chart point is the range's baseline rather than a data
+            // point, so it is skipped for every range except `max`, where it is
+            // the genuine start of the series.
             this.investments.push({
               date,
               investment: totalInvestmentValueWithCurrencyEffect

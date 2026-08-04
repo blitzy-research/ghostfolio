@@ -8,12 +8,10 @@
   background: var(--mat-sys-surface-container-low, #fafafa);
   color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
 
-  // The column formatting context every child rule below depends on, plus the
-  // claim on the band the shell leaves below the banner. A router-inserted host
-  // element carries no encapsulation attribute, so only the routed component
-  // can size itself. `min-height: 0` clears the automatic minimum size so the
-  // canvas scrolls internally instead of pushing the shell past one viewport,
-  // and scrolling belongs to the drawer's content region rather than the host.
+  // A router-inserted host element carries no encapsulation attribute, so only the
+  // routed component can size itself. `min-height: 0` clears the automatic minimum
+  // size so the canvas scrolls internally — in the drawer's content region, not on
+  // the host — instead of pushing the shell past one viewport.
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -32,8 +30,6 @@
     min-height: 0;
   }
 
-  // Match the drawer's leading corners to the catalog surface while leaving
-  // drawer width library-owned.
   mat-sidenav {
     border-end-start-radius: var(--mat-sys-corner-medium, 4px);
     border-start-start-radius: var(--mat-sys-corner-medium, 4px);

@@ -8,7 +8,7 @@ import {
   AssetProfileIdentifier,
   PortfolioPosition
 } from '@ghostfolio/common/interfaces';
-import { ColorScheme, DateRange } from '@ghostfolio/common/types';
+import type { ColorScheme, DateRange } from '@ghostfolio/common/types';
 
 import { CommonModule } from '@angular/common';
 import {

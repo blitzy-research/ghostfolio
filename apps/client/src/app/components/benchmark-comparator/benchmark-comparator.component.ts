@@ -12,9 +12,9 @@ import {
   getTextColor,
   parseDate
 } from '@ghostfolio/common/helper';
-import { LineChartItem, User } from '@ghostfolio/common/interfaces';
+import { LineChartItem, type User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { ColorScheme } from '@ghostfolio/common/types';
+import type { ColorScheme } from '@ghostfolio/common/types';
 import { registerChartConfiguration } from '@ghostfolio/ui/chart';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
 

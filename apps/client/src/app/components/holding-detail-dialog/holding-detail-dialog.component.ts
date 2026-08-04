@@ -7,7 +7,11 @@ import {
 } from '@ghostfolio/common/config';
 import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { CreateOrderDto } from '@ghostfolio/common/dtos';
-import { DATE_FORMAT, downloadAsFile } from '@ghostfolio/common/helper';
+import {
+  DATE_FORMAT,
+  downloadAsFile,
+  isKnownDataSource
+} from '@ghostfolio/common/helper';
 import {
   Activity,
   DataProviderInfo,
@@ -179,6 +183,19 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   }
 
   public ngOnInit() {
+    // Every request this dialog issues is keyed by the identifier it was opened
+    // with, and one of its openers is the root route's own query parameters. A
+    // dialog opened for an asset this application cannot name would send that
+    // unvetted value onwards under the viewer's credentials, so it is closed
+    // instead of asking. The vetting is repeated here rather than trusted from
+    // the opener because the type of `data` is a claim, not a guarantee, and
+    // this component is reachable from a dozen call sites.
+    if (!isKnownDataSource(this.data.dataSource) || !this.data.symbol) {
+      this.dialogRef.close();
+
+      return;
+    }
+
     const filters: Filter[] = [
       { id: this.data.dataSource, type: 'DATA_SOURCE' },
       { id: this.data.symbol, type: 'SYMBOL' }
@@ -460,37 +477,31 @@ export class GfHoldingDetailDialogComponent implements OnInit {
           }
 
           if (isToday(parseISO(this.dateOfFirstActivity))) {
-            // Add average price
             this.historicalDataItems.push({
               date: this.dateOfFirstActivity,
               value: this.averagePrice
             });
 
-            // Add benchmark 1
             this.benchmarkDataItems.push({
               date: this.dateOfFirstActivity,
               value: averagePrice
             });
 
-            // Add market price
             this.historicalDataItems.push({
               date: new Date().toISOString(),
               value: this.marketPrice
             });
 
-            // Add benchmark 2
             this.benchmarkDataItems.push({
               date: new Date().toISOString(),
               value: averagePrice
             });
           } else {
-            // Add market price
             this.historicalDataItems.push({
               date: format(new Date(), DATE_FORMAT),
               value: this.marketPrice
             });
 
-            // Add benchmark
             this.benchmarkDataItems.push({
               date: format(new Date(), DATE_FORMAT),
               value: averagePrice
@@ -545,16 +556,24 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   }
 
   public onCloneActivity(aActivity: Activity) {
-    // The activities screen no longer owns a URL of its own, so the canvas is
-    // asked to surface the activities module instead of being navigated to. The
-    // dialog payload is unchanged and is merged onto the current route, which
-    // keeps this entry point route-agnostic.
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ACTIVITIES);
 
-    this.router.navigate([], {
-      queryParams: { activityId: aActivity.id, createDialog: true },
+    // The flag is addressed to the activities module by name, so no other
+    // co-mounted module consumes it, and the three keys that identify *this*
+    // dialog are cleared in the same navigation - without that the shell would
+    // see its own flag still standing and reopen this dialog on top of the one
+    // being asked for.
+    void this.router.navigate([], {
+      queryParams: {
+        activityId: aActivity.id,
+        createDialog: true,
+        dataSource: null,
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        holdingDetailDialog: null,
+        symbol: null
+      },
       queryParamsHandling: 'merge'
     });
 
@@ -588,10 +607,6 @@ export class GfHoldingDetailDialogComponent implements OnInit {
       .postActivity(activity)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        // This was the one purely cross-screen destination in the component:
-        // the former navigation carried no dialog payload, so revealing the
-        // activities module is the entire intent and no query parameter is
-        // produced here.
         this.dashboardIntentService
           .getRevealModuleSubject()
           .next(DashboardModuleType.ACTIVITIES);
@@ -626,23 +641,20 @@ export class GfHoldingDetailDialogComponent implements OnInit {
     }
   }
 
-  /**
-   * Opens the asset profile dialog for this holding. The market data screen has
-   * become a module, so the intent surfaces that module while the query
-   * parameters, unchanged from the ones the template used to carry itself, open
-   * the dialog on the current route. Authorization is untouched: the template
-   * still gates the action behind `hasPermissionToAccessAdminControl` and the
-   * API keeps enforcing it independently.
-   */
   public onOpenAssetProfileDialog() {
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ADMIN_MARKET_DATA);
 
-    this.router.navigate([], {
+    // `dataSource` and `symbol` are shared with this dialog's own parameters, so
+    // only the flag that identifies it is dropped - the pair is being handed on
+    // rather than cleared.
+    void this.router.navigate([], {
       queryParams: {
         assetProfileDialog: true,
         dataSource: this.SymbolProfile?.dataSource,
+        dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
+        holdingDetailDialog: null,
         symbol: this.SymbolProfile?.symbol
       },
       queryParamsHandling: 'merge'
@@ -652,15 +664,19 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   }
 
   public onUpdateActivity(aActivity: Activity) {
-    // Same reveal-then-merge sequence as cloning: the intent surfaces the
-    // activities module and the unchanged query parameters open the edit dialog
-    // there, without a screen change.
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ACTIVITIES);
 
-    this.router.navigate([], {
-      queryParams: { activityId: aActivity.id, editDialog: true },
+    void this.router.navigate([], {
+      queryParams: {
+        activityId: aActivity.id,
+        dataSource: null,
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        editDialog: true,
+        holdingDetailDialog: null,
+        symbol: null
+      },
       queryParamsHandling: 'merge'
     });
 

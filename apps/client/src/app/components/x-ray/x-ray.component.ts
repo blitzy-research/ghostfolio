@@ -33,7 +33,7 @@ import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
     NgxSkeletonLoaderModule
   ],
   selector: 'gf-x-ray',
-  styleUrls: ['./x-ray.scss'],
+  styleUrl: './x-ray.scss',
   templateUrl: './x-ray.html'
 })
 export class GfXRayComponent {

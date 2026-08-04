@@ -1,4 +1,5 @@
 import { CreateAccountDto, UpdateAccountDto } from '@ghostfolio/common/dtos';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { validateObjectForForm } from '@ghostfolio/common/utils';
 import { GfCurrencySelectorComponent } from '@ghostfolio/ui/currency-selector';
 import { GfEntityLogoComponent } from '@ghostfolio/ui/entity-logo';
@@ -159,7 +160,7 @@ export class GfCreateOrUpdateAccountDialogComponent {
         this.dialogRef.close(account as CreateAccountDto);
       }
     } catch (error) {
-      console.error(error);
+      reportSanitizedError('GF-ACCOUNT-DIALOG-VALIDATION-FAILED', error);
     }
   }
 

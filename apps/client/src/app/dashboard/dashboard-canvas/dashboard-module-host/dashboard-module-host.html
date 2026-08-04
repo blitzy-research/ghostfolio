@@ -1,6 +1,7 @@
 <!--
   COMPONENT CONTRACT - this template requires `definition`, `resolvedComponent`,
-  `hasLoadError` and `onRemove()`; it imports IonIcon, MatButtonModule,
+  `hasLoadError`, `onDragHandleKeydown($event)` and `onRemove()`, and the class
+  emits `move`, `resize` and `remove`; it imports IonIcon, MatButtonModule,
   MatCardModule, MatMenuModule, NgComponentOutlet and NgxSkeletonLoaderModule
   alongside CUSTOM_ELEMENTS_SCHEMA, and registers the ellipsisHorizontal,
   reorderTwoOutline and trashOutline glyphs.
@@ -26,21 +27,29 @@
       a drag - a mismatch compiles and lints cleanly and then fails silently.
     -->
     <!--
-      Focusable for the `:focus-visible` treatment and so assistive technology
-      can discover that the module moves, but intentionally not a button:
-      repositioning is a pointer gesture owned by the grid, so an activation
-      affordance would promise something pressing it never delivers.
+      A real button, because the handle now does something when operated by
+      keyboard: arrow keys move the module and Shift with an arrow resizes it,
+      which is what `aria-keyshortcuts` advertises. It stays the pointer drag
+      handle at the same time - the grid matches the class above by walking up
+      from the pressed element, so which element carries it is irrelevant.
+
+      `type="button"` matters here: the handle sits in no form, but the default
+      submit type would still make Enter and Space do something other than
+      nothing, and this control intentionally has no activation behaviour at all -
+      only its arrow keys act.
     -->
-    <span
-      aria-label="Drag to move module"
+    <button
+      aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
+      aria-label="Move or resize module"
       class="gf-dashboard-module-drag-handle mr-2 p-2"
       i18n-aria-label
       i18n-title
-      tabindex="0"
       title="Drag to move module"
+      type="button"
+      (keydown)="onDragHandleKeydown($event)"
     >
       <ion-icon aria-hidden="true" name="reorder-two-outline" />
-    </span>
+    </button>
 
     <!--
       Keep the title nested: direct MatCardTitle projection reorders the header,

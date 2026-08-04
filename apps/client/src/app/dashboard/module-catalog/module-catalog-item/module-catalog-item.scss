@@ -1,11 +1,10 @@
-// Material system tokens require fallbacks because the current theme does not
-// emit the --mat-sys layer.
+// Material system tokens require fallbacks because the current theme does not emit
+// the --mat-sys layer.
 //
-// The row is both a click target and a native drag source, so every state beyond
-// resting is distinguished by a border colour clearing 3:1 against the row
-// surface (WCAG 2.2 SC 1.4.11); the background steps are secondary cues taken
-// from the palette's own state-layer alphas. Cursor and border style are
-// behavioural rather than themeable, so `grabbing` and `dashed` are literals.
+// Every state beyond resting is distinguished by a border colour clearing 3:1
+// against the row surface (WCAG 2.2 SC 1.4.11); the background steps are secondary
+// cues. `grabbing` and `dashed` are literals because they are behavioural rather
+// than themeable.
 
 :host {
   display: block;
@@ -17,8 +16,6 @@
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     cursor: grab;
 
-    // Declared before the pressed and drag-active rules so the more engaged
-    // state wins the shared properties at equal specificity.
     &:hover {
       background-color: var(--mat-sys-surface-container-high, #f5f5f5);
       border-color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));

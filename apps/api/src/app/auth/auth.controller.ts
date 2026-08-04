@@ -87,6 +87,8 @@ export class AuthController {
     const jwt: string = (request.user as any).jwt;
 
     if (jwt) {
+      this.protectRedirectCarryingCredential(response);
+
       response.redirect(
         `${this.configurationService.get(
           'ROOT_URL'
@@ -118,6 +120,8 @@ export class AuthController {
     const jwt: string = (request.user as any).jwt;
 
     if (jwt) {
+      this.protectRedirectCarryingCredential(response);
+
       response.redirect(
         `${this.configurationService.get(
           'ROOT_URL'
@@ -167,5 +171,37 @@ export class AuthController {
         StatusCodes.FORBIDDEN
       );
     }
+  }
+
+  /**
+   * Narrows the exposure of a redirect whose target URL carries the session
+   * token, applied to the Google and OpenID Connect callbacks.
+   *
+   * The provider hands the identity back to the browser through a redirect, and
+   * the token reaches the client as a query parameter of that redirect target.
+   * That shape is what the client's root host consumes and is therefore kept,
+   * but a URL bearing a credential must not be treated like an ordinary one:
+   *
+   * - `Cache-Control: no-store` together with `Pragma: no-cache` keeps the
+   *   response, and the Location it carries, out of the browser cache and out
+   *   of any intermediary that would otherwise be free to retain a 302.
+   * - `Referrer-Policy: no-referrer` stops this URL from being disclosed as the
+   *   referrer of the request the browser makes next while following it.
+   *
+   * These headers are set on the handler rather than centrally because the
+   * application applies its security-header middleware only when the
+   * subscription feature is switched on, so an installation without it would
+   * otherwise send the credential-bearing redirect with default headers. They
+   * narrow the exposure; they do not remove it. A token in a URL still reaches
+   * browser history and any access log that records request targets, and only
+   * moving the hand-off out of the URL closes that — a change to the
+   * authentication mechanism itself, which this refactor does not make.
+   *
+   * @param response the Express response the redirect is about to be written to.
+   */
+  private protectRedirectCarryingCredential(response: Response) {
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Referrer-Policy', 'no-referrer');
   }
 }

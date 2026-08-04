@@ -1,4 +1,4 @@
-<div class="container-fluid">
+<div class="container">
   <div class="row">
     <div class="col">
       <gf-activities-filter
@@ -332,14 +332,23 @@
   </div>
 
   <div class="fab-container">
+    <!--
+      An icon-only control, so its accessible name has to come from an attribute.
+      The label is the title of the dialog this control opens, which is an already
+      translated source message - the name a screen reader announces therefore
+      matches the dialog that appears. The glyph is decorative and hidden so it
+      cannot be announced a second time.
+    -->
     <a
+      aria-label="Add Asset Profile"
       class="align-items-center d-flex justify-content-center"
       color="primary"
+      i18n-aria-label
       mat-fab
       [queryParams]="{ createAssetProfileDialog: true }"
       [routerLink]="[]"
     >
-      <ion-icon name="add-outline" size="large" />
+      <ion-icon aria-hidden="true" name="add-outline" size="large" />
     </a>
   </div>
 </div>

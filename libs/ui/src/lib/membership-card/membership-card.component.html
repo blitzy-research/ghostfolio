@@ -1,7 +1,14 @@
 <div class="card-wrapper position-relative" [class.hover-3d]="hover3d">
   <div class="card-container" [ngClass]="{ premium: name === 'Premium' }">
+    <!--
+      The plan page is hosted outside this application, so the card is an
+      ordinary external address opened in its own tab. `rel` isolates that tab
+      from this one: without it the opened document keeps a handle on this
+      window through `opener` and can navigate it.
+    -->
     <a
       class="card-item d-flex flex-column justify-content-between p-4"
+      rel="noopener noreferrer"
       target="_blank"
       [href]="pricingUrl"
     >

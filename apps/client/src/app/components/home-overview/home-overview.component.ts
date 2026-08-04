@@ -107,32 +107,18 @@ export class GfHomeOverviewComponent implements OnInit {
       });
   }
 
-  /**
-   * Publishes a reveal-module intent for the accounts module. This replaces the
-   * former cross-screen navigation: on a single canvas, surfacing a module is
-   * the canvas' responsibility, so this component only announces the intent and
-   * never learns where the module ends up.
-   */
   public onRevealAccounts() {
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ACCOUNTS);
   }
 
-  /**
-   * Publishes a reveal-module intent for the activities module.
-   */
   public onRevealActivities() {
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ACTIVITIES);
   }
 
-  /**
-   * Publishes a reveal-module intent for the portfolio analysis module, which
-   * is what the former portfolio link resolved to, because the portfolio route
-   * loaded analysis as its default child.
-   */
   public onRevealPortfolioAnalysis() {
     this.dashboardIntentService
       .getRevealModuleSubject()

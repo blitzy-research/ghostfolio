@@ -30,7 +30,7 @@ import { DataSource, MarketData, Platform } from '@prisma/client';
 import { JobStatus } from 'bull';
 import { isNumber } from 'lodash';
 
-import { DataService } from './data.service';
+import { DataService, encodeApiPath } from './data.service';
 
 @Injectable({
   providedIn: 'root'
@@ -42,13 +42,15 @@ export class AdminService {
 
   public addAssetProfile({ dataSource, symbol }: AssetProfileIdentifier) {
     return this.http.post<void>(
-      `/api/v1/admin/profile-data/${dataSource}/${symbol}`,
+      encodeApiPath`/api/v1/admin/profile-data/${dataSource}/${symbol}`,
       null
     );
   }
 
   public deleteJob(aId: string) {
-    return this.http.delete<void>(`/api/v1/admin/queue/job/${aId}`);
+    return this.http.delete<void>(
+      encodeApiPath`/api/v1/admin/queue/job/${aId}`
+    );
   }
 
   public deleteJobs({ status }: { status: JobStatus[] }) {
@@ -64,17 +66,19 @@ export class AdminService {
   }
 
   public deletePlatform(aId: string) {
-    return this.http.delete<void>(`/api/v1/platform/${aId}`);
+    return this.http.delete<void>(encodeApiPath`/api/v1/platform/${aId}`);
   }
 
   public deleteProfileData({ dataSource, symbol }: AssetProfileIdentifier) {
     return this.http.delete<void>(
-      `/api/v1/admin/profile-data/${dataSource}/${symbol}`
+      encodeApiPath`/api/v1/admin/profile-data/${dataSource}/${symbol}`
     );
   }
 
   public executeJob(aId: string) {
-    return this.http.get<void>(`/api/v1/admin/queue/job/${aId}/execute`);
+    return this.http.get<void>(
+      encodeApiPath`/api/v1/admin/queue/job/${aId}/execute`
+    );
   }
 
   public fetchAdminData() {
@@ -146,7 +150,9 @@ export class AdminService {
   }
 
   public fetchUserById(id: string) {
-    return this.http.get<AdminUserResponse>(`/api/v1/admin/user/${id}`);
+    return this.http.get<AdminUserResponse>(
+      encodeApiPath`/api/v1/admin/user/${id}`
+    );
   }
 
   public fetchUsers({
@@ -186,7 +192,7 @@ export class AdminService {
     symbol
   }: AssetProfileIdentifier) {
     return this.http.post<void>(
-      `/api/v1/admin/gather/profile-data/${dataSource}/${symbol}`,
+      encodeApiPath`/api/v1/admin/gather/profile-data/${dataSource}/${symbol}`,
       {}
     );
   }
@@ -204,7 +210,7 @@ export class AdminService {
       params = params.append('range', range);
     }
 
-    const url = `/api/v1/admin/gather/${dataSource}/${symbol}`;
+    const url = encodeApiPath`/api/v1/admin/gather/${dataSource}/${symbol}`;
 
     return this.http.post<MarketData | void>(url, undefined, { params });
   }
@@ -218,7 +224,7 @@ export class AdminService {
     dateString: string;
     symbol: string;
   }) {
-    const url = `/api/v1/symbol/${dataSource}/${symbol}/${dateString}`;
+    const url = encodeApiPath`/api/v1/symbol/${dataSource}/${symbol}/${dateString}`;
 
     return this.http.get<DataProviderHistoricalResponse>(url);
   }
@@ -242,7 +248,7 @@ export class AdminService {
     }: UpdateAssetProfileDto
   ) {
     return this.http.patch<EnhancedSymbolProfile>(
-      `/api/v1/admin/profile-data/${dataSource}/${symbol}`,
+      encodeApiPath`/api/v1/admin/profile-data/${dataSource}/${symbol}`,
       {
         assetClass,
         assetSubClass,
@@ -267,7 +273,7 @@ export class AdminService {
 
   public putPlatform(aPlatform: UpdatePlatformDto) {
     return this.http.put<Platform>(
-      `/api/v1/platform/${aPlatform.id}`,
+      encodeApiPath`/api/v1/platform/${aPlatform.id}`,
       aPlatform
     );
   }
@@ -282,7 +288,7 @@ export class AdminService {
     symbol
   }: AssetProfileIdentifier & UpdateAssetProfileDto['scraperConfiguration']) {
     return this.http.post<{ price: number }>(
-      `/api/v1/admin/market-data/${dataSource}/${symbol}/test`,
+      encodeApiPath`/api/v1/admin/market-data/${dataSource}/${symbol}/test`,
       {
         scraperConfiguration
       }

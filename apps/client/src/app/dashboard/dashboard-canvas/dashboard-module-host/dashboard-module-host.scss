@@ -19,28 +19,20 @@
   mat-card {
     background: var(--mat-sys-surface-container, #ffffff);
 
-    // The grid cell owns the outline; remove MatCard's border to avoid a
-    // double edge.
     border: none;
 
     border-radius: var(--mat-sys-corner-medium, 4px);
 
-    // Set card text once so the header title inherits a value Material does
-    // not supply here.
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
 
     height: 100%;
   }
 
-  // Alignment and the header's own padding come from Bootstrap utilities in the
-  // template, so only the divider is declared here.
   mat-card-header {
     border-block-end: 1px solid
       var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
   }
 
-  // These properties work together to keep long titles from displacing the
-  // actions menu.
   mat-card-title {
     font: var(
       --mat-sys-title-small,
@@ -52,29 +44,30 @@
   }
 
   // This class must match gridster's dragHandleClass; preserve cursor and
-  // text-selection behavior. The resting and hover tones carry the handle past
-  // the WCAG 1.4.3 minimum, and the ring is explicit because the global
+  // text-selection behavior. The focus ring is explicit because the global
   // stylesheet resets focus outlines.
   //
-  /* BLITZY [A11Y]: the specified handle tone is 4.61:1 against the light card
-     and clears the 3:1 non-text minimum, but measured in the browser the
-     darkest rendered pixel of the glyph is only 2.68:1. `reorder-two-outline`
-     is a stroked icon whose 32/512 stroke lands on a 0.875px sub-pixel line at
-     the 14px type size the global grid partial gives this handle, so no pixel
-     reaches full coverage. Neither the tone nor the glyph nor that type size is
-     this component's to change - the tone is the mapped system token, the glyph
-     is specified, and the type size belongs to the global partial - so it is
-     implemented as specified and flagged for designer review. Dark theme is
-     unaffected (4.86:1 measured). */
+  // The handle's rendered contrast is a product of tone AND stroke coverage, so
+  // both are set here. `reorder-two-outline` is a stroked glyph with a 32/512
+  // stroke: at the 0.875rem type size the global grid partial gives this handle
+  // that stroke lands on a 0.875px line, no pixel ever reaches full coverage,
+  // and the darkest rendered pixel measured only 2.68:1 - below the 3:1 non-text
+  // minimum (WCAG 2.2 SC 1.4.11) - even though the tone itself computed 4.61:1.
+  // Stepping the glyph up one tokenised type-scale step puts the stroke on a
+  // whole 1px line so it renders at its nominal tone, and resting on the
+  // stronger of the two surface-text tokens raises that nominal tone as well.
+  // Both values are system tokens with repository-traceable fallbacks; the icon
+  // sizing follows the same `*-size` token form the toolbar already uses.
   .gf-dashboard-module-drag-handle {
-    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    background: transparent;
+    border: 0;
+    color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     cursor: move;
     display: inline-flex;
     user-select: none;
 
-    &:focus-visible,
-    &:hover {
-      color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    ion-icon {
+      font-size: var(--mat-sys-title-medium-size, 1rem);
     }
 
     &:focus-visible {
@@ -112,13 +105,10 @@
     );
   }
 
+  // Dark already measured 4.86:1 before this change; it is restated only because
+  // the fallback differs and the fallback is what paints.
   .gf-dashboard-module-drag-handle {
-    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
-
-    &:focus-visible,
-    &:hover {
-      color: var(--mat-sys-on-surface, #ffffff);
-    }
+    color: var(--mat-sys-on-surface, #ffffff);
 
     &:focus-visible {
       outline-color: var(--mat-sys-on-surface, #ffffff);

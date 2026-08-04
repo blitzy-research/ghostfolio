@@ -2,7 +2,7 @@ import { GfRuleComponent } from '@ghostfolio/client/components/rule/rule.compone
 import { UpdateUserSettingDto } from '@ghostfolio/common/dtos';
 import {
   PortfolioReportRule,
-  XRayRulesSettings
+  type XRayRulesSettings
 } from '@ghostfolio/common/interfaces';
 
 import {

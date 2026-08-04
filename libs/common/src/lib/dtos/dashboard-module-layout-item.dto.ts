@@ -15,18 +15,14 @@ import {
 /**
  * Rejects a grid item whose origin and span jointly overflow the canvas.
  *
- * The per-field bounds on `DashboardModuleLayoutItemDto` cap each coordinate in
- * isolation, which still admits combinations that cannot exist on the canvas —
- * `x: 11` with `cols: 12` would span columns 11 through 22 of a grid that is
- * only 12 columns wide. The grid is locked to a fixed 12-column width and a
- * 100-row ceiling, so this constraint closes that gap server-side, exactly as
- * the per-field minimums close the gap a hand-crafted request would otherwise
- * open. It is declared on `cols` and reads its siblings off the validated
- * object, which is how `class-validator` expresses a cross-field rule.
+ * The per-field bounds cap each coordinate in isolation, which still admits
+ * combinations the canvas cannot hold — `x: 11` with `cols: 12` spans columns 11
+ * through 22 of a 12-column grid. Declared on `cols` and reading its siblings off
+ * the validated object, which is how `class-validator` expresses a cross-field rule.
  *
- * When any of the four coordinates is not an integer the constraint defers by
- * returning `true`: the per-field `@IsInt()` bounds already report that failure,
- * and a second error for the same malformed item would only obscure it.
+ * Defers by returning `true` when any coordinate is not an integer, because the
+ * per-field `@IsInt()` bounds already report that and a second error for the same
+ * item would obscure it.
  */
 @ValidatorConstraint({ name: 'isWithinDashboardGrid' })
 export class IsWithinDashboardGridConstraint implements ValidatorConstraintInterface {
@@ -58,22 +54,16 @@ export class DashboardModuleLayoutItemDto {
   @Validate(IsWithinDashboardGridConstraint)
   cols: number;
 
-  // Deliberately an opaque, unvalidated-by-vocabulary string: the module
-  // registry is the only mechanism that introduces module types, and a retired
-  // type in a saved layout has to be droppable per item rather than failing the
-  // whole request. It is still bounded, because an unbounded string would let a
-  // single item carry megabytes into persistent storage. 64 characters leaves
-  // ample headroom over the longest shipped type (18 characters).
+  // Not validated against the module vocabulary on purpose: a retired type in a
+  // saved layout has to be droppable per item rather than fail the whole request.
+  // The length cap is what stops one item carrying megabytes into storage.
   //
-  // Opaque stops short of unstorable, though. `\p{C}` covers the Unicode "other"
-  // categories - control, format, surrogate, private use and unassigned - and
-  // PostgreSQL cannot represent several of them inside a JSONB document: a NUL
-  // (U+0000) or a lone surrogate makes the driver reject the whole statement
-  // with "unsupported Unicode escape sequence", which surfaces as a 500 even
-  // though the payload satisfies every other rule declared here. Excluding them
-  // turns that into a field-level 400 like every sibling case, and costs nothing
-  // legitimate: a module type is a machine identifier, and every shipped one is
-  // lower-case kebab-case ASCII.
+  // `\p{C}` excludes the Unicode "other" categories, several of which PostgreSQL
+  // cannot represent inside a JSONB document - a NUL or a lone surrogate makes the
+  // driver reject the statement with "unsupported Unicode escape sequence", which
+  // would surface as a 500 despite the payload satisfying every other rule here.
+  // Excluding them turns that into a field-level 400 and costs nothing legitimate,
+  // because a module type is a lower-case kebab-case machine identifier.
   @IsNotEmpty()
   @IsString()
   @Matches(/^[^\p{C}]+$/u, {

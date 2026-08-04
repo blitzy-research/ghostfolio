@@ -138,16 +138,23 @@ export class GfAccountDetailDialogComponent implements OnInit {
   }
 
   protected onCloneActivity(aActivity: Activity) {
-    // The activities screen no longer has a URL of its own, so ask the canvas
-    // to surface the activities module instead of navigating to it. The dialog
-    // payload stays on the current route, keeping the entry point
-    // route-agnostic.
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ACTIVITIES);
 
-    this.router.navigate([], {
-      queryParams: { activityId: aActivity.id, createDialog: true },
+    // The flag is addressed to the activities module by name, so no other
+    // co-mounted module consumes it, and the two keys that identify *this*
+    // dialog are cleared in the same navigation - without that the accounts
+    // module would see its own flag still standing and reopen this dialog on top
+    // of the one being asked for.
+    void this.router.navigate([], {
+      queryParams: {
+        accountDetailDialog: null,
+        accountId: null,
+        activityId: aActivity.id,
+        createDialog: true,
+        dialogModule: DashboardModuleType.ACTIVITIES
+      },
       queryParamsHandling: 'merge'
     });
 
@@ -206,15 +213,18 @@ export class GfAccountDetailDialogComponent implements OnInit {
   }
 
   protected onUpdateActivity(aActivity: Activity) {
-    // Same reveal-then-merge sequence as cloning: the intent surfaces the
-    // activities module and the unchanged query parameters open the edit dialog
-    // there, without a screen change.
     this.dashboardIntentService
       .getRevealModuleSubject()
       .next(DashboardModuleType.ACTIVITIES);
 
-    this.router.navigate([], {
-      queryParams: { activityId: aActivity.id, editDialog: true },
+    void this.router.navigate([], {
+      queryParams: {
+        accountDetailDialog: null,
+        accountId: null,
+        activityId: aActivity.id,
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        editDialog: true
+      },
       queryParamsHandling: 'merge'
     });
 

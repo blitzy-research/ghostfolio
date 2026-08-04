@@ -57,6 +57,17 @@ export class GfUserAccountAccessComponent implements OnInit {
   public accessesGet: Access[];
   public accessesGive: Access[];
   public deviceType: string;
+  /**
+   * The discriminator this module's dialog flags are addressed with.
+   *
+   * Exposed so the template can bind it instead of repeating the literal. The
+   * discriminator has to match what this component's own query-parameter handler
+   * compares against, and a repeated literal is a match that no compiler
+   * checks - renaming the enum member would leave the control silently opening
+   * nothing.
+   */
+  public readonly dialogModule = DashboardModuleType.ACCOUNT_ACCESS;
+
   public hasPermissionToCreateAccess: boolean;
   public hasPermissionToDeleteAccess: boolean;
   public hasPermissionToUpdateOwnAccessToken: boolean;
@@ -184,12 +195,39 @@ export class GfUserAccountAccessComponent implements OnInit {
   }
 
   public onUpdateAccess(aId: string) {
-    this.router.navigate([], {
+    void this.router.navigate([], {
       queryParams: {
         accessId: aId,
         dialogModule: DashboardModuleType.ACCOUNT_ACCESS,
         editDialog: true
-      }
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
+    });
+  }
+
+  /**
+   * Removes the query parameters this module's dialogs travel on, and only
+   * those.
+   *
+   * Merging is what makes the clear safe on a single canvas: every module
+   * observes the same query parameters, so dropping them all would close a
+   * sibling module's dialog as a side effect of closing this one's. Clearing
+   * `accessId` alongside `editDialog` also matters beyond this module - the two
+   * together are how the canvas tells an access grant being edited from a
+   * portfolio shared by link - so leaving either behind would misreport the
+   * canvas's own state.
+   */
+  private clearDialogQueryParams() {
+    void this.router.navigate([], {
+      queryParams: {
+        accessId: null,
+        createDialog: null,
+        dialogModule: null,
+        editDialog: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -216,7 +254,7 @@ export class GfUserAccountAccessComponent implements OnInit {
         this.update();
       }
 
-      this.router.navigate(['.'], { relativeTo: this.route });
+      this.clearDialogQueryParams();
     });
   }
 
@@ -251,7 +289,7 @@ export class GfUserAccountAccessComponent implements OnInit {
         this.update();
       }
 
-      this.router.navigate(['.'], { relativeTo: this.route });
+      this.clearDialogQueryParams();
     });
   }
 

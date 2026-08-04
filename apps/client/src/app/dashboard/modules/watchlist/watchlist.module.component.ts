@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfHomeWatchlistComponent],
   selector: 'gf-watchlist-module',
+  styleUrls: ['./watchlist.module.scss'],
   templateUrl: './watchlist.module.html'
 })
 export class GfWatchlistModuleComponent {}

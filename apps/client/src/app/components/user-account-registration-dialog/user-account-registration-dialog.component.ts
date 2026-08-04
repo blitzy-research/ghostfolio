@@ -28,7 +28,7 @@ import {
   copyOutline
 } from 'ionicons/icons';
 
-import { UserAccountRegistrationDialogParams } from './interfaces/interfaces';
+import type { UserAccountRegistrationDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -2,45 +2,26 @@ import { DashboardModuleType } from './enums/dashboard-module-type';
 import type { DashboardModuleRegistration } from './interfaces/interfaces';
 
 /**
- * Declarative application-side registration table for every dashboard module.
+ * The registration table the module registry builds its lookup map from, and so the
+ * place a new module is introduced: one entry, rather than a second table, a
+ * `switch` or anything inside a module wrapper.
  *
- * This array is the *only* mechanism by which a module type becomes available
- * to the canvas: the module registry builds its lookup map from these entries,
- * and the canvas resolves a persisted discriminator exclusively through that
- * map. Introducing a module therefore means adding exactly one entry here —
- * never inserting a component into the grid ad hoc, and never registering from
- * a second table, a `switch` statement or a module wrapper.
+ * Three constraints govern it.
  *
- * Two deliberate constraints govern each entry:
+ * 1. **Loaders, not component references.** These thunks are the application's only
+ *    code-splitting seam, so holding component *types* here would pull every module
+ *    tree into the initial chunk and breach the production `initial` budget (2 MB
+ *    warning, 5 MB error).
+ * 2. **No metadata duplication.** Display names, default and minimum cell dimensions
+ *    and the optional visibility permission are authoritative in the
+ *    framework-neutral `dashboardModules` map in `@ghostfolio/common/dashboard`,
+ *    which `libs/ui` also reads. This file contributes only the
+ *    discriminator-to-loader binding, and no layout geometry at all.
+ * 3. **Order is catalog order.** Entries follow `DashboardModuleType` declaration
+ *    order, and every enum member appears exactly once.
  *
- * 1. **Loaders, not component references.** Collapsing the former 22 lazy
- *    route boundaries removed every code-splitting seam in the application.
- *    Holding component *types* here would pull all 21 module trees — and
- *    everything they transitively import — into the initial chunk and breach
- *    the production `initial` budget (2 MB warning, 5 MB error). Each entry
- *    therefore stores a thunk that dynamically imports its wrapper, relocating
- *    code splitting from route boundaries to registry boundaries. A welcome
- *    side effect: a registry-held thunk is the only reachable way to obtain a
- *    module component, so ad-hoc insertion is structurally impossible rather
- *    than merely discouraged.
- *
- * 2. **No metadata duplication.** Display names, default and minimum cell
- *    dimensions, and the optional visibility permission are authoritative in
- *    the framework-neutral `dashboardModules` map exported from
- *    `@ghostfolio/common/dashboard`, which is shared with `libs/ui`. This file
- *    contributes nothing but the discriminator-to-loader binding, and carries
- *    no layout geometry whatsoever — a module's position and size live solely
- *    in grid state.
- *
- * Order matters: entries follow `DashboardModuleType` declaration order, which
- * is also catalog order, so the catalog listing stays stable and reviewable.
- * Every enum member appears exactly once, so the registry can resolve any
- * persisted discriminator it recognises and safely drop the ones it does not.
- *
- * Dependencies run one way only — this table references module wrappers, and
- * no wrapper imports this table or anything else from the canvas layer.
- *
- * @see {@link DashboardModuleType} for the persisted discriminator vocabulary.
+ * Dependencies run one way: this table references module wrappers, and no wrapper
+ * imports it or anything else from the canvas layer.
  */
 export const dashboardModuleRegistrations: DashboardModuleRegistration[] = [
   {

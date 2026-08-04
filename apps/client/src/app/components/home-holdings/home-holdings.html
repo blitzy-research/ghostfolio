@@ -1,9 +1,16 @@
-<div class="container">
-  <div class="row">
-    <div class="col">
-      <h1 class="d-none d-sm-block h3 mb-3 text-center" i18n>Holdings</h1>
-    </div>
-  </div>
+<!--
+  A module-scale container, not a page-scale one. `container-fluid` keeps the
+  horizontal gutter that cancels the negative margins of the rows below - without
+  it they bleed past their cell - while dropping the responsive max-width that
+  made this content read as a page nested inside a grid cell.
+-->
+<div class="container-fluid">
+  <!--
+    The page heading that stood here is gone: the module chrome around this
+    content already carries "Holdings" as its title, so keeping it would name the
+    module twice on screen and put a second level-one heading inside a dashboard
+    that already has one. Every heading below is a section heading and stays.
+  -->
   <div class="row">
     <div class="col-lg">
       <div class="d-flex">
@@ -56,13 +63,21 @@
           holdings?.length > 0
         ) {
           <div class="text-center">
-            <a
+            <!--
+              A button, not an anchor: this control publishes a reveal-module
+              intent on the canvas rather than navigating to a URL, so it has no
+              href to offer. As a real button it is reachable by keyboard,
+              announced as a button, and activates on both Enter and Space.
+            -->
+            <button
               class="mt-3"
               i18n
               mat-stroked-button
+              type="button"
               (click)="onManageActivities()"
-              >Manage Activities</a
             >
+              Manage Activities
+            </button>
           </div>
         }
       </div>

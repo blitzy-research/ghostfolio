@@ -3,7 +3,7 @@
   `hasFilters`, `hasImpersonationId`, `impersonationId`,
   `hasPermissionForSubscription`, `hasPermissionToAccessAdminControl`,
   `hasPermissionToAccessAssistant`, `hasPermissionToChangeDateRange`,
-  `hasPermissionToChangeFilters`, `isMenuOpen`, `pricingUrl` and
+  `hasPermissionToChangeFilters`, `hasPromotion`, `isMenuOpen`, `pricingUrl` and
   `assistantElement`, plus the handlers `closeAssistant()`,
   `impersonateAccount()`, `onDateRangeChange()`, `onFiltersChanged()`,
   `onLogoClick()`, `onMenuClosed()`, `onMenuOpened()`, `onOpenAssistant()`,
@@ -37,13 +37,13 @@
   required, because the viewer is resolved asynchronously and the bar has to
   render as empty chrome until it arrives rather than fault on the first pass.
 
-  BLITZY [A11Y]: measured in a browser, the keyboard focus affordance on these
-  controls is the theme's own state layer and reads about 1.2:1 against the
-  surface behind it, short of the 3:1 advisory for a non-text indicator. No
-  value here produces it - it is the button styling the whole application
-  shares, the theme has not opted into the stronger ring, and the chrome this
-  bar replaces behaved identically - so it is raised for review rather than
-  corrected for three controls in isolation.
+  Keyboard focus on every control below - the mark, the assistant trigger, the
+  identity trigger and each menu row - draws an explicit ring, declared in
+  `dashboard-toolbar.scss`. It has to be declared: the global stylesheet resets
+  `button:focus` and this theme does not opt into Material's strong focus
+  indicators, leaving only a state layer that measures roughly 1.2:1 against the
+  surface behind it. The ring is scoped to this template's own elements, so it
+  neither leaks into child components nor depends on a theme change.
 -->
 <mat-toolbar class="px-0">
   @if (user) {
@@ -121,14 +121,34 @@
           </mat-menu>
         </li>
       }
+      @if (hasPromotion) {
+        <li class="d-inline-flex list-inline-item">
+          <!--
+            The counterpart of the discount mark the deleted page chrome showed
+            beside its plan link. There is no plan screen to point at any more,
+            so it is an ordinary external target to the hosted plan page and
+            opens in its own tab rather than taking the canvas away with it.
+
+            The mark itself is decorative and hidden from assistive technology,
+            because it says nothing the control's own name does not already say;
+            the name is what an offer actually means rather than how it is drawn,
+            and it reuses the wording of the plan row in the menu below so that
+            no new source message is introduced for it.
+          -->
+          <a
+            aria-label="Upgrade Plan"
+            class="gf-promotion h-100 no-min-width px-2"
+            i18n-aria-label
+            mat-button
+            rel="noopener noreferrer"
+            target="_blank"
+            [href]="pricingUrl"
+          >
+            <span aria-hidden="true" class="gf-promotion-mark">%</span>
+          </a>
+        </li>
+      }
       <li class="list-inline-item">
-        <!--
-          The two marks below are a display swap carried over unchanged: on a
-          narrow viewport one decorative glyph stands in for the other on the
-          same control. Both are hidden from assistive technology and the
-          control is named once, so the swap is invisible to anyone who is not
-          looking at it, and it brings no layout of its own with it.
-        -->
         <button
           aria-label="Account"
           class="no-min-width px-1"
@@ -160,9 +180,17 @@
               an ordinary external address and opens in its own tab rather than
               taking the canvas away with it. The indicator beside the wording
               is told not to link, so the row offers exactly one target instead
-              of two overlapping ones. Both wordings are reused unchanged from
-              the chrome this bar replaces, which keeps their existing
-              translations.
+              of two overlapping ones - and because the disabled indicator now
+              renders a decorative span rather than a second anchor, the row
+              contains no nested interactive content at all. Both wordings are
+              reused unchanged from the chrome this bar replaces, which keeps
+              their existing translations.
+
+              The percentage badge is the promotion affordance the deleted
+              chrome carried beside its pricing link, restored verbatim - same
+              element, same classes, same symbol - so that a viewer on the free
+              plan who has an offer waiting is told so, instead of seeing only
+              the generic premium glyph that every free-plan viewer sees.
             -->
             <a
               class="d-flex"
@@ -178,6 +206,9 @@
                     <ng-container i18n>Upgrade Plan</ng-container>
                   }
                 </span>
+                @if (hasPromotion) {
+                  <span class="badge badge-warning ml-1">%</span>
+                }
                 <gf-premium-indicator
                   class="d-inline-block ml-1"
                   [enableLink]="false" /></span

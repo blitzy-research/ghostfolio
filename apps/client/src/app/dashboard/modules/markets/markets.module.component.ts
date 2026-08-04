@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfHomeMarketComponent],
   selector: 'gf-markets-module',
+  styleUrls: ['./markets.module.scss'],
   templateUrl: './markets.module.html'
 })
 export class GfMarketsModuleComponent {}

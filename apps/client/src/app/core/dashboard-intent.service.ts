@@ -4,34 +4,18 @@ import { Injectable } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 
 /**
- * Neutral, application-internal intent bus for revealing a dashboard module.
+ * Intent bus a feature component uses to ask that a module be revealed, so it
+ * needs no reference to the canvas that decides what revealing means.
  *
- * Feature components that previously sent the user to a different screen now
- * publish a reveal-module intent instead. The dashboard canvas subscribes and
- * decides what to do with it, so publishers never import - and never learn
- * about - the canvas layer.
+ * It lives in `core/` rather than `dashboard/` so the dependency points from
+ * `components` to `core`, the direction in which `LayoutService` is already
+ * consumed. Both folders are inside one Nx project, so nothing mechanically
+ * forbids the reverse import: keeping `core` free of `dashboard` imports is a
+ * convention this arrangement depends on, not a build-enforced boundary.
  *
- * Why this lives in `core/` and not in `dashboard/`: the resulting dependency
- * only ever points from `components` to `core`, the same direction in which
- * `LayoutService` is already consumed. That makes the isolation structural
- * rather than conventional, because `core` never imports from `dashboard` and
- * `@nx/enforce-module-boundaries` fails the build if it ever tries.
- *
- * The module discriminator is the entire payload, matching the shape emitted by
- * the assistant so an intent can be forwarded onto this bus without
- * adaptation. Resolving a discriminator to a component is the module registry's
- * responsibility and positioning it is the grid's; neither belongs here.
- *
- * @example
- * // Publish, from any component under `apps/client/src/app`:
- * this.dashboardIntentService
- *   .getRevealModuleSubject()
- *   .next(DashboardModuleType.ACCOUNTS);
- *
- * // Observe, from the dashboard canvas:
- * this.dashboardIntentService.revealModule$
- *   .pipe(takeUntilDestroyed())
- *   .subscribe((moduleType) => this.revealModule(moduleType));
+ * The module discriminator is the entire payload, matching what the assistant
+ * emits so an intent can be forwarded on unadapted. Resolving a discriminator to
+ * a component belongs to the module registry and placing it to the grid.
  */
 @Injectable({ providedIn: 'root' })
 export class DashboardIntentService {
@@ -50,10 +34,6 @@ export class DashboardIntentService {
     this.revealModule$ = this.revealModuleSubject.asObservable();
   }
 
-  /**
-   * Returns the raw subject so that callers can publish an intent, mirroring
-   * `LayoutService.getShouldReloadSubject()`.
-   */
   public getRevealModuleSubject() {
     return this.revealModuleSubject;
   }

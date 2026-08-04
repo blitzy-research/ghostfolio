@@ -21,7 +21,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { Account } from '@prisma/client';
 
-import { TransferBalanceDialogParams } from './interfaces/interfaces';
+import type { TransferBalanceDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

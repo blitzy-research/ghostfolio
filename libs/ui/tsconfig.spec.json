@@ -3,6 +3,23 @@
   "compilerOptions": {
     "outDir": "../../dist/out-tsc",
     "module": "preserve",
+    // Off for the same reason it is off in `apps/client/tsconfig.spec.json`, and
+    // this project needs it for the same reason: `tsconfig.base.json` turns it on
+    // for library builds, where the whole program is visible, but specs are
+    // compiled file by file (`isolatedModules` below, which `jest-preset-angular`
+    // requires) and in that mode the two options are mutually exclusive.
+    // TypeScript reports TS1272 for every decorated signature whose type is
+    // imported normally, and `ts-jest` logs that "the 'emitDecoratorMetadata'
+    // option is not required by Angular" once per compilation that trips over it.
+    // Both surfaced here as soon as a spec in this library reached
+    // `@ghostfolio/common/dtos`, whose members carry `class-validator` and
+    // `class-transformer` decorators.
+    //
+    // Turning it off costs nothing, because dependency injection in specs does
+    // not read `design:paramtypes`: `jest-preset-angular` applies Angular's own
+    // decorator downlevelling transform, which emits a `static ctorParameters`
+    // member instead.
+    "emitDecoratorMetadata": false,
     "isolatedModules": true,
     "types": ["jest", "node"],
     "target": "es2016"

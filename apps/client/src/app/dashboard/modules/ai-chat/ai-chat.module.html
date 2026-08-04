@@ -89,7 +89,18 @@
           <ng-container i18n>Copy to clipboard</ng-container>
         </span>
       </button>
-      <a href="https://duck.ai" mat-button target="_blank">
+      <!--
+        `rel` is required rather than advisory on a `target="_blank"` link:
+        without `noopener` the document at the other end keeps a handle on this
+        one through `window.opener` and can navigate the tab holding the viewer's
+        portfolio, and `noreferrer` additionally withholds the referrer.
+      -->
+      <a
+        href="https://duck.ai"
+        mat-button
+        rel="noopener noreferrer"
+        target="_blank"
+      >
         <span class="align-items-center d-flex">
           <ion-icon aria-hidden="true" class="mr-2" name="open-outline" />
           <ng-container i18n>Open Duck.ai</ng-container>

@@ -3,6 +3,24 @@
   "compilerOptions": {
     "outDir": "../../dist/out-tsc",
     "module": "preserve",
+    // `tsconfig.base.json` turns this on for the application build, where the
+    // whole program is visible and TypeScript can resolve every type referenced
+    // in a decorated signature. Specs are compiled file by file instead
+    // (`isolatedModules` below, which `jest-preset-angular` requires), and in
+    // that mode the two options are mutually exclusive: TypeScript reports
+    // TS1272 for every decorated constructor parameter or `@Input()` whose type
+    // is imported normally, because it cannot know whether the import survives
+    // erasure. Leaving it on made `tsc --noEmit` fail with 34 such diagnostics
+    // across the client and the shared libraries, which meant the spec
+    // dependency graph could not be type-checked at all even though Jest ran.
+    //
+    // Turning it off is what Angular itself recommends — `jest-preset-angular`
+    // logs that "the 'emitDecoratorMetadata' option is not required by Angular"
+    // whenever it sees this combination — and it costs nothing here, because
+    // dependency injection in specs does not read `design:paramtypes`:
+    // `jest-preset-angular` applies Angular's own decorator downlevelling
+    // transform, which emits a `static ctorParameters` member instead.
+    "emitDecoratorMetadata": false,
     "isolatedModules": true,
     "types": ["jest", "node"],
     "target": "es2016"

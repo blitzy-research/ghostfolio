@@ -32,8 +32,6 @@
   .search-container {
     border-block-end: 1px solid
       var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
-    // Keep the search region at intrinsic height so the outlined form field is
-    // not clipped.
     flex: 0 0 auto;
 
     // Focus affordance on the catalog's own chrome: a brand-tinted wash marks

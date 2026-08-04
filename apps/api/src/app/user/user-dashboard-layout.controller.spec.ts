@@ -1,7 +1,6 @@
 import { JwtStrategy } from '@ghostfolio/api/app/auth/jwt.strategy';
 import { HAS_PERMISSION_KEY } from '@ghostfolio/api/decorators/has-permission.decorator';
 import { HasPermissionGuard } from '@ghostfolio/api/guards/has-permission.guard';
-import { PerformanceLoggingModule } from '@ghostfolio/api/interceptors/performance-logging/performance-logging.module';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
@@ -27,10 +26,6 @@ import { UserModule } from './user.module';
 import { UserService } from './user.service';
 
 describe('UserDashboardLayoutController', () => {
-  // The client addresses this endpoint literally, so the address is declared
-  // once here and every request in this file is built from it. A drift in the
-  // global prefix, in the URI version or in the handler path therefore has to
-  // fail in this file rather than silently in the browser.
   const layoutPath = '/api/v1/user/layout';
 
   const requestUserId = 'c0a8012e-4f7b-4d1a-9f3e-2b6d8c5a1e44';
@@ -56,8 +51,7 @@ describe('UserDashboardLayoutController', () => {
   /**
    * Boots the controller behind the same request pipeline `main.ts` builds, so
    * a request in this file travels the production path: URI versioning, the
-   * `api` prefix, the strict global validation pipe, the guard tuple and — on
-   * the read handler — the performance logging interceptor.
+   * `api` prefix, the strict global validation pipe and the guard tuple.
    *
    * Passing `authenticatedUserId` replaces only the passport guard, which is
    * how an authenticated identity is supplied without minting a token. Omitting
@@ -71,11 +65,6 @@ describe('UserDashboardLayoutController', () => {
   }): Promise<INestApplication> {
     const testingModuleBuilder = Test.createTestingModule({
       controllers: [UserDashboardLayoutController],
-      // The read handler is decorated with `PerformanceLoggingInterceptor`,
-      // which constructor-injects a real provider, and Nest resolves a
-      // controller's enhancers while it builds the module. This is the same
-      // import `UserModule` needs, and the wiring test below pins it there.
-      imports: [PerformanceLoggingModule],
       providers: [
         // Ghostfolio's own passport strategy. Without a registered `jwt`
         // strategy passport reports an unknown strategy and the response is a
@@ -284,14 +273,6 @@ describe('UserDashboardLayoutController', () => {
         expect(json).not.toHaveProperty('userId');
       });
 
-      // The literal is asserted, not just the parsed value: an empty body also
-      // parses to `null` in Angular's `HttpClient`, so only the raw text and the
-      // content type distinguish a real JSON `null` from a zero-byte response
-      // that no strict consumer can read.
-      //
-      // Both rows below read back with a null layout column — Prisma reports a
-      // stored SQL NULL and a stored JSON null identically — so both are the
-      // "user has never saved a layout" state and both must answer `null`.
       it.each([
         { description: 'no stored row at all', row: null },
         {
@@ -355,13 +336,58 @@ describe('UserDashboardLayoutController', () => {
           where: { userId: requestUserId }
         });
       });
+
+      it('times itself at a level the production logger keeps, and says nothing else', async () => {
+        findUnique.mockResolvedValue({
+          layoutData: storedLayout,
+          userId: requestUserId
+        });
+
+        // `log` specifically. This endpoint carries a stated p95 budget, and the
+        // default production logger is `['error', 'log', 'warn']`, so a timing
+        // emitted at `debug` - which is what the shared
+        // `PerformanceLoggingInterceptor` does - would be discarded in exactly the
+        // environment the budget applies to. Asserting the level is therefore
+        // asserting that the budget is measurable at all, and it is the reason
+        // this handler times itself rather than being decorated.
+        const loggerLog = jest
+          .spyOn(Logger, 'log')
+          .mockImplementation(() => undefined);
+
+        try {
+          await request({
+            app,
+            method: 'GET',
+            path: `${layoutPath}?userId=a-different-user`
+          });
+
+          expect(loggerLog).toHaveBeenCalledTimes(1);
+
+          const [message, context] = loggerLog.mock.calls[0] as [
+            string,
+            string
+          ];
+
+          expect(context).toBe('UserDashboardLayoutController');
+          expect(message).toMatch(
+            /^Completed execution of getUserDashboardLayout\(\) in \d+\.\d{3} seconds$/
+          );
+
+          // Nothing about who asked, what they asked with, or what came back. The
+          // handler's own name and an elapsed time are the whole of it.
+          const emitted = `${message} ${context}`;
+
+          expect(emitted).not.toContain(requestUserId);
+          expect(emitted).not.toContain('a-different-user');
+          expect(emitted).not.toContain('portfolio-overview');
+          expect(emitted).not.toContain(layoutPath);
+        } finally {
+          loggerLog.mockRestore();
+        }
+      });
     });
 
     describe('writing the layout', () => {
-      // The write carries a complete snapshot, so echoing back whatever the
-      // service handed the delegate is what the real upsert does — and it is
-      // what proves the response is the persisted document rather than a copy
-      // of the request or a row.
       function respondWithWrittenDocument() {
         upsert.mockImplementation(
           ({ create }: { create: { layoutData: UserDashboardLayout } }) => {
@@ -429,6 +455,61 @@ describe('UserDashboardLayoutController', () => {
         expect(status).toBe(200);
         expect(json).toEqual(payload);
       });
+
+      it.each([
+        {
+          description:
+            'a module whose columns end exactly at the right edge of the grid',
+          module: { cols: 2, moduleType: 'watchlist', rows: 2, x: 10, y: 0 }
+        },
+        {
+          description:
+            'a module whose rows end exactly at the bottom of the grid',
+          module: { cols: 2, moduleType: 'watchlist', rows: 2, x: 0, y: 98 }
+        },
+        {
+          description: 'a module type of exactly the maximum length',
+          module: {
+            cols: 2,
+            moduleType: 'm'.repeat(64),
+            rows: 2,
+            x: 0,
+            y: 0
+          }
+        },
+        {
+          description: 'a document holding exactly the maximum module count',
+          module: undefined,
+          modules: Array.from({ length: 300 }, (_unused, index) => ({
+            cols: 2,
+            moduleType: `module-${index}`,
+            rows: 2,
+            x: 0,
+            y: 0
+          }))
+        }
+      ])(
+        'accepts $description, so the bound is inclusive',
+        async ({ module: aModule, modules }) => {
+          // The inclusive counterpart of a rejection below. Without it a bound
+          // could be tightened by one - `@Max(11)` becoming `@Max(10)`, the grid
+          // constraint becoming strictly-less-than - and every rejection test
+          // would still pass while a legitimate arrangement was refused.
+          const payload = { modules: modules ?? [aModule], version: 1 };
+
+          respondWithWrittenDocument();
+
+          const { status } = await request({
+            app,
+            method: 'PATCH',
+            path: layoutPath,
+            payload
+          });
+
+          expect(status).toBe(200);
+          expect(upsert).toHaveBeenCalledTimes(1);
+        }
+      );
 
       it('persists a module type it has never heard of, because the registry owns that vocabulary', async () => {
         const payload = {
@@ -510,6 +591,73 @@ describe('UserDashboardLayoutController', () => {
           }
         },
         {
+          // Every per-field bound is satisfied - `x` is within 0..11 and `cols`
+          // within 2..12 - and the placement is still impossible, because the two
+          // together span columns 11 and 12 of a grid that ends at 11. Only the
+          // cross-field rule can reject this, so this case is the only thing
+          // standing between that rule and silent removal. The existing `x: 12`
+          // case cannot serve: it fails `@Max(11)` first.
+          description: 'a module whose columns overflow the right edge',
+          payload: {
+            modules: [{ cols: 2, moduleType: 'holdings', rows: 2, x: 11, y: 0 }]
+          }
+        },
+        {
+          // The vertical half of the same rule, and likewise unreachable through
+          // the per-field bounds: `y` is within 0..99 and `rows` within 2..100.
+          description: 'a module whose rows overflow the bottom of the grid',
+          payload: {
+            modules: [{ cols: 2, moduleType: 'holdings', rows: 2, x: 0, y: 99 }]
+          }
+        },
+        {
+          // `forbidNonWhitelisted` has to reach *into* the array. A surplus member
+          // on the document itself is covered by the identity case below, but a
+          // nested one is only rejected because the item type is declared with
+          // `@Type()` and validated with `@ValidateNested({ each: true })`;
+          // without either, this payload would be stored verbatim into a JSONB
+          // column that the client later reads back.
+          description: 'a module carrying a property of its own',
+          payload: {
+            modules: [
+              {
+                cols: 4,
+                moduleType: 'holdings',
+                rows: 4,
+                surplus: 'unexpected',
+                x: 0,
+                y: 0
+              }
+            ]
+          }
+        },
+        {
+          // One past the declared ceiling. The body parser allows 10 MiB, so
+          // without a maximum size a single request could persist hundreds of
+          // thousands of items into one document.
+          description: 'a document holding one module too many',
+          payload: {
+            modules: Array.from({ length: 301 }, (_unused, index) => ({
+              cols: 2,
+              moduleType: `module-${index}`,
+              rows: 2,
+              x: 0,
+              y: 0
+            }))
+          }
+        },
+        {
+          // One past the declared length. A module type is a machine identifier
+          // and is deliberately not checked against a vocabulary, so its length is
+          // the only thing keeping an unbounded string out of persistent storage.
+          description: 'a module type one character too long',
+          payload: {
+            modules: [
+              { cols: 4, moduleType: 'm'.repeat(65), rows: 4, x: 0, y: 0 }
+            ]
+          }
+        },
+        {
           // PostgreSQL cannot store a NUL inside a JSONB document, so without a
           // control-character rule this payload satisfies every declared bound,
           // reaches the driver and surfaces as a 500 instead of a 400.
@@ -548,13 +696,6 @@ describe('UserDashboardLayoutController', () => {
       });
     });
 
-    // A failure inside the persistence layer has to reach the caller as a 500
-    // that carries no internal detail. The read case is the load-bearing one:
-    // an absent layout is answered 200 with the JSON literal `null`, so a
-    // failure that degraded into that shape - or into the empty body that shape
-    // replaced - would be indistinguishable from a user who has never saved a
-    // layout, and the canvas would replace the stored layout on its next
-    // debounced write. Both shapes are therefore ruled out below.
     describe('when the persistence layer fails', () => {
       const internalFailure = 'connection terminated unexpectedly';
 
@@ -669,20 +810,36 @@ describe('UserDashboardLayoutController', () => {
   });
 
   describe('module wiring', () => {
-    // A missing `PerformanceLoggingModule` import fails neither the compiler nor
-    // the linter: it fails when Nest resolves the read handler's interceptor.
     // The assertion lives here because `UserModule` cannot be booted in a unit
-    // test — it reaches Redis and a Bull queue through `ActivitiesModule`.
-    it('registers the layout endpoints and the interceptor module they depend on', () => {
+    // test — it reaches Redis and a Bull queue through `ActivitiesModule` — so
+    // its metadata is read directly instead.
+    it('registers the layout endpoints', () => {
       expect(Reflect.getMetadata('controllers', UserModule)).toContain(
         UserDashboardLayoutController
       );
       expect(Reflect.getMetadata('providers', UserModule)).toContain(
         UserDashboardLayoutService
       );
-      expect(Reflect.getMetadata('imports', UserModule)).toContain(
-        PerformanceLoggingModule
-      );
+    });
+
+    it('needs no interceptor module for the layout endpoints', () => {
+      // The read handler times itself and reports through `Logger.log`, so it
+      // injects no enhancer and `UserModule` needs no extra import to satisfy
+      // one. Pinned rather than left implicit, because the alternative -
+      // decorating the handler with the shared `PerformanceLoggingInterceptor` -
+      // both requires that import and reports at `debug`, which the default
+      // production logger discards; a timing nobody can see is worse than none,
+      // because it looks like coverage.
+      const imports = Reflect.getMetadata('imports', UserModule) as unknown[];
+
+      expect(
+        imports.some((imported) => {
+          return (
+            typeof imported === 'function' &&
+            imported.name === 'PerformanceLoggingModule'
+          );
+        })
+      ).toBe(false);
     });
   });
 });

@@ -1,6 +1,6 @@
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
 import { getDateFnsLocale, getLocale } from '@ghostfolio/common/helper';
-import { PortfolioSummary, User } from '@ghostfolio/common/interfaces';
+import type { PortfolioSummary, User } from '@ghostfolio/common/interfaces';
 import { translate } from '@ghostfolio/ui/i18n';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { GfValueComponent } from '@ghostfolio/ui/value';

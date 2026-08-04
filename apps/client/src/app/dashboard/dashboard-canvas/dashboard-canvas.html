@@ -1,14 +1,15 @@
 <!--
-  COMPONENT CONTRACT - this template requires the four state members
-  `isPublicPortfolio`, `isSignedOut`, `isInitialized` and `isCatalogOpen`, the
-  grid members `options`, `modules` and `getModuleDefinition()`, and the handlers
-  `onAddModule()`, `onCatalogOpenedChange()`, `onOpenCatalog()`,
-  `onRemoveModule()` and `onToggleCatalog()`. It imports Gridster, GridsterItem,
+  COMPONENT CONTRACT - this template requires the five state members
+  `isPublicPortfolio`, `isSignedOut`, `isInitialized`, `hasLayoutError` and
+  `isCatalogOpen`, the grid members `options`, `modules` and
+  `getModuleDefinition()`, and the handlers `onAddModule()`,
+  `onCatalogOpenedChange()`, `onOpenCatalog()`, `onRemoveModule()`,
+  `onRetryLayout()` and `onToggleCatalog()`. It imports Gridster, GridsterItem,
   GfDashboardModuleHostComponent, GfDashboardToolbarComponent,
   GfEmptyCanvasStateComponent, GfModuleCatalogComponent,
-  GfPublicPortfolioComponent, GfSignInPromptComponent, IonIcon, MatButtonModule
-  and MatSidenavModule alongside CUSTOM_ELEMENTS_SCHEMA, and registers exactly
-  two glyphs: addOutline and closeOutline.
+  GfPublicPortfolioComponent, GfSignInPromptComponent, IonIcon, MatButtonModule,
+  MatCardModule and MatSidenavModule alongside CUSTOM_ELEMENTS_SCHEMA, and
+  registers exactly two glyphs: addOutline and closeOutline.
 
   Three obligations of that contract are load-bearing rather than stylistic:
 
@@ -33,7 +34,13 @@
   over whatever the viewer's own session would otherwise draw, and the paint of
   the signed-in canvas is held behind `isInitialized` so no state is shown
   speculatively - which is also what keeps the catalog from flickering open for a
-  returning user before their saved arrangement has arrived.
+  returning user before their saved arrangement has arrived. `isInitialized` is
+  also lowered again whenever the viewer changes, so one viewer's arrangement is
+  never left on screen while the next viewer's is being read.
+
+  Inside the signed-in state a fifth condition splits the canvas in two: an
+  arrangement that could not be READ is a different thing from an arrangement
+  that is EMPTY, and only the latter may present the first-visit treatment.
 
   Nothing here addresses a screen. There is no in-application link, no route
   markup and no outlet: the router still owns the one root route, and it mounts
@@ -51,21 +58,12 @@
 -->
 @if (isPublicPortfolio) {
   <!--
-    A portfolio shared by access link, and the whole viewport while it is shown:
-    no control bar, no grid, no catalog and no trigger, because none of them acts
-    on someone else's portfolio. The component takes no bindings at all - it
-    reads the access id straight from the query parameters it was addressed with,
-    which is also why stripping an unrelated parameter from the same URL cannot
-    disturb it.
-
-    The two wrappers each do one job that the component cannot do for itself.
-    Relocating it out of its former page left its rows without the page's own
-    container, and a Bootstrap row without one bleeds past the viewport on its
-    negative margins, so the inner element restores exactly that container. The
-    outer element is the scroll region: the host clips its overflow to keep the
-    grid's own scrolling contained, so this branch has to bring a scroller of its
-    own, and declaring the overflow is what additionally lets it shrink to the
-    height available instead of pushing the shell past one viewport.
+    Each wrapper does one job the component cannot do for itself. Its rows are
+    Bootstrap rows, which bleed past the viewport on their negative margins without
+    a container, so the inner element supplies one. The outer element is this
+    branch's scroll region: the host clips its own overflow to keep the grid's
+    scrolling contained, so a scroller has to be reintroduced here, and declaring
+    the overflow is also what lets this branch shrink to the height available.
   -->
   <div class="flex-grow-1 overflow-auto">
     <div class="container">
@@ -73,25 +71,102 @@
     </div>
   </div>
 } @else if (isSignedOut) {
-  <!--
-    Signed out, and no shared link to honour. Only the prompt is drawn: the
-    public surface this application used to greet an unauthenticated visitor with
-    no longer exists, so there is nothing else here to show and nothing is
-    invented to fill it. The prompt declares its own column and centres itself
-    inside the height the stylesheet gives it.
-  -->
   <gf-sign-in-prompt />
+} @else if (hasViewerError) {
+  <!--
+    The viewer could not be read, and not because they are signed out - an
+    unauthorized answer arrives through the viewer store instead, as an explicit
+    absence, and is handled by the branch above. This is a request that went
+    wrong, so it offers the one thing that can help: asking again. No canvas and
+    no control bar is drawn, because neither has a viewer to act for; the wording
+    is reused character for character from the notices the application already
+    shows for a failed request, so no new translation is minted for it.
+  -->
+  <div class="align-items-center d-flex flex-grow-1 justify-content-center p-3">
+    <mat-card appearance="outlined">
+      <div class="p-3 text-center" role="alert">
+        <div class="mb-1" i18n>Oops! Something went wrong.</div>
+        <div class="mb-3 secondary-text" i18n>Please try again later.</div>
+        <div class="d-flex justify-content-center">
+          <button
+            color="primary"
+            mat-button
+            type="button"
+            (click)="onRetryViewer()"
+          >
+            <span i18n>Try again</span>
+          </button>
+        </div>
+      </div>
+    </mat-card>
+  </div>
 } @else if (isInitialized) {
   <!--
     The control bar sits outside the drawer container on purpose. It spans the
     full width and the container takes the height left beneath it, so the catalog
     opens below the bar rather than across it, and the bar stays put while the
     canvas beneath it scrolls.
+
+    It is drawn for the failed-read state as well: the capabilities on it - the
+    assistant, the date range, the filters, identity switching, signing out -
+    have nothing to do with the arrangement, so a read that failed is no reason
+    to withhold them.
   -->
   <gf-dashboard-toolbar />
 
-  <mat-sidenav-container>
+  @if (hasLayoutError) {
     <!--
+      The saved arrangement could not be read. This is deliberately NOT the empty
+      notice: an arrangement that failed to load is not an arrangement with
+      nothing in it, and saying so would open the catalog as though this were a
+      first visit and let the next module added be written out as the viewer's
+      whole dashboard, erasing what could not be fetched. So neither the grid nor
+      the catalog trigger is drawn - there is nothing here that can mutate an
+      arrangement this component does not have - and the only affordance is to
+      read it again.
+    -->
+    <div
+      class="align-items-center d-flex flex-grow-1 justify-content-center p-3"
+    >
+      <mat-card appearance="outlined">
+        <div class="p-3 text-center" role="alert">
+          <div class="mb-1" i18n>Oops! Something went wrong.</div>
+          <div class="mb-3 secondary-text" i18n>Please try again later.</div>
+          <div class="d-flex justify-content-center">
+            <button
+              color="primary"
+              mat-button
+              type="button"
+              (click)="onRetryLayout()"
+            >
+              <span i18n>Try again</span>
+            </button>
+          </div>
+        </div>
+      </mat-card>
+    </div>
+  } @else {
+    <!--
+      The arrangement on screen could not be stored. Announced politely rather
+      than as an alert, because nothing the viewer is doing is interrupted and
+      what they see is still correct - it is only unsaved. The retry hands the
+      request back to the layout service, which still holds the snapshot, so this
+      adds no second way of writing a layout.
+    -->
+    @if (hasSaveError) {
+      <div
+        class="align-items-center d-flex justify-content-center px-3 pt-3"
+        role="status"
+      >
+        <span class="mr-2" i18n>Oops! Something went wrong.</span>
+        <button mat-button type="button" (click)="onRetrySave()">
+          <span i18n>Try again</span>
+        </button>
+      </div>
+    }
+
+    <mat-sidenav-container>
+      <!--
       `mode="side"` is not a preference. An `over` or `push` drawer lays a
       backdrop over the container, and that backdrop swallows the browser's own
       `dragover` and `drop` events - the very events the grid listens for - so
@@ -104,18 +179,18 @@
       otherwise leave this flag - and with it the trigger's glyph - claiming the
       panel was still open.
     -->
-    <mat-sidenav
-      id="gfDashboardModuleCatalog"
-      mode="side"
-      position="end"
-      [opened]="isCatalogOpen"
-      (openedChange)="onCatalogOpenedChange($event)"
-    >
-      <gf-module-catalog (moduleAdded)="onAddModule($event)" />
-    </mat-sidenav>
+      <mat-sidenav
+        id="gfDashboardModuleCatalog"
+        mode="side"
+        position="end"
+        [opened]="isCatalogOpen"
+        (openedChange)="onCatalogOpenedChange($event)"
+      >
+        <gf-module-catalog (moduleAdded)="onAddModule($event)" />
+      </mat-sidenav>
 
-    <mat-sidenav-content>
-      <!--
+      <mat-sidenav-content>
+        <!--
         Shown whenever there is nothing placed - a viewer who has never saved an
         arrangement, one whose saved arrangement was empty, and one whose saved
         arrangement named only module types the registry no longer knows all
@@ -124,74 +199,104 @@
         on a canvas that is still empty, which is precisely when it is most
         likely to be used.
       -->
-      @if (!modules?.length) {
-        <gf-empty-canvas-state class="p-3" (openCatalog)="onOpenCatalog()" />
-      }
+        @if (!modules?.length) {
+          <gf-empty-canvas-state class="p-3" (openCatalog)="onOpenCatalog()" />
+        }
 
-      <gridster [options]="options">
         <!--
+          Announces the outcome of a keyboard move or resize, which has no visual
+          equivalent for a screen reader: the module visibly shifts and nothing
+          otherwise says where it went, or that a step was refused.
+
+          Polite rather than assertive because a repositioning is never urgent
+          enough to interrupt, and outside the grid because anything inside it
+          would be laid out as a cell. `sr-only` is Bootstrap's own utility, which
+          this application loads globally.
+        -->
+        <div aria-live="polite" class="sr-only" role="status">
+          {{ geometryAnnouncement }}
+        </div>
+
+        <gridster [options]="options">
+          <!--
           Tracked by module type: it is unique across the registry and stable for
           the life of a placement, so each cell keeps its element - and with it
           the module already resolved into that element - while its neighbours
           are added, moved or removed. Tracking by index would instead re-key
           every cell after the removed one and re-resolve their modules.
 
-          The grid's change, resize, init and remove callbacks are declared once,
-          in the grid configuration, and are the complete set of triggers that
-          save an arrangement. Repeating any of them as an output binding here
-          would add a fifth.
+          No grid output is bound here: the change, resize, init and remove callbacks
+          are declared once in the grid configuration, so binding any of them again
+          would report the same change twice.
         -->
-        @for (item of modules; track item.moduleType) {
-          <gridster-item [item]="item">
+          @for (item of modules; track item.moduleType) {
             <!--
-              The one place a module reaches the canvas, and it arrives as
-              metadata rather than as a class: the host awaits the lazy loader on
-              the definition and mounts whatever it resolves to. Nothing about
-              where or how large the cell is passes through here - the grid item
-              above already carries all of it - and removal only reports itself,
-              leaving the arrangement and the write that follows it to the canvas.
-            -->
-            <gf-dashboard-module-host
-              [definition]="getModuleDefinition(item.moduleType)"
-              (remove)="onRemoveModule(item)"
-            />
-          </gridster-item>
-        }
-      </gridster>
-    </mat-sidenav-content>
-  </mat-sidenav-container>
+            Guarded on every pass, not only when the arrangement was fetched. A
+            permission travels with the viewer's record and can be withdrawn while
+            they are signed in, so a module admitted at hydration may stop being
+            theirs to see moments later. The canvas also removes it from the
+            arrangement, but that is a separate concern: this condition is what
+            guarantees it is not PAINTED in the interval, and it holds equally for
+            a module type the registry has since stopped knowing.
+          -->
+            @if (isModuleRenderable(item)) {
+              <gridster-item [item]="item">
+                <!--
+                The one place a module reaches the canvas, and it arrives as
+                metadata rather than as a class: the host awaits the lazy loader
+                on the definition and mounts whatever it resolves to. Nothing
+                about where or how large the cell is passes through here - the
+                grid item above already carries all of it - and removal only
+                reports itself, leaving the arrangement and the write that follows
+                it to the canvas.
+              -->
+                <gf-dashboard-module-host
+                  [definition]="getModuleDefinition(item.moduleType)"
+                  (move)="onMoveModule(item, $event)"
+                  (remove)="onRemoveModule(item)"
+                  (resize)="onResizeModule(item, $event)"
+                />
+              </gridster-item>
+            }
+          }
+        </gridster>
+      </mat-sidenav-content>
+    </mat-sidenav-container>
 
-  <!--
+    <!--
     The only genuinely floating control on the canvas, and the only way back to
-    the catalog once an arrangement exists. It carries its own global class
+    the catalog once an arrangement exists. Drawn only alongside a readable
+    arrangement, because it exists to add modules to one: offering it over a
+    failed read would let the first module added be written out as the viewer's
+    entire dashboard. It carries its own global class
     instead of the wrapper the feature leaves use: every one of those leaves is
     now mounted at once, so sharing their class would stack this trigger on top
     of theirs at the same coordinate.
 
-    It is a disclosure control, so it is named once and reports its state rather
-    than renaming itself: the wording is reused character for character from the
-    catalog's own empty-state action, which keeps both on a single translation.
-    The glyph does the visual half of the same job, and the mark itself is hidden
+    As a disclosure control it is named once and reports its state rather than
+    renaming itself, and the wording is reused character for character from the
+    catalog's empty-state action so both share one translation. The glyph is hidden
     from assistive technology because the button is already named.
   -->
-  <div class="gf-dashboard-catalog-trigger">
-    <button
-      aria-controls="gfDashboardModuleCatalog"
-      aria-label="Browse modules"
-      color="primary"
-      i18n-aria-label
-      i18n-title
-      mat-fab
-      title="Browse modules"
-      type="button"
-      [attr.aria-expanded]="isCatalogOpen"
-      (click)="onToggleCatalog()"
-    >
-      <ion-icon
-        aria-hidden="true"
-        size="large"
-        [name]="isCatalogOpen ? 'close-outline' : 'add-outline'"
-      />
-    </button>
-  </div>
+    <div class="gf-dashboard-catalog-trigger">
+      <button
+        aria-controls="gfDashboardModuleCatalog"
+        aria-label="Browse modules"
+        color="primary"
+        i18n-aria-label
+        i18n-title
+        mat-fab
+        title="Browse modules"
+        type="button"
+        [attr.aria-expanded]="isCatalogOpen"
+        (click)="onToggleCatalog()"
+      >
+        <ion-icon
+          aria-hidden="true"
+          size="large"
+          [name]="isCatalogOpen ? 'close-outline' : 'add-outline'"
+        />
+      </button>
+    </div>
+  }
 }

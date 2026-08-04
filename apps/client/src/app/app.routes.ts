@@ -6,8 +6,6 @@ import { AuthGuard } from './core/auth.guard';
 import { GfDashboardCanvasComponent } from './dashboard/dashboard-canvas/dashboard-canvas.component';
 
 /**
- * The application's entire route table.
- *
  * Screen selection is no longer a routing concern: the dashboard canvas owns a
  * single grid model and every former screen is a module placed on it, so there
  * is exactly one route that renders anything. The router itself is untouched —

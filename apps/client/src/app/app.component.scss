@@ -53,8 +53,6 @@
       }
     }
 
-    // Banner-adjusted definite block size: exactly one toolbar height is
-    // reserved for the banner above, so the shell still occupies one viewport.
     main {
       block-size: calc(100svh - var(--mat-toolbar-standard-height));
     }

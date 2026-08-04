@@ -13,7 +13,7 @@ import {
 } from '@ghostfolio/common/helper';
 import { LineChartItem } from '@ghostfolio/common/interfaces';
 import { InvestmentItem } from '@ghostfolio/common/interfaces/investment-item.interface';
-import { ColorScheme, GroupBy } from '@ghostfolio/common/types';
+import type { ColorScheme, GroupBy } from '@ghostfolio/common/types';
 import { registerChartConfiguration } from '@ghostfolio/ui/chart';
 
 import { CommonModule } from '@angular/common';

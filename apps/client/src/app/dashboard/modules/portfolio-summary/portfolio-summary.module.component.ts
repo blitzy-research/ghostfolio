@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfHomeSummaryComponent],
   selector: 'gf-portfolio-summary-module',
+  styleUrls: ['./portfolio-summary.module.scss'],
   templateUrl: './portfolio-summary.module.html'
 })
 export class GfPortfolioSummaryModuleComponent {}

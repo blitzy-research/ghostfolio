@@ -12,14 +12,10 @@
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
   }
 
-  // The mark above the message is decoration: the card states its meaning in
-  // words and the logo is rendered with its own label suppressed, so nothing
-  // here is the sole carrier of any information. It is muted to the outline
-  // step rather than by an opacity, which is what keeps the value on the token
-  // scale - an opacity has no token to draw from and would additionally fade
-  // whatever the mark were ever composited over. The library paints the mark by
-  // masking its own background with the inherited text colour, so setting that
-  // colour is all it takes to retint it.
+  // Muted with the outline token rather than an opacity, so the value stays on the
+  // token scale and nothing composited behind the mark is faded with it. The logo
+  // masks its own background with the inherited text colour, so setting that colour
+  // is all it takes to retint it.
   gf-logo {
     color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
   }

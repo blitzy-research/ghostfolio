@@ -17,7 +17,7 @@ import {
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
-import { CreateOrUpdateTagDialogParams } from './interfaces/interfaces';
+import type { CreateOrUpdateTagDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

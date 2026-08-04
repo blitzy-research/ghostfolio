@@ -2,7 +2,10 @@ import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { ASSET_CLASS_MAPPING } from '@ghostfolio/common/config';
 import { locale as defaultLocale } from '@ghostfolio/common/config';
 import { CreateOrderDto, UpdateOrderDto } from '@ghostfolio/common/dtos';
-import { getDateFormatString } from '@ghostfolio/common/helper';
+import {
+  getDateFormatString,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
 import {
   AssetClassSelectorOption,
   LookupItem
@@ -51,7 +54,7 @@ import { calendarClearOutline, refreshOutline } from 'ionicons/icons';
 import { EMPTY } from 'rxjs';
 import { catchError, delay } from 'rxjs/operators';
 
-import { CreateOrUpdateActivityDialogParams } from './interfaces/interfaces';
+import type { CreateOrUpdateActivityDialogParams } from './interfaces/interfaces';
 import { ActivityType } from './types/activity-type.type';
 
 @Component({
@@ -226,8 +229,8 @@ export class GfCreateOrUpdateActivityDialogComponent {
 
     this.activityForm.valueChanges
       .pipe(
-        // Slightly delay until the more specific form control value changes have
-        // completed
+        // The per-control subscriptions below mutate sibling controls, so this
+        // aggregate recompute has to run after them or it totals stale values.
         delay(300),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -545,7 +548,7 @@ export class GfCreateOrUpdateActivityDialogComponent {
         this.dialogRef.close(activity as UpdateOrderDto);
       }
     } catch (error) {
-      console.error(error);
+      reportSanitizedError('GF-ACTIVITY-DIALOG-VALIDATION-FAILED', error);
     }
   }
 

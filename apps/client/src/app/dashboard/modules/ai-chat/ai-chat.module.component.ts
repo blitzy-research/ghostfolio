@@ -1,4 +1,5 @@
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { openExternalWindow } from '@ghostfolio/common/helper';
 import type { AiPromptMode } from '@ghostfolio/common/types';
 import { DataService } from '@ghostfolio/ui/services';
 
@@ -111,8 +112,6 @@ export class GfAiChatModuleComponent implements OnInit {
   }
 
   public onCopyPromptToClipboard() {
-    // The template disables the action while no prompt is held; this guard
-    // covers a programmatic call reaching the same path.
     if (!this.prompt) {
       return;
     }
@@ -131,7 +130,9 @@ export class GfAiChatModuleComponent implements OnInit {
       .onAction()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        window.open('https://duck.ai', '_blank');
+        // Opened through the shared helper so the destination is never handed a
+        // `window.opener` reference back to this tab.
+        openExternalWindow('https://duck.ai');
       });
   }
 }

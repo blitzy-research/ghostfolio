@@ -1,4 +1,3 @@
-/* eslint-disable */
 export default {
   displayName: 'api',
 
@@ -12,29 +11,32 @@ export default {
     ]
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
-  // Coverage gate for the dashboard layout endpoints.
+  // ⚠ `collectCoverage` is what arms everything below, and Jest reports it as
+  // `Validation Warning: Unknown option "collectCoverage"` on every run. That
+  // warning is expected and harmless. Nx invokes Jest as
+  // `runCLI(argv, [configPath])`, so Jest validates this file against its
+  // *project* option schema, in which `collectCoverage` is a global-only key —
+  // yet it is still lifted into the global config and still honoured, which the
+  // emitted report under `coverage/apps/api` confirms. Do NOT silence the
+  // warning by removing the key: without it Jest builds no coverage map,
+  // `coverageThreshold` below is never evaluated, and the run still exits 0, so
+  // the gate would be disarmed with no outward sign.
   //
-  // Collection itself is switched on OUTSIDE this file, by
-  // `targets.test.options.codeCoverage` in `apps/api/project.json`, which the
-  // `@nx/jest:jest` executor maps to Jest's `--coverage`. That keeps the gate
-  // armed for every route into this project — `nx test api`, `nx run-many
-  // --target=test` and therefore `npm test` — including the default
+  // The flag deliberately lives here rather than as
+  // `targets.test.options.codeCoverage` in `apps/api/project.json`. That file
+  // carries no post-baseline change, so the whole gate is expressed in the one
+  // file the transformation plan declares for it — which is also what keeps the
+  // gate armed for every route into this project (`nx test api`, `nx run-many
+  // --target=test`, and therefore `npm test`) including the default
   // configuration, which unlike the `ci` configuration in `nx.json` sets no
-  // coverage flag of its own.
+  // coverage flag of its own. The sibling `apps/client/jest.config.ts` arms its
+  // own gate exactly the same way, for the same reason.
   //
-  // ⚠ Removing that option disables everything below silently: Jest builds no
-  // coverage map, `coverageThreshold` is never evaluated, and the run still
-  // exits 0. The flag deliberately does NOT live here as `collectCoverage`,
-  // because Nx invokes Jest as `runCLI(argv, [configPath])`, which makes Jest
-  // validate this file as a *project* config, and `collectCoverage` is a
-  // global-only option there — Jest still honours it but reports it as an
-  // unknown option on every run, and a warning inviting the removal of a
-  // load-bearing key is worse than no warning at all. The executor option sets
-  // the same flag through `argv` instead, so the gate below is evaluated
-  // without the warning. Everything else stays here, because
-  // `collectCoverageFrom` and `coverageDirectory` are valid project options and
-  // `coverageThreshold` is exempt from that validation.
+  // Everything below is a valid project option — `collectCoverageFrom` and
+  // `coverageDirectory` are declared per project, and `coverageThreshold` is
+  // exempt from that validation.
   //
+  collectCoverage: true,
   // Matched against paths relative to `rootDir` (`apps/api`). Naming both units
   // explicitly guarantees they are instrumented, so they appear in the coverage
   // map and are actually measured instead of being skipped. Kept deliberately
@@ -44,31 +46,16 @@ export default {
     'src/app/user/user-dashboard-layout.controller.ts',
     'src/app/user/user-dashboard-layout.service.ts'
   ],
-  // Keyed per path, and intentionally with no aggregate group. Jest sorts every
-  // file matched by a path or glob key out of the aggregate group, so adding
-  // one would apply this threshold to every pre-existing spec in this project,
-  // none of which has a coverage baseline.
+  // Keyed per path with no aggregate group on purpose: Jest sorts every file
+  // matched by a path key out of the `global` group, so adding one would impose
+  // this threshold on every pre-existing spec in the project.
   //
-  // These keys are resolved with `path.resolve()` against the process working
-  // directory, and are not subject to `<rootDir>` substitution. That is why
-  // they are workspace-relative while `collectCoverageFrom` above is
-  // `rootDir`-relative, and it means the test target must be RUN FROM THE
-  // WORKSPACE ROOT — which is where `npm test`, `npm run test:api` and CI all
-  // run it. Invoked from `apps/api` instead, the keys resolve to nothing and
-  // Jest fails the run with `Coverage data for … was not found`, even though
-  // the coverage table shows both units fully covered.
-  //
-  // A `**/…`-prefixed glob would be the way to make the keys tolerate any
-  // working directory, and it would fail just as closed — Jest reports
-  // `Coverage data for … was not found` for an unmatched glob exactly as it
-  // does for an unmatched path. It is not used because Jest resolves a glob key
-  // against the working directory too and then walks it with `glob.sync`, so
-  // from the workspace root every coverage run would traverse the whole tree,
-  // `node_modules` included, to find two files that `collectCoverageFrom`
-  // already names outright.
-  //
-  // Only `lines` is asserted, matching the stated requirement of at least 80 %
-  // line coverage for these two units.
+  // These keys are resolved against the process working directory and are not
+  // subject to `<rootDir>` substitution, which is why they are workspace-relative
+  // while `collectCoverageFrom` above is `rootDir`-relative. The target must
+  // therefore run from the workspace root, as `npm test`, `npm run test:api` and
+  // CI do; run from `apps/api` the keys match nothing and Jest fails with
+  // `Coverage data for … was not found`.
   coverageThreshold: {
     'apps/api/src/app/user/user-dashboard-layout.controller.ts': {
       lines: 80

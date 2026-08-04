@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [GfUserAccountAccessComponent],
   selector: 'gf-account-access-module',
+  styleUrls: ['./account-access.module.scss'],
   templateUrl: './account-access.module.html'
 })
 export class GfAccountAccessModuleComponent {}
