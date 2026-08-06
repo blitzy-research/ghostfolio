@@ -1,7 +1,5 @@
-import { LoginWithAccessTokenDialogParams } from '@ghostfolio/client/components/login-with-access-token-dialog/interfaces/interfaces';
-import { GfLoginWithAccessTokenDialogComponent } from '@ghostfolio/client/components/login-with-access-token-dialog/login-with-access-token-dialog.component';
-import { UserAccountRegistrationDialogParams } from '@ghostfolio/client/components/user-account-registration-dialog/interfaces/interfaces';
-import { GfUserAccountRegistrationDialogComponent } from '@ghostfolio/client/components/user-account-registration-dialog/user-account-registration-dialog.component';
+import type { LoginWithAccessTokenDialogParams } from '@ghostfolio/client/components/login-with-access-token-dialog/interfaces/interfaces';
+import type { UserAccountRegistrationDialogParams } from '@ghostfolio/client/components/user-account-registration-dialog/interfaces/interfaces';
 import {
   KEY_STAY_SIGNED_IN,
   SettingsStorageService
@@ -104,14 +102,26 @@ export class GfSignInPromptComponent implements OnInit {
    * `EMPTY` after the alert is what stops a rejected token exchange from reaching
    * the success branch; the alert is the whole of the failure handling.
    */
-  public openLoginDialog() {
+  public async openLoginDialog() {
+    // Resolved here rather than imported at the top of the file. This dialog
+    // carries the whole alternative-credential surface - including the WebAuthn
+    // client - and it is opened only when a visitor asks to sign in, so a static
+    // reference would put all of it in the initial bundle for every visitor.
+    // With the route table collapsed onto one canvas there is no route boundary
+    // left to do this for us.
+    const { GfLoginWithAccessTokenDialogComponent } =
+      await import('@ghostfolio/client/components/login-with-access-token-dialog/login-with-access-token-dialog.component');
+
     // The third type argument is what the dialog actually resolves with. Without
     // it `afterClosed()` yields `any`, and every read of the token below is an
     // unchecked one. The shape is the dialog's own: it closes with
     // `{ accessToken }` when a token was entered and with nothing otherwise,
     // which is exactly what the union states.
+    // `InstanceType<typeof …>` rather than the bare class name: the dynamic
+    // import binds a value, not a type alias, and this generic parameter wants
+    // the component's instance type.
     const dialogRef = this.dialog.open<
-      GfLoginWithAccessTokenDialogComponent,
+      InstanceType<typeof GfLoginWithAccessTokenDialogComponent>,
       LoginWithAccessTokenDialogParams,
       { accessToken: string } | undefined
     >(GfLoginWithAccessTokenDialogComponent, {
@@ -178,12 +188,20 @@ export class GfSignInPromptComponent implements OnInit {
    * authorise a layout write. Writes reopen only when the canvas hydrates and
    * names the viewer that arrived.
    */
-  public openShowAccessTokenDialog() {
+  public async openShowAccessTokenDialog() {
+    // Resolved on demand for the same reason as the sign-in dialog above: this is
+    // reached only when a visitor asks to create an account, so its graph stays
+    // out of every visitor's initial bundle.
+    const { GfUserAccountRegistrationDialogComponent } =
+      await import('@ghostfolio/client/components/user-account-registration-dialog/user-account-registration-dialog.component');
     // Resolves with the freshly issued token, or with nothing when the dialog is
     // cancelled - its template closes on `authToken` and on `undefined`
     // respectively - so the result is declared rather than inferred as `any`.
+    // `InstanceType<typeof …>` rather than the bare class name: the dynamic
+    // import binds a value, not a type alias, and this generic parameter wants
+    // the component's instance type.
     const dialogRef = this.dialog.open<
-      GfUserAccountRegistrationDialogComponent,
+      InstanceType<typeof GfUserAccountRegistrationDialogComponent>,
       UserAccountRegistrationDialogParams,
       string | undefined
     >(GfUserAccountRegistrationDialogComponent, {

@@ -30,15 +30,34 @@
       box-shadow: var(--mat-sys-level3, 0 6px 10px rgba(0, 0, 0, 0.14));
     }
 
-    // Gridster draws the southeast handle with borders; override only the
-    // visible bottom edge. The tone is the variant rather than the outline
-    // token so the resize affordance clears the 3:1 non-text minimum.
+    // Gridster draws the southeast handle as a CSS triangle: a 10px box whose
+    // bottom and left borders are the only thing painted, so the bottom edge's
+    // colour IS the handle. The library leaves that colour `transparent` until
+    // the item is hovered, which measured as literally zero pixels of ink at
+    // rest - all four border colours `rgba(0, 0, 0, 0)`, and a pixel probe inside
+    // the handle returning the card fill exactly. Every module was resizable and
+    // nothing said so; the affordance only existed for someone who already knew
+    // to go looking in that corner. `handle-s` and `handle-e` are deliberately
+    // left alone: they carry `border-width: 0` and are pure hit areas, so they
+    // have no triangle to tint in either state.
+    //
+    // Both tones are the surface-text tokens rather than the outline token that
+    // AAP 0.3.3 nominates for this element. The outline fallback is the one that
+    // would actually paint here and it composites to 2.68:1 against the card,
+    // which would have closed this finding by opening a contrast one in its
+    // place; the variant clears the 3:1 non-text minimum at 4.61:1 while still
+    // reading as quiet chrome, and hover escalates to the full surface-text tone
+    // so the state change stays obvious rather than becoming a tonal hair.
+    .gridster-item-resizable-handler.handle-se {
+      border-bottom-color: var(
+        --mat-sys-on-surface-variant,
+        rgba(0, 0, 0, 0.54)
+      );
+    }
+
     &:hover {
       .gridster-item-resizable-handler.handle-se {
-        border-bottom-color: var(
-          --mat-sys-on-surface-variant,
-          rgba(0, 0, 0, 0.54)
-        );
+        border-bottom-color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
       }
     }
 
@@ -86,12 +105,19 @@
       border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
       color: var(--mat-sys-on-surface, #ffffff);
 
+      // Restated for the dark fallbacks, which are what paint. At rest this
+      // composites to 8.13:1 against the dark card and hover to 15.1:1, so the
+      // rest state is discoverable and the escalation is still visible.
+      .gridster-item-resizable-handler.handle-se {
+        border-bottom-color: var(
+          --mat-sys-on-surface-variant,
+          rgba(255, 255, 255, 0.7)
+        );
+      }
+
       &:hover {
         .gridster-item-resizable-handler.handle-se {
-          border-bottom-color: var(
-            --mat-sys-on-surface-variant,
-            rgba(255, 255, 255, 0.7)
-          );
+          border-bottom-color: var(--mat-sys-on-surface, #ffffff);
         }
       }
 

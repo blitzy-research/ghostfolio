@@ -7,8 +7,20 @@
     <div class="mb-3 secondary-text text-center" i18n>
       Add modules from the catalog to build your dashboard.
     </div>
+    <!--
+      Outlined rather than the text variant. A text button paints no fill, no
+      border and no underline, so this - the empty canvas's only action - read as
+      another line of centred prose rather than as something to press. Outlined is
+      Material's own treatment for an action inside a card and needs no brand fill
+      to be unmistakable, which also keeps the label off the brand container and
+      well clear of the contrast floor.
+    -->
     <div class="d-flex justify-content-center">
-      <button color="primary" mat-button (click)="openCatalog.emit()">
+      <button
+        class="browse-modules-button"
+        mat-stroked-button
+        (click)="openCatalog.emit()"
+      >
         <span i18n>Browse modules</span>
       </button>
     </div>

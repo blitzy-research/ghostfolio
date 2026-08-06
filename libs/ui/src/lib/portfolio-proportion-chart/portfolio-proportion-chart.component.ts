@@ -28,7 +28,6 @@ import {
   type ChartDataset,
   DoughnutController,
   LinearScale,
-  Tooltip,
   type TooltipOptions
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
@@ -37,6 +36,7 @@ import Color from 'color';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import OpenColor from 'open-color';
 
+import { registerChartConfiguration } from '../chart';
 import { translate } from '../i18n';
 
 const {
@@ -95,7 +95,16 @@ export class GfPortfolioProportionChartComponent
   } = {};
 
   public constructor() {
-    Chart.register(ArcElement, DoughnutController, LinearScale, Tooltip);
+    // Controllers, elements and scales only - they hold no per-chart state, so
+    // registering them here keeps this component's bundle to the chart type it
+    // actually draws. Plugins belong to the shared chart registry, which
+    // installs them at module-evaluation time so that no chart can be built
+    // before them; see `registerChartConfiguration`. The data-label plugin below
+    // is unaffected because it is passed per chart rather than registered
+    // globally.
+    Chart.register(ArcElement, DoughnutController, LinearScale);
+
+    registerChartConfiguration();
   }
 
   public ngAfterViewInit() {

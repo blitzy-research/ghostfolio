@@ -3,7 +3,10 @@ import {
   HEADER_KEY_SKIP_INTERCEPTOR,
   HEADER_KEY_TOKEN
 } from '@ghostfolio/common/config';
-import {
+// Type-only for the same reason as the sibling facade: these are parameter types,
+// and a value import would drag the whole DTO barrel and its validation
+// decorators into every bundle that reaches this service.
+import type {
   CreatePlatformDto,
   UpdateAssetProfileDto,
   UpdatePlatformDto

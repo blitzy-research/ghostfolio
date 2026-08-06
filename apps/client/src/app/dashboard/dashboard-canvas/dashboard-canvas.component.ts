@@ -16,8 +16,6 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
-  DOCUMENT,
-  Inject,
   OnDestroy,
   OnInit
 } from '@angular/core';
@@ -31,7 +29,8 @@ import { Gridster, GridsterItem } from 'angular-gridster2';
 import type { GridsterConfig, GridsterItemConfig } from 'angular-gridster2';
 import { StatusCodes } from 'http-status-codes';
 import { addIcons } from 'ionicons';
-import { addOutline, closeOutline } from 'ionicons/icons';
+import { closeOutline, gridOutline } from 'ionicons/icons';
+import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { Subject } from 'rxjs';
 
 import { DashboardModuleType } from '../enums/dashboard-module-type';
@@ -108,18 +107,31 @@ const SUPPORTED_LAYOUT_VERSION = 1;
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // Both classes are functional rather than decorative. `gf-gridster` is the scope
-  // the global grid stylesheet hangs every override off: gridster ships
-  // unencapsulated styles with hardcoded colours at element-selector specificity
-  // and Angular injects them after the application stylesheet, so an override
-  // needs this extra class to outweigh them. `page` supplies the host's flex
-  // column and its scrollport.
-  host: { class: 'page gf-gridster' },
+  // `gf-gridster` is functional rather than decorative: it is the scope the global
+  // grid stylesheet hangs every override off, because gridster ships unencapsulated
+  // styles with hardcoded colours at element-selector specificity and Angular
+  // injects them after the application stylesheet, so an override needs this extra
+  // class to outweigh them.
+  //
+  // `page` is deliberately NOT carried. It is the class for a screen that flows and
+  // scrolls the document, and it inset the canvas by 2rem top and bottom above the
+  // small breakpoint - which on a shell that is exactly one viewport tall left an
+  // empty band above the control bar and pushed it 32px off the top of the screen.
+  // Everything else it supplied is either already declared on this component's own
+  // host (the flex column) or contradicted by it (a scrollport, where this shell
+  // scrolls the grid inside itself instead). The one rule it carried that the
+  // modules genuinely need - keeping their own floating buttons in normal flow - is
+  // re-homed in this component's stylesheet.
+  host: { class: 'gf-gridster' },
   imports: [
     GfDashboardModuleHostComponent,
     GfDashboardToolbarComponent,
     GfEmptyCanvasStateComponent,
     GfModuleCatalogComponent,
+    // Used ONLY inside the template's `@defer` block, which is what lets Angular
+    // emit it - and the charting and map libraries it reaches - as a separate
+    // chunk instead of part of the initial bundle. Referencing it outside that
+    // block would put all of it back into the initial graph for every visitor.
     GfPublicPortfolioComponent,
     GfSignInPromptComponent,
     Gridster,
@@ -127,7 +139,8 @@ const SUPPORTED_LAYOUT_VERSION = 1;
     IonIcon,
     MatButtonModule,
     MatCardModule,
-    MatSidenavModule
+    MatSidenavModule,
+    NgxSkeletonLoaderModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-dashboard-canvas',
@@ -135,6 +148,21 @@ const SUPPORTED_LAYOUT_VERSION = 1;
   templateUrl: './dashboard-canvas.html'
 })
 export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
+  /**
+   * Whether the grid engine has just refused to place a module because the
+   * arrangement has no room left for it.
+   *
+   * The grid is a bounded surface - twelve columns by a capped number of rows -
+   * so "there is nowhere to put this" is a reachable, legitimate outcome, not an
+   * error. It still has to be said out loud: the engine simply declines, and
+   * without this the add would look exactly like a click that never registered.
+   *
+   * Set only by a refusal and cleared as soon as the arrangement changes in a way
+   * that could make room, so the notice can never outlive the condition it
+   * describes.
+   */
+  public hasCapacityError = false;
+
   /**
    * Whether the viewer's saved arrangement could not be read.
    *
@@ -170,23 +198,30 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   public hasViewerError = false;
 
   /**
+   * The text of the canvas's polite live region: the outcome of the most recent
+   * thing the viewer did to the arrangement - a move, a resize, an addition, a
+   * removal, or a refusal of any of them.
+   *
+   * One region for all of them, deliberately. Two live regions on one surface
+   * compete: a screen reader interleaves them in an order neither controls, and
+   * an announcement from one can cut the other off mid-sentence. Every outcome
+   * this canvas reports is the result of the same single user action, so one
+   * region says it once.
+   *
+   * Empty until something is actually done, so nothing is announced on load. It
+   * is a plain string rather than a queue because each announcement supersedes
+   * the last - a user stepping a module across the grid wants where it is now,
+   * not a recital of every cell it passed through.
+   */
+  public canvasAnnouncement = '';
+
+  /**
    * Whether the module catalog drawer is open.
    *
    * Owned here rather than by the catalog, which renders no drawer of its own.
    * It is bound in both directions, because the drawer also closes itself on
    * Escape and this flag drives the trigger's glyph.
    */
-  /**
-   * The text of the canvas's polite live region: the outcome of the most recent
-   * keyboard move or resize.
-   *
-   * Empty until a keyboard geometry command is issued, so nothing is announced on
-   * load. It is a plain string rather than a queue because each announcement
-   * supersedes the last - a user stepping a module across the grid wants where it
-   * is now, not a recital of every cell it passed through.
-   */
-  public geometryAnnouncement = '';
-
   public isCatalogOpen = false;
 
   /**
@@ -229,7 +264,34 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    */
   public options: GridsterConfig;
 
+  /**
+   * The module types the grid currently has no room for, for the catalog to mark
+   * its rows with.
+   *
+   * Types only - no coordinate and no size crosses into the catalog, so the grid
+   * remains the sole authority on geometry. This is the answer to a geometric
+   * question, computed here because here is the only place that may ask it.
+   *
+   * Recomputed at the two moments it can change rather than derived on read: the
+   * answer costs one engine probe per unplaced module, which is far too much to
+   * repeat on every change-detection pass.
+   */
+  public unavailableModuleTypes: DashboardModuleType[] = [];
+
   private gridster: Gridster;
+
+  /**
+   * Watches the grid's own host box so the engine can be told to recompute its
+   * column pitch when that box changes for a reason the engine cannot see.
+   *
+   * The grid engine listens for `window` resize events and nothing else. That is
+   * sufficient for a full-width canvas, but this canvas sits inside a side
+   * drawer container: opening the catalog changes only the *content pane's*
+   * margin, so the grid's host narrows by the drawer's width with no window
+   * resize to hear. Left unobserved, the engine keeps laying out at the wide
+   * pitch and the right-hand modules extend underneath the drawer.
+   */
+  private gridsterResizeObserver: ResizeObserver | null = null;
 
   private hasHydratedLayout = false;
 
@@ -331,18 +393,19 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     private dashboardIntentService: DashboardIntentService,
     private dashboardLayoutService: GfDashboardLayoutService,
     private destroyRef: DestroyRef,
-    @Inject(DOCUMENT) private document: Document,
     private moduleRegistryService: GfModuleRegistryService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
   ) {
-    addIcons({ addOutline, closeOutline });
+    addIcons({ closeOutline, gridOutline });
 
     this.options = createDashboardCanvasConfig({
       onEmptyCellDrop: (event, item) => this.handleEmptyCellDrop(event, item),
       onGridsterInit: (gridster) => {
         this.gridster = gridster;
+
+        this.observeGridsterViewport(gridster);
       },
       onItemInit: (item) => this.handleItemInit(item),
       onLayoutChange: () => this.notifyLayoutChange()
@@ -428,15 +491,31 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   public ngOnDestroy() {
-    this.document.body.classList.remove('has-fab');
+    // The observer outlives this component's view unless it is severed here: it
+    // holds the grid's host element and a closure over the engine, so leaving it
+    // connected would keep both alive and would call into a torn-down engine on
+    // the next reflow.
+    this.gridsterResizeObserver?.disconnect();
+    this.gridsterResizeObserver = null;
   }
 
   public ngOnInit() {
-    // Companion of the global rule that positions the floating catalog trigger:
-    // it pads the document so the trigger never sits on top of the end of the
-    // canvas. Added for this component's lifetime and removed with it, because
-    // no other component on a single-canvas shell owns that class.
-    this.document.body.classList.add('has-fab');
+    // The document is deliberately NOT given the `has-fab` class here.
+    //
+    // That class pads the body so that a page which flows and scrolls ends clear
+    // of a floating trigger. This shell does neither: it is exactly one viewport
+    // tall - `main` is `block-size: 100svh` - and the grid scrolls inside it. The
+    // padding therefore has no content to push down and instead makes the document
+    // taller than the viewport, which gives the whole page its own 48px scroll.
+    // That scroll is not cosmetic: it moves the control bar off the top of the
+    // screen, and it is a scrollable ancestor, so revealing a module could scroll
+    // the page as well as the canvas and displace everything the viewer was
+    // looking at.
+    //
+    // The requirement it served - that content clears the trigger - is met on the
+    // canvas instead of on the body: the trigger steps aside from the catalog
+    // while the catalog is open, and the grid's own scrolling region is what
+    // brings a module fully into view.
 
     this.clearJwtQueryParam();
 
@@ -465,6 +544,18 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * one drops the module from the arrangement, the other guarantees it is not
    * painted in the meantime.
    */
+  /**
+   * The module types currently on the canvas, for the catalog to mark its rows
+   * with.
+   *
+   * Derived on read rather than stored, so it cannot drift from the arrangement
+   * the grid owns. A fresh array is fine here because it is consumed by an input
+   * whose component compares membership rather than identity.
+   */
+  public get placedModuleTypes(): DashboardModuleType[] {
+    return this.modules.map(({ moduleType }) => moduleType);
+  }
+
   public isModuleRenderable({ moduleType }: DashboardLayoutItem): boolean {
     const definition = this.moduleRegistryService.get(moduleType);
 
@@ -484,15 +575,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * for instance - so the trigger never claims the catalog is still open.
    */
   public onCatalogOpenedChange(aIsOpened: boolean) {
-    this.isCatalogOpen = aIsOpened;
-
-    this.changeDetectorRef.markForCheck();
+    this.setCatalogOpen(aIsOpened);
   }
 
   public onOpenCatalog() {
-    this.isCatalogOpen = true;
-
-    this.changeDetectorRef.markForCheck();
+    this.setCatalogOpen(true);
   }
 
   /**
@@ -581,7 +668,26 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       return;
     }
 
+    const name =
+      this.getModuleDefinition(aItem.moduleType)?.name ?? aItem.moduleType;
+
     this.modules.splice(index, 1);
+
+    // A refusal notice is about the arrangement as it was; removing a module
+    // frees the very space it was about, so it stops being true here.
+    this.hasCapacityError = false;
+
+    this.canvasAnnouncement = $localize`${name}:moduleName: removed from the dashboard`;
+
+    // Emptying the canvas returns the viewer to the same position a first visit
+    // puts them in - nothing placed, and the only way forward is to place
+    // something - so it gets the same treatment: the catalog comes to them. Both
+    // `applyLayout` and `applyPermittedModules` already do this for an
+    // arrangement that arrives empty; without it here, removing the last module
+    // leaves a bare canvas whose one affordance is a floating button.
+    if (this.modules.length === 0) {
+      this.isCatalogOpen = true;
+    }
 
     this.changeDetectorRef.markForCheck();
   }
@@ -604,9 +710,7 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   public onToggleCatalog() {
-    this.isCatalogOpen = !this.isCatalogOpen;
-
-    this.changeDetectorRef.markForCheck();
+    this.setCatalogOpen(!this.isCatalogOpen);
   }
 
   /**
@@ -764,14 +868,14 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       this.getModuleDefinition(aItem.moduleType)?.name ?? aItem.moduleType;
 
     if (!aIsAccepted) {
-      this.geometryAnnouncement = aIsResize
+      this.canvasAnnouncement = aIsResize
         ? $localize`${name}:moduleName: cannot be resized any further`
         : $localize`${name}:moduleName: cannot be moved any further`;
 
       return;
     }
 
-    this.geometryAnnouncement = aIsResize
+    this.canvasAnnouncement = aIsResize
       ? $localize`${name}:moduleName: resized to ${aItem.cols}:columns: columns by ${aItem.rows}:rows: rows`
       : $localize`${name}:moduleName: moved to column ${aItem.x + 1}:column:, row ${aItem.y + 1}:row:`;
   }
@@ -1510,6 +1614,19 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     // exactly the document it was sent.
     this.canonicalModules = this.mergeCanonicalModules();
 
+    // Reached only once the engine has settled the cells, which is the earliest
+    // point at which the grid's own view of what is placed agrees with the array
+    // - and therefore the earliest point at which asking it what still fits gives
+    // a true answer. Doing this where the array is mutated instead would probe a
+    // grid that had not seen the change yet.
+    //
+    // Deliberately not a save trigger and not a second write origin: this reads
+    // the arrangement and tells the catalog about it. The write below is
+    // unaffected.
+    if (this.isCatalogOpen) {
+      this.refreshCatalogAvailability();
+    }
+
     this.layoutChange$.next();
   }
 
@@ -1565,6 +1682,64 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
+   * Tells the grid engine to recompute its layout whenever its own host box
+   * changes size.
+   *
+   * The engine binds a `window` resize listener and has no element observer of
+   * its own, so it only ever learns about size changes that the viewport caused.
+   * On this canvas that is not enough. The grid lives inside the drawer
+   * container's content pane, and opening the catalog drawer resizes that pane by
+   * changing its margin - the window never changes, so the engine never
+   * recalculates, and it keeps positioning modules at the pitch of the wider box.
+   * The visible result is a strip of the canvas that runs underneath the drawer,
+   * with the right-hand modules clipped, and it does not correct itself when the
+   * drawer closes either.
+   *
+   * `onResize` is the engine's own public entry point for exactly this - the same
+   * one its window listener calls - so this adds no new layout policy, it only
+   * supplies the trigger the engine is missing.
+   *
+   * @param aGridster the engine instance, taken from its init callback rather
+   * than a view query, because that callback is the only point at which the
+   * engine is guaranteed to have both an element and a measured size.
+   */
+  private observeGridsterViewport(aGridster: Gridster) {
+    // Feature-detected rather than assumed. The observer is a browser API and
+    // this component is also instantiated under a DOM shim in tests, where it is
+    // absent; without the guard the grid would fail to initialize there. Nothing
+    // is lost by its absence - the engine's own window listener still runs.
+    if (typeof ResizeObserver === 'undefined' || !aGridster?.el) {
+      return;
+    }
+
+    // Replaced rather than added to, so a re-initialized grid - a viewer change
+    // tears the canvas down and rebuilds it - never leaves an observer watching
+    // the previous host.
+    this.gridsterResizeObserver?.disconnect();
+
+    this.gridsterResizeObserver = new ResizeObserver(() => {
+      const { clientHeight, clientWidth } = aGridster.el;
+
+      // The guard that makes this safe against feedback. `onResize` re-measures
+      // the host and writes the result back to `curWidth`/`curHeight`, and
+      // laying out the items can itself change the host's box - so an
+      // unconditional call would be observed as another change and recur.
+      // Comparing against the size the engine has already accounted for means a
+      // reflow the engine caused is recognised as settled and stops here.
+      if (
+        clientHeight === aGridster.curHeight &&
+        clientWidth === aGridster.curWidth
+      ) {
+        return;
+      }
+
+      aGridster.onResize();
+    });
+
+    this.gridsterResizeObserver.observe(aGridster.el);
+  }
+
+  /**
    * Places a module that is not on the canvas yet, or brings the one that is
    * into view.
    *
@@ -1601,9 +1776,37 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     const item = this.createLayoutItem(aDefinition, aPosition);
 
+    // A refusal here is the engine reporting that this module's footprint does
+    // not fit anywhere left on the grid. It has to be surfaced: the item is
+    // deliberately not added, so from the viewer's side an unreported refusal is
+    // indistinguishable from a click that did nothing, and they would keep
+    // clicking.
     if (!this.settleItemPosition(item, aPosition)) {
+      this.hasCapacityError = true;
+
+      this.canvasAnnouncement = $localize`There is no room left on the dashboard for ${aDefinition.name}:moduleName:. Remove or resize a module to make space.`;
+
+      this.changeDetectorRef.markForCheck();
+
       return;
     }
+
+    // Cleared on success, not on the next refusal: a viewer who freed space and
+    // placed something has resolved the condition, and the notice must go with
+    // it.
+    this.hasCapacityError = false;
+
+    // A drop whose released cell was already occupied is relocated to the next
+    // free one, and that has to be said rather than done quietly: the module
+    // appears somewhere other than where the pointer let go, which without a word
+    // reads as the drop having missed. Click-to-add has no released cell to
+    // differ from, so it only ever reports where the module landed.
+    const isRelocated =
+      !!aPosition && (item.x !== aPosition.x || item.y !== aPosition.y);
+
+    this.canvasAnnouncement = isRelocated
+      ? $localize`${aDefinition.name}:moduleName: did not fit where it was dropped and was added at column ${item.x + 1}:column:, row ${item.y + 1}:row:`
+      : $localize`${aDefinition.name}:moduleName: added to the dashboard at column ${item.x + 1}:column:, row ${item.y + 1}:row:`;
 
     this.modules.push(item);
 
@@ -1619,6 +1822,48 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.pendingRevealItem = item;
 
     this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Works out which unplaced modules the grid has no room for, so the catalog can
+   * say so before a viewer clicks a row that cannot succeed.
+   *
+   * Each candidate is offered to the engine exactly as click-to-add would offer
+   * it - same footprint, same method, no position - so what the catalog shows and
+   * what an add actually does can never disagree. The probe is answered against a
+   * throwaway item, because the engine replies by writing the position it found
+   * onto the item it is handed.
+   *
+   * Called only when the arrangement has settled or the drawer is opening, never
+   * from a getter: the cost is one grid scan per unplaced module, which is fine
+   * once per user action and ruinous once per change-detection pass.
+   */
+  private refreshCatalogAvailability() {
+    // No grid means nothing is full. The engine has not initialized during
+    // hydration, and `settleItemPosition` deliberately admits everything in that
+    // state, so reporting anything as unavailable here would contradict it.
+    if (!this.gridster) {
+      this.unavailableModuleTypes = [];
+
+      return;
+    }
+
+    const placedModuleTypes = new Set(
+      this.modules.map(({ moduleType }) => moduleType)
+    );
+
+    this.unavailableModuleTypes = this.moduleRegistryService
+      .getAll()
+      .filter((definition) => {
+        // A placed module is never unavailable: its row reveals what is already
+        // on the canvas rather than adding anything, so it always has somewhere
+        // to go.
+        return (
+          !placedModuleTypes.has(definition.moduleType) &&
+          !this.settleItemPosition(this.createLayoutItem(definition))
+        );
+      })
+      .map(({ moduleType }) => moduleType);
   }
 
   /**
@@ -1761,6 +2006,27 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     const element = this.gridster?.getItemComponent(aItem)?.el;
 
     element?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /**
+   * The one place the catalog drawer is opened or closed.
+   *
+   * A funnel rather than three assignments, because opening has to answer a
+   * question - which rows cannot be added right now - and every route in has to
+   * answer it: the floating trigger, the empty-canvas affordance, and the drawer
+   * closing itself on Escape. Anything that set the flag directly would show a
+   * catalog whose rows described a previous arrangement.
+   */
+  private setCatalogOpen(aIsOpen: boolean) {
+    this.isCatalogOpen = aIsOpen;
+
+    // Only on the way open. Recomputing on close would be work whose result
+    // nothing can see, and the next open recomputes anyway.
+    if (aIsOpen) {
+      this.refreshCatalogAvailability();
+    }
+
+    this.changeDetectorRef.markForCheck();
   }
 
   /**

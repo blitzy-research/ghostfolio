@@ -4,13 +4,15 @@
       {{ assetProfile?.name ?? data.symbol }}
     </h1>
     <button
+      aria-label="Actions for this asset profile"
       class="mx-1 no-min-width px-2"
+      i18n-aria-label
       mat-button
       type="button"
       [matMenuTriggerFor]="assetProfileActionsMenu"
       (click)="$event.stopPropagation()"
     >
-      <ion-icon name="ellipsis-vertical" />
+      <ion-icon aria-hidden="true" name="ellipsis-vertical" />
     </button>
     <mat-menu
       #assetProfileActionsMenu="matMenu"
@@ -110,7 +112,7 @@
     >
       <mat-tab>
         <ng-template mat-tab-label>
-          <ion-icon name="reader-outline" />
+          <ion-icon aria-hidden="true" name="reader-outline" />
           <div class="d-none d-sm-block ml-2" i18n>Overview</div>
         </ng-template>
         <div class="container mt-3 p-0">
@@ -183,13 +185,15 @@
                   class="edit-asset-profile-identifier-container position-absolute"
                 >
                   <button
+                    aria-label="Edit the asset profile identifier"
                     class="h-100 no-min-width px-2"
+                    i18n-aria-label
                     mat-button
                     type="button"
                     [disabled]="!canSaveAssetProfileIdentifier"
                     (click)="onSetEditAssetProfileIdentifierMode()"
                   >
-                    <ion-icon name="create-outline" />
+                    <ion-icon aria-hidden="true" name="create-outline" />
                   </button>
                 </div>
               </div>
@@ -445,7 +449,7 @@
       </mat-tab>
       <mat-tab>
         <ng-template mat-tab-label>
-          <ion-icon name="server-outline" />
+          <ion-icon aria-hidden="true" name="server-outline" />
           <div class="d-none d-sm-block ml-2" i18n>Historical Market Data</div>
         </ng-template>
         <div class="container mt-3 p-0">
@@ -468,7 +472,7 @@
       @if (assetProfile?.dataSource === 'MANUAL') {
         <mat-tab>
           <ng-template mat-tab-label>
-            <ion-icon name="code-slash-outline" />
+            <ion-icon aria-hidden="true" name="code-slash-outline" />
             <div class="d-none d-sm-block ml-2" i18n>Scraper Configuration</div>
           </ng-template>
           <div class="container mt-3 p-0">

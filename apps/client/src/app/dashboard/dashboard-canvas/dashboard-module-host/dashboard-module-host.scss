@@ -33,6 +33,28 @@
       var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
   }
 
+  // The floor is the whole point of this rule. A flex item whose overflow is not
+  // visible contributes an automatic minimum size of ZERO, so the title box was
+  // free to be squeezed away entirely: in a four-column module at 375px it
+  // measured 1.7px wide and the module rendered completely unlabelled, while the
+  // handle and the actions trigger kept their full 32px and 40px. Growing as well
+  // as shrinking, because this is now the only element in the header that absorbs
+  // free space - the trigger below removes itself from that competition instead of
+  // a spacer taking half of it.
+  .module-title {
+    flex: 1 1 auto;
+    min-inline-size: 1rem;
+    overflow: hidden;
+  }
+
+  // Pushes itself to the trailing edge, which is what a growing spacer used to do
+  // at the cost of half the header's spare width. Its own internal padding is the
+  // gap between a truncated title and the glyph, so no margin is spent on the
+  // title side either.
+  .module-actions {
+    margin-inline-start: auto;
+  }
+
   mat-card-title {
     font: var(
       --mat-sys-title-small,
@@ -76,11 +98,245 @@
     }
   }
 
+  // Positioning context for the scroll hints, and the element that now carries
+  // the body's share of the card height. The hints cannot live inside the
+  // scrolling element itself - see the note in the template.
+  .gf-dashboard-module-body {
+    display: flex;
+    flex: 1 1 auto;
+
+    // Both required for a flex child that scrolls: without them the child's
+    // content, not the cell, sets the floor, and the body would grow past the
+    // card instead of scrolling inside it.
+    min-height: 0;
+    min-width: 0;
+
+    position: relative;
+  }
+
   // This class must match gridster's ignoreContentClass so module controls
   // remain interactive; internal scrolling contains tall content.
   .gridster-item-content {
+    // Explicit because this region now carries the module gutter: with a
+    // content-box sizing the padding would be added OUTSIDE the height the flex
+    // line hands it, so the body would push past the card by exactly the gutter
+    // instead of scrolling inside it.
+    box-sizing: border-box;
+
     flex: 1 1 auto;
+    min-width: 0;
     overflow: auto;
+
+    // Tones the platform scrollbar where the platform paints one at all. This is
+    // a refinement, not the affordance: measurement showed these regions reserve
+    // no gutter and composite no scrollbar pixels here, so the discoverability
+    // fix is the pair of painted hints the template draws instead. Kept because
+    // it costs nothing and puts the scrollbar on the same token as the rest of
+    // the chrome wherever it does show.
+    //
+    // Standard properties rather than the `::-webkit-scrollbar` pseudo-elements:
+    // Chromium honours one or the other, never both - a non-`auto` standard value
+    // makes it ignore the legacy rules entirely - so mixing them would leave dead
+    // CSS behind that looks like it is doing something.
+    scrollbar-color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38)) transparent;
+    scrollbar-width: thin;
+
+    // Header labels stop wrapping so that Material's own truncation can work.
+    // Material gives every table cell `overflow: hidden; text-overflow: ellipsis`
+    // but declares no `white-space`, so it computes to `normal` - and
+    // `text-overflow` has no effect on content that is allowed to wrap. Proven
+    // rather than assumed: an isolated probe at this exact font and padding wrapped
+    // a multi-word header onto THREE lines and painted no ellipsis, while the same
+    // cell with `nowrap` ellipsized correctly. The consequence in a narrow module
+    // was silent - ten of the labels here are multi-word, so they could never
+    // ellipsize however far the column was squeezed; they simply reflowed and grew
+    // the row. With `nowrap` a squeezed header shows a real ellipsis, and the
+    // columns that no longer fit become reachable through the horizontal scrollbar
+    // the rule above now makes visible.
+    //
+    // Header cells only. Data cells are left free to wrap, which is what keeps a
+    // long asset name readable in a narrow cell instead of forcing the whole table
+    // into horizontal scrolling.
+    //
+    // `::ng-deep` is required rather than stylistic: these cells are written in the
+    // feature components' own templates and never carry this component's content
+    // attribute, so an ordinary nested rule would compile to a selector that
+    // matches nothing. The ancestor above it stays scoped to this host, so the rule
+    // cannot reach a table outside a module.
+    ::ng-deep th {
+      // Stops a header from being squeezed narrower than its own label, which is
+      // the second half of the same defect and the half `nowrap` alone cannot
+      // reach. Material gives every cell `overflow: hidden`, and a cell with a
+      // non-visible overflow contributes a min-content width of ZERO to its
+      // column - so the table happily compressed a 99px "Status" header into
+      // 48.95px and the reader was left with "Sta". Restoring a real minimum
+      // means the column can only ever be as narrow as the text it holds; if the
+      // sum no longer fits, the table overflows and is scrolled instead, and
+      // every label stays legible at every module width.
+      //
+      // This is why no `title` attribute is needed to expose the full label: the
+      // label is never shortened in the first place, so there is nothing for a
+      // tooltip to reveal - and the fix reaches the shared library tables too,
+      // which a per-template attribute could not. `text-overflow: ellipsis`,
+      // which Material already sets, is left in place as the safety net for a
+      // cell that is constrained by something else.
+      min-width: max-content;
+
+      white-space: nowrap;
+    }
+
+    // Collapses a module's inner horizontal scroller into this one, so a module
+    // has exactly one scrolling region.
+    //
+    // Eight of the table templates wrap themselves in a `.overflow-x-auto` div.
+    // On a full-width page that is invisible and harmless, but inside a module it
+    // swallowed the overflow before this region ever saw it - Market Data measured
+    // `scrollWidth === clientWidth` on the body while the table inside it hid
+    // 719px, five whole columns, in a nested scroller that reserved no gutter and
+    // painted nothing. Two stacked invisible scrollers is worse than one: neither
+    // the browser nor the hints above could advertise the inner one, because the
+    // hints watch the element they are positioned against.
+    //
+    // Letting the overflow through means this region scrolls the table, which is
+    // the region that already reports its own edges - so the columns become both
+    // reachable and advertised, with a single scroll gesture instead of two
+    // nested ones. Scoped to module content, so the same tables keep their inner
+    // scroller wherever else they are used.
+    ::ng-deep .overflow-x-auto {
+      overflow-x: visible;
+    }
+
+    // Releases pinned table columns, which cost more than they earn in a grid
+    // cell. Three of these tables end in a `stickyEnd` actions column; pinned to
+    // the right of a full-width page that is a convenience, but pinned to the
+    // right of a module a few hundred pixels wide it parks an opaque block over
+    // whatever is scrolled underneath it - which is how a header ended up reading
+    // "Sta" instead of "Status". Letting the column scroll with its own table
+    // means nothing is ever covered, and the row actions stay reachable at the
+    // far right where the table ends.
+    //
+    // `!important` is unavoidable rather than lazy: Material declares
+    // `.mat-mdc-table-sticky { position: sticky !important }` in its own
+    // component styles, so nothing short of `!important` can release it. The
+    // offsets and stacking order that the CDK writes inline alongside that class
+    // are left in place because they are inert once the element is no longer
+    // positioned. Confined to module content, so the same tables keep their
+    // pinned columns wherever else they appear.
+    //
+    // Only column stickiness is affected: no table in this workspace marks its
+    // header row sticky, so this cannot cost a pinned header.
+    ::ng-deep .mat-mdc-table-sticky {
+      position: static !important;
+    }
+  }
+
+  // Marks the edge a module continues past. Two parts, because they answer two
+  // different questions: the gradient removes the false "this ends here" signal
+  // by fading the cut-off row into the card instead of slicing it, and the bar
+  // is the positive statement that there is more in that direction.
+  //
+  // `pointer-events: none` is load-bearing - the hint sits over the module's own
+  // content, and without it the bottom strip of every scrolling module would stop
+  // taking clicks.
+  .gf-dashboard-module-scroll-hint {
+    pointer-events: none;
+    position: absolute;
+
+    // The bar rests on the stronger of the two surface-text tokens rather than
+    // the outline token, for the same reason the resize handle does: the outline
+    // fallback composites to 2.68:1 against the card, and an affordance nobody
+    // can see is the defect this is fixing.
+    &::after {
+      background: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+      border-radius: var(--mat-sys-corner-full, 999px);
+      content: '';
+      position: absolute;
+    }
+  }
+
+  // Vertical continuation: a strip across the full width, with the bar lying flat.
+  .gf-dashboard-module-scroll-hint-above,
+  .gf-dashboard-module-scroll-hint-below {
+    block-size: 0.75rem;
+    inset-inline: 0;
+
+    &::after {
+      block-size: 3px;
+      inline-size: 2rem;
+      inset-inline-start: 50%;
+      transform: translateX(-50%);
+    }
+  }
+
+  // Horizontal continuation: a strip down the full height, with the bar upright,
+  // so the two axes are told apart by the shape of the mark rather than only by
+  // where it sits. These earn their place because releasing the header minimum
+  // above lets a narrow module overflow sideways where it previously just
+  // compressed its columns - which would have traded a truncated header for an
+  // undiscoverable one.
+  .gf-dashboard-module-scroll-hint-start,
+  .gf-dashboard-module-scroll-hint-end {
+    inline-size: 0.75rem;
+    inset-block: 0;
+
+    &::after {
+      block-size: 2rem;
+      inline-size: 3px;
+      inset-block-start: 50%;
+      transform: translateY(-50%);
+    }
+  }
+
+  .gf-dashboard-module-scroll-hint-above {
+    background: linear-gradient(
+      to bottom,
+      var(--mat-sys-surface-container, #ffffff),
+      transparent
+    );
+    inset-block-start: 0;
+
+    &::after {
+      inset-block-start: 2px;
+    }
+  }
+
+  .gf-dashboard-module-scroll-hint-below {
+    background: linear-gradient(
+      to top,
+      var(--mat-sys-surface-container, #ffffff),
+      transparent
+    );
+    inset-block-end: 0;
+
+    &::after {
+      inset-block-end: 2px;
+    }
+  }
+
+  .gf-dashboard-module-scroll-hint-start {
+    background: linear-gradient(
+      to right,
+      var(--mat-sys-surface-container, #ffffff),
+      transparent
+    );
+    inset-inline-start: 0;
+
+    &::after {
+      inset-inline-start: 2px;
+    }
+  }
+
+  .gf-dashboard-module-scroll-hint-end {
+    background: linear-gradient(
+      to left,
+      var(--mat-sys-surface-container, #ffffff),
+      transparent
+    );
+    inset-inline-end: 0;
+
+    &::after {
+      inset-inline-end: 2px;
+    }
   }
 
   .secondary-text {
@@ -102,6 +358,56 @@
     border-block-end-color: var(
       --mat-sys-outline-variant,
       rgba(255, 255, 255, 0.12)
+    );
+  }
+
+  // Restated because the fallback is what actually paints: the light fallback is
+  // a near-black thumb, which on the dark card surface would be all but
+  // invisible - the exact discoverability failure this affordance exists to fix.
+  // The track stays transparent so the thumb reads against the card in both
+  // themes rather than against a second, competing surface.
+  .gridster-item-content {
+    scrollbar-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5))
+      transparent;
+  }
+
+  // Restated for the dark fallbacks, which are what actually paint. The gradient
+  // in particular MUST be re-declared: fading dark content out to the light
+  // theme's white would draw a bright band across the bottom of a dark card,
+  // which is the opposite of blending into it.
+  .gf-dashboard-module-scroll-hint::after {
+    background: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+
+  .gf-dashboard-module-scroll-hint-above {
+    background: linear-gradient(
+      to bottom,
+      var(--mat-sys-surface-container, #262626),
+      transparent
+    );
+  }
+
+  .gf-dashboard-module-scroll-hint-below {
+    background: linear-gradient(
+      to top,
+      var(--mat-sys-surface-container, #262626),
+      transparent
+    );
+  }
+
+  .gf-dashboard-module-scroll-hint-start {
+    background: linear-gradient(
+      to right,
+      var(--mat-sys-surface-container, #262626),
+      transparent
+    );
+  }
+
+  .gf-dashboard-module-scroll-hint-end {
+    background: linear-gradient(
+      to left,
+      var(--mat-sys-surface-container, #262626),
+      transparent
     );
   }
 

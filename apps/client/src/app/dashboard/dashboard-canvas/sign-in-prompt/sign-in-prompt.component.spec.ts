@@ -1,5 +1,10 @@
+import { GfLoginWithAccessTokenDialogComponent } from '@ghostfolio/client/components/login-with-access-token-dialog/login-with-access-token-dialog.component';
+import { GfUserAccountRegistrationDialogComponent } from '@ghostfolio/client/components/user-account-registration-dialog/user-account-registration-dialog.component';
 import { GfDashboardLayoutService } from '@ghostfolio/client/dashboard/services/dashboard-layout.service';
-import { SettingsStorageService } from '@ghostfolio/client/services/settings-storage.service';
+import {
+  KEY_STAY_SIGNED_IN,
+  SettingsStorageService
+} from '@ghostfolio/client/services/settings-storage.service';
 import { TokenStorageService } from '@ghostfolio/client/services/token-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { permissions } from '@ghostfolio/common/permissions';
@@ -10,131 +15,163 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { Router } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, config as rxjsConfig, of, throwError } from 'rxjs';
 
 import { GfSignInPromptComponent } from './sign-in-prompt.component';
 
 /**
- * The unauthenticated state of the root route, focused on the one outcome it has no
- * second chance at.
+ * The unauthenticated state of the single root route - the first and only screen a
+ * signed-out visitor meets now that the public marketing surface is gone.
  *
- * Both paths here persist a credential *before* the viewer belonging to it is read,
- * which is the right order — the read needs the token to authenticate with — and
- * which makes the read failing the interesting case rather than a footnote. The
- * viewer store keeps whatever it last held when a forced fetch fails, and while this
- * prompt is on screen that is nothing at all, so the canvas is never told to leave
- * its signed-out branch. Without a handler the viewer is then left looking at a
- * sign-in prompt for an account that exists and whose token is already in storage,
- * with no control on screen that can retry: every control here creates or adopts a
- * *new* credential rather than re-reading the current one.
+ * It is the sole home of three flows, and each of them fails silently rather than
+ * loudly if it regresses, which is why they are asserted here rather than left to
+ * the canvas suite that merely mounts this component:
  *
- * Reloading is what recovers it, because it discards every in-memory cache and
- * restarts viewer resolution from the stored token — precisely the step that failed.
+ * 1. **Access-token sign-in.** One of the six capabilities rescued from the deleted
+ *    page chrome. The sibling toolbar deliberately does *not* carry it - it renders
+ *    only once a viewer has resolved, so a sign-in control there would be
+ *    unreachable - and asserts its own absence. That makes this the only place the
+ *    capability exists, and therefore the only place it can be exercised.
+ * 2. **The five deployment capability probes.** `enableAuthGoogle`, `enableAuthOidc`,
+ *    `enableAuthToken`, `enableSubscription` and `createUserAccount` are read once,
+ *    synchronously, and handed to the dialog that renders the corresponding
+ *    authentication paths. A dropped probe does not fail - it quietly hides a
+ *    sign-in route for every deployment that enables it, and the OIDC probe in
+ *    particular exists nowhere else in the application since the chrome was removed.
+ * 3. **Account registration.** Relocated here from the deleted register page, and
+ *    carrying a deliberate asymmetry against {@link GfSignInPromptComponent.setToken}:
+ *    a freshly issued token is persisted with stay-signed-in forced on, without
+ *    consulting the preference at all.
  *
- * **The reload is observed rather than intercepted.** jsdom implements
- * `window.location` and its members as `[LegacyUnforgeable]`, so
- * `jest.spyOn(window.location, 'reload')` throws `Cannot assign to read only
- * property 'reload'` — measured, not assumed. What jsdom does emit is a report on
- * its virtual console, arriving as a `console.error`; {@link reloadAttempts}
- * collects those and forwards everything else to the real `console.error`, so a
- * genuine framework error is never swallowed. This is the instrument
- * `core/auth.guard.spec.ts` and the dashboard toolbar's spec already use for the
- * navigations they cannot intercept either.
+ * Two negative assertions carry as much weight as the positive ones. The register
+ * page called `userService.signOut()` from its **constructor**, which was harmless
+ * on a dedicated `/register` route and catastrophic on the root route, where a
+ * transient render would wipe a live session; `performs no session mutation while
+ * being constructed` is the committed guard that the call was not carried over. And
+ * `reports an incorrect token and leaves the flow usable` is what proves the failure
+ * branch returns `EMPTY` rather than re-throwing: a re-throw would kill the
+ * subscription, so the alert would appear once and every subsequent attempt would be
+ * inert - a defect no single-attempt test can see.
  *
- * The transition announcement is asserted for ordering rather than for its own sake:
- * between storing a token and resolving its viewer there must be no interval in
- * which a layout write is authorised, and ordering is the only thing that
- * establishes it.
+ * `MatDialog` and `Router` are recording stubs. What matters is the request this
+ * component makes and what it does with the answer; each dialog's own rendering
+ * belongs to that dialog's suite, and on a single-canvas shell no navigation selects
+ * a screen. Document navigation cannot be observed directly - jsdom refuses it and
+ * reports through `console.error` without naming the target, and `window.location`
+ * is not redefinable - so the two branches of `setToken` are separated by the pair
+ * of facts that *do* distinguish them: a blocked document navigation was reported
+ * and the router was not asked, or the reverse.
  */
 describe('GfSignInPromptComponent', () => {
-  /** How jsdom reports an attempt to leave the page. */
   const JSDOM_NAVIGATION_REPORT = 'Not implemented: navigation';
 
-  let beginIdentityTransition: jest.Mock;
-  let callOrder: string[];
+  /** Every capability the login dialog can be asked to render, plus the two account ones. */
+  const allGlobalPermissions = [
+    permissions.createUserAccount,
+    permissions.enableAuthGoogle,
+    permissions.enableAuthOidc,
+    permissions.enableAuthToken,
+    permissions.enableSubscription
+  ];
+
   let component: GfSignInPromptComponent;
-  let dialogClose: Observable<string | undefined>;
   let fixture: ComponentFixture<GfSignInPromptComponent>;
 
-  /** Every reload jsdom refused to perform, in order. */
-  let reloadAttempts: string[];
+  /**
+   * What the next dialog resolves with, read at `afterClosed()` time rather than
+   * captured when the stub is built, so a single test can close one dialog with a
+   * token and the next without one.
+   */
+  let dialogAfterClosed: Observable<unknown>;
+  let dialogOpen: jest.Mock;
 
-  let routerNavigate: jest.Mock;
-  let saveToken: jest.Mock;
-  let userServiceGet: jest.Mock;
+  /**
+   * Every dialog request, recorded through a typed side effect. Read back off
+   * `dialogOpen.mock.calls` instead and the element type is `any`, at which point an
+   * assertion about the component or its configuration stops being checked by the
+   * compiler - exactly the kind of assertion that keeps passing after the thing it
+   * describes has been renamed.
+   */
+  let dialogRequests: {
+    component: unknown;
+    config: {
+      autoFocus?: boolean;
+      data?: Record<string, unknown>;
+      disableClose?: boolean;
+      height?: string;
+      width?: string;
+    };
+  }[];
+
+  let notificationServiceMock: { alert: jest.Mock };
+  let routerMock: { navigate: jest.Mock };
+  let settingsStorageServiceMock: { getSetting: jest.Mock };
+  let tokenStorageServiceMock: { saveToken: jest.Mock };
+  let userServiceMock: { get: jest.Mock; signOut: jest.Mock };
+  let dataServiceMock: { fetchInfo: jest.Mock; loginAnonymous: jest.Mock };
+
+  /** What `loginAnonymous` answers with, swappable mid-test for the retry case. */
+  let loginAnonymousResult: Observable<{ authToken: string }>;
+
+  /** What the stay-signed-in preference currently reads as. */
+  let staySignedInSetting: string;
+
+  /**
+   * What the viewer re-read resolves with. Modelled as the whole answer rather than
+   * just a language so that the shapes which carry no language at all - a viewer
+   * without settings, or no viewer - are expressible, since those are what the
+   * optional chaining in `setToken` exists for.
+   */
+  let viewer: { settings?: { language?: string } } | null;
+
+  /** Ordering between effects that would otherwise be unordered. */
+  let callOrder: string[];
+
+  /**
+   * The layout store, present only for the announcement this component makes to it.
+   * Between storing a credential and resolving the viewer it belongs to there must be
+   * no interval in which a layout write is authorised, and the announcement is what
+   * withdraws that authorisation - so it is recorded in {@link callOrder}, where
+   * ordering rather than mere occurrence is assertable.
+   */
+  let dashboardLayoutServiceMock: { beginIdentityTransition: jest.Mock };
+
+  /** Blocked document navigations, collected from jsdom's own report. */
+  let navigationAttempts: string[];
+
+  let consoleErrorSpy: jest.SpyInstance;
+  let originalDocumentLanguage: string;
 
   const createComponent = async ({
-    viewer = of({ settings: { language: 'en' } }),
-    staySignedIn = 'true'
-  }: {
-    staySignedIn?: string;
-    viewer?: Observable<unknown>;
-  } = {}) => {
-    callOrder = [];
-
-    beginIdentityTransition = jest.fn(() => {
-      callOrder.push('beginIdentityTransition');
-    });
-
-    saveToken = jest.fn(() => {
-      callOrder.push('saveToken');
-    });
-
-    userServiceGet = jest.fn((force?: boolean) => {
-      callOrder.push(force ? 'get(true)' : 'get()');
-
-      return viewer;
-    });
-
-    routerNavigate = jest.fn(() => {
-      return Promise.resolve(true);
-    });
+    deviceType = 'desktop',
+    globalPermissions = [] as string[]
+  }: { deviceType?: string; globalPermissions?: string[] } = {}) => {
+    dataServiceMock = {
+      fetchInfo: jest.fn(() => ({ globalPermissions })),
+      loginAnonymous: jest.fn(() => loginAnonymousResult)
+    };
 
     await TestBed.configureTestingModule({
       imports: [GfSignInPromptComponent],
       providers: [
-        {
-          provide: DataService,
-          useValue: {
-            fetchInfo: () => {
-              return {
-                globalPermissions: [permissions.createUserAccount]
-              };
-            }
-          }
-        },
+        { provide: DataService, useValue: dataServiceMock },
         {
           provide: DeviceDetectorService,
-          useValue: {
-            getDeviceInfo: () => {
-              return { deviceType: 'desktop' };
-            }
-          }
+          useValue: { getDeviceInfo: () => ({ deviceType }) }
         },
         {
           provide: GfDashboardLayoutService,
-          useValue: { beginIdentityTransition }
+          useValue: dashboardLayoutServiceMock
         },
-        {
-          provide: MatDialog,
-          useValue: {
-            open: jest.fn(() => {
-              return { afterClosed: () => dialogClose };
-            })
-          }
-        },
-        { provide: NotificationService, useValue: { alert: jest.fn() } },
-        { provide: Router, useValue: { navigate: routerNavigate } },
+        { provide: MatDialog, useValue: { open: dialogOpen } },
+        { provide: NotificationService, useValue: notificationServiceMock },
+        { provide: Router, useValue: routerMock },
         {
           provide: SettingsStorageService,
-          useValue: {
-            getSetting: jest.fn(() => {
-              return staySignedIn;
-            })
-          }
+          useValue: settingsStorageServiceMock
         },
-        { provide: TokenStorageService, useValue: { saveToken } },
-        { provide: UserService, useValue: { get: userServiceGet } }
+        { provide: TokenStorageService, useValue: tokenStorageServiceMock },
+        { provide: UserService, useValue: userServiceMock }
       ]
     }).compileComponents();
 
@@ -142,113 +179,596 @@ describe('GfSignInPromptComponent', () => {
     component = fixture.componentInstance;
 
     fixture.detectChanges();
+
+    return component;
+  };
+
+  /** The dialog request that was made last, or `undefined` if none was. */
+  const openedDialog = () => {
+    return dialogRequests.at(-1);
+  };
+
+  const host = () => fixture.nativeElement as HTMLElement;
+
+  /**
+   * Resolves a control by the text it carries rather than by position, so that
+   * reordering the card does not silently repoint an assertion at the other button.
+   */
+  const buttonLabelled = (label: string) => {
+    return Array.from(host().querySelectorAll('button')).find((button) => {
+      return button.textContent?.trim() === label;
+    });
   };
 
   beforeEach(() => {
-    dialogClose = of('AUTH_TOKEN');
-    reloadAttempts = [];
+    callOrder = [];
+    dialogAfterClosed = of(undefined);
+    dialogRequests = [];
+    loginAnonymousResult = of({ authToken: 'an-auth-token' });
+    navigationAttempts = [];
+    staySignedInSetting = null;
+    viewer = { settings: { language: 'en' } };
 
-    // Captured before the spy replaces it, and wrapped rather than bound: the
-    // bound-function overload types its result as `any`, which would make the
-    // forwarding call at the end of the stub below an unchecked invocation.
-    const originalConsoleError = console.error;
-    const reportError = (...args: unknown[]) => {
-      originalConsoleError.apply(console, args);
+    dialogOpen = jest.fn(
+      (
+        dialogComponent: unknown,
+        config: {
+          autoFocus?: boolean;
+          data?: Record<string, unknown>;
+          disableClose?: boolean;
+          height?: string;
+          width?: string;
+        }
+      ) => {
+        dialogRequests.push({ component: dialogComponent, config });
+
+        return { afterClosed: () => dialogAfterClosed };
+      }
+    );
+
+    dashboardLayoutServiceMock = {
+      beginIdentityTransition: jest.fn(() => {
+        callOrder.push('beginIdentityTransition');
+      })
     };
 
-    jest.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-      const [detail] = args;
+    notificationServiceMock = {
+      alert: jest.fn(() => {
+        callOrder.push('alert');
+      })
+    };
 
-      // Recognised by shape rather than with `instanceof`: jsdom raises this from
-      // its own realm, so `detail instanceof Error` is false for the very object
-      // that arrives.
-      const report =
-        Object.prototype.toString.call(detail) === '[object Error]'
-          ? (detail as Error).message
-          : typeof detail === 'string'
-            ? detail
-            : '';
+    routerMock = {
+      navigate: jest.fn(() => {
+        callOrder.push('navigate');
 
-      if (report.includes(JSDOM_NAVIGATION_REPORT)) {
-        reloadAttempts.push(report);
+        return Promise.resolve(true);
+      })
+    };
 
-        return;
-      }
+    settingsStorageServiceMock = {
+      getSetting: jest.fn(() => staySignedInSetting)
+    };
 
-      // The component's own diagnostic, which every failure path emits before it
-      // reloads. Swallowed rather than forwarded so the suite output stays
-      // readable, and counted so its presence is assertable.
-      if (report.startsWith('Failed to read the ')) {
-        callOrder.push('reportFailure');
+    tokenStorageServiceMock = {
+      saveToken: jest.fn(() => {
+        callOrder.push('saveToken');
+      })
+    };
 
-        return;
-      }
+    userServiceMock = {
+      get: jest.fn((force?: boolean) => {
+        callOrder.push(force ? 'get(true)' : 'get()');
 
-      reportError(...args);
-    });
+        return of(viewer);
+      }),
+      signOut: jest.fn(() => {
+        callOrder.push('signOut');
+      })
+    };
+
+    originalDocumentLanguage = document.documentElement.lang;
+
+    // Pinned so that a viewer declaring the same language resolves to the address
+    // the document is already on, which is the condition under which jsdom performs
+    // no navigation - and therefore what lets an empty attempt list stand as an
+    // exact statement rather than an accident of the environment's default.
+    document.documentElement.lang = 'en';
+
+    // Asserted on the expression rather than on the binding, so the stored value is
+    // typed too and not merely the name it is stored under: `Function.prototype.bind`
+    // widens its result to `any`, which would make every forwarded report an
+    // unchecked call.
+    const reportError = console.error.bind(console) as (
+      ...args: unknown[]
+    ) => void;
+
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        const [detail] = args;
+
+        // Recognised by its shape rather than with `instanceof`: jsdom raises this
+        // from its own realm, so `detail instanceof Error` is false for the very
+        // object that arrives. Measured, not assumed - narrowing that way silently
+        // stops matching.
+        const report =
+          Object.prototype.toString.call(detail) === '[object Error]'
+            ? (detail as Error).message
+            : typeof detail === 'string'
+              ? detail
+              : '';
+
+        if (report.includes(JSDOM_NAVIGATION_REPORT)) {
+          callOrder.push('leaveTheApplication');
+          navigationAttempts.push(report);
+
+          return;
+        }
+
+        // The component's own diagnostic, emitted on every path that gives up on
+        // reading the viewer before it reloads. Swallowed rather than forwarded so
+        // the suite output stays readable, and recorded so its presence is
+        // assertable rather than merely tolerated.
+        if (report.startsWith('Failed to read the ')) {
+          callOrder.push('reportFailure');
+
+          return;
+        }
+
+        reportError(...args);
+      });
   });
 
   afterEach(() => {
+    consoleErrorSpy.mockRestore();
+
+    document.documentElement.lang = originalDocumentLanguage;
+
     jest.restoreAllMocks();
   });
 
-  describe('adopting a newly created account', () => {
-    it('announces the transition before the token is stored', async () => {
-      await createComponent();
+  describe('the capabilities the deployment declares', () => {
+    it('grants every capability a fully enabled deployment declares', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
 
-      component.openShowAccessTokenDialog();
-
-      // Ordering is the assertion. Between storing a token and resolving its
-      // viewer, a layout write must not be authorisable - announcing the
-      // transition first is what withdraws that authorisation.
-      expect(callOrder).toEqual([
-        'beginIdentityTransition',
-        'saveToken',
-        'get(true)'
-      ]);
+      expect(component.hasPermissionForAuthGoogle).toBe(true);
+      expect(component.hasPermissionForAuthOidc).toBe(true);
+      expect(component.hasPermissionForAuthToken).toBe(true);
+      expect(component.hasPermissionForSubscription).toBe(true);
+      expect(component.hasPermissionToCreateUser).toBe(true);
     });
 
-    it('stores the token as a persistent credential', async () => {
+    it('withholds every capability a bare deployment does not declare', async () => {
       await createComponent();
 
-      component.openShowAccessTokenDialog();
-
-      expect(saveToken).toHaveBeenCalledWith('AUTH_TOKEN', true);
+      expect(component.hasPermissionForAuthGoogle).toBe(false);
+      expect(component.hasPermissionForAuthOidc).toBe(false);
+      expect(component.hasPermissionForAuthToken).toBe(false);
+      expect(component.hasPermissionForSubscription).toBe(false);
+      expect(component.hasPermissionToCreateUser).toBe(false);
     });
 
-    it('recovers by reloading when the viewer cannot be read', async () => {
-      await createComponent({ viewer: throwError(() => new Error('offline')) });
+    // One probe at a time, with the others withheld. Asserting the granted field
+    // alone would pass just as well if every probe read the same constant, so each
+    // case also asserts that its four siblings stayed false - which is what pins
+    // each field to its own permission rather than merely to "some permission".
+    it.each([
+      {
+        field: 'hasPermissionForAuthGoogle' as const,
+        permission: permissions.enableAuthGoogle
+      },
+      {
+        field: 'hasPermissionForAuthOidc' as const,
+        permission: permissions.enableAuthOidc
+      },
+      {
+        field: 'hasPermissionForAuthToken' as const,
+        permission: permissions.enableAuthToken
+      },
+      {
+        field: 'hasPermissionForSubscription' as const,
+        permission: permissions.enableSubscription
+      },
+      {
+        field: 'hasPermissionToCreateUser' as const,
+        permission: permissions.createUserAccount
+      }
+    ])(
+      'derives $field from $permission alone',
+      async ({ field, permission }) => {
+        await createComponent({ globalPermissions: [permission] });
 
-      component.openShowAccessTokenDialog();
+        const probes = [
+          'hasPermissionForAuthGoogle',
+          'hasPermissionForAuthOidc',
+          'hasPermissionForAuthToken',
+          'hasPermissionForSubscription',
+          'hasPermissionToCreateUser'
+        ] as const;
 
-      // The finding this covers. Without the branch the token stays stored, the
-      // viewer stays unresolved and the prompt stays on screen with nothing on it
-      // that can retry.
-      expect(reloadAttempts).toHaveLength(1);
-      expect(callOrder).toContain('reportFailure');
-    });
+        for (const probe of probes) {
+          expect(component[probe]).toBe(probe === field);
+        }
+      }
+    );
 
-    it('does nothing at all when the dialog is cancelled', async () => {
-      dialogClose = of(undefined);
-
+    it('reads deployment info exactly once, and synchronously', async () => {
       await createComponent();
 
-      component.openShowAccessTokenDialog();
+      // The accessor deep-clones on every call, which is why the component holds the
+      // result instead of re-reading it; a synchronous return is also what makes the
+      // capabilities settled by the end of initialisation rather than after a tick.
+      expect(dataServiceMock.fetchInfo).toHaveBeenCalledTimes(1);
+    });
 
+    it('resolves the device class through the accessor the application uses', async () => {
+      await createComponent({ deviceType: 'mobile' });
+
+      expect(component.deviceType).toBe('mobile');
+    });
+
+    it('performs no session mutation while being constructed', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      // The register page this flow came from signed the viewer out from its
+      // constructor. That was harmless on a dedicated route reached only by a
+      // signed-out visitor; on the root route it would wipe the session of anyone
+      // who rendered this component transiently. Nothing may be adopted, discarded
+      // or re-read merely by initialising.
+      expect(userServiceMock.signOut).not.toHaveBeenCalled();
+      expect(userServiceMock.get).not.toHaveBeenCalled();
+      expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+      expect(dialogOpen).not.toHaveBeenCalled();
       expect(callOrder).toEqual([]);
-      expect(reloadAttempts).toHaveLength(0);
     });
   });
 
-  describe('adopting a token the viewer supplied', () => {
-    it('forces the read, so a cached viewer cannot answer for the new token', async () => {
+  describe('signing in with an access token', () => {
+    it('offers the dialog every authentication path the deployment enables', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      await component.openLoginDialog();
+
+      const { component: dialogComponent, config } = openedDialog();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogComponent).toBe(GfLoginWithAccessTokenDialogComponent);
+      expect(config.data).toEqual({
+        accessToken: '',
+        hasPermissionToUseAuthGoogle: true,
+        hasPermissionToUseAuthOidc: true,
+        hasPermissionToUseAuthToken: true,
+        title: 'Sign in'
+      });
+      expect(config.autoFocus).toBe(false);
+      expect(config.width).toBe('30rem');
+    });
+
+    it('offers the dialog no authentication path the deployment withholds', async () => {
       await createComponent();
 
-      component.setToken('AUTH_TOKEN');
+      await component.openLoginDialog();
 
-      // An unforced read is served from the store whenever it holds anything, and
-      // the whole purpose of this call is to resolve the viewer belonging to the
-      // token stored one line earlier.
+      // The dialog renders the token field, the Google anchor and the OpenID Connect
+      // anchor from these three flags alone, so passing a granted flag as withheld
+      // hides a working sign-in route with no other outward sign.
+      expect(openedDialog().config.data).toMatchObject({
+        hasPermissionToUseAuthGoogle: false,
+        hasPermissionToUseAuthOidc: false,
+        hasPermissionToUseAuthToken: false
+      });
+    });
+
+    it('exchanges the entered token through the anonymous login endpoint', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      dialogAfterClosed = of({ accessToken: 'an-access-token' });
+
+      await component.openLoginDialog();
+
+      expect(dataServiceMock.loginAnonymous).toHaveBeenCalledWith(
+        'an-access-token'
+      );
+    });
+
+    // The stay-signed-in preference is what decides whether the issued token
+    // outlives the tab. `getSetting` returns a raw string, so anything other than
+    // the exact `'true'` must resolve to session-only storage - including the absent
+    // case, which is what a first-time visitor reads.
+    it.each([
+      { description: 'the preference is set', expected: true, setting: 'true' },
+      {
+        description: 'the preference is explicitly off',
+        expected: false,
+        setting: 'false'
+      },
+      {
+        description: 'the preference was never written',
+        expected: false,
+        setting: null
+      },
+      {
+        description: 'the preference reads as something else entirely',
+        expected: false,
+        setting: 'TRUE'
+      }
+    ])(
+      'persists the issued token with staySignedIn $expected when $description',
+      async ({ expected, setting }) => {
+        staySignedInSetting = setting;
+
+        await createComponent({ globalPermissions: allGlobalPermissions });
+
+        dialogAfterClosed = of({ accessToken: 'an-access-token' });
+
+        await component.openLoginDialog();
+
+        expect(settingsStorageServiceMock.getSetting).toHaveBeenCalledWith(
+          KEY_STAY_SIGNED_IN
+        );
+        expect(tokenStorageServiceMock.saveToken).toHaveBeenCalledWith(
+          'an-auth-token',
+          expected
+        );
+      }
+    );
+
+    it('re-reads the viewer only after the token has been persisted', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      dialogAfterClosed = of({ accessToken: 'an-access-token' });
+
+      await component.openLoginDialog();
+
+      // Order, not merely occurrence: the re-read is authenticated by the token that
+      // was just stored, so a read issued first would be made anonymously and would
+      // resolve the viewer the canvas is trying to leave behind. The announcement
+      // comes first for the same class of reason - it withdraws the authorisation to
+      // write a layout, so there is no interval in which the outgoing viewer's
+      // arrangement could be saved under the incoming one's identity. The read is
+      // forced because an unforced one is served from the store whenever it holds
+      // anything at all.
+      expect(callOrder).toEqual([
+        'beginIdentityTransition',
+        'saveToken',
+        'get(true)',
+        'navigate'
+      ]);
+    });
+
+    it.each([
+      { closedWith: undefined, description: 'the dialog was dismissed' },
+      { closedWith: {}, description: 'no token was entered' },
+      {
+        closedWith: { accessToken: '' },
+        description: 'the token field was left empty'
+      }
+    ])('exchanges nothing when $description', async ({ closedWith }) => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      dialogAfterClosed = of(closedWith);
+
+      await component.openLoginDialog();
+
+      expect(dataServiceMock.loginAnonymous).not.toHaveBeenCalled();
+      expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+      expect(callOrder).toEqual([]);
+    });
+
+    it('reports an incorrect token and adopts nothing', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      dialogAfterClosed = of({ accessToken: 'a-rejected-token' });
+      loginAnonymousResult = throwError(() => new Error('401'));
+
+      await component.openLoginDialog();
+
+      // The message is the whole of the failure handling, and it is byte-frozen:
+      // thirteen XLIFF files already carry this trans-unit, and Angular derives the
+      // translation id from the content, so one changed character silently mints an
+      // untranslated unit in twelve locales.
+      expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+      expect(notificationServiceMock.alert).toHaveBeenCalledWith({
+        title: 'Oops! Incorrect Security Token.'
+      });
+      expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+      expect(userServiceMock.get).not.toHaveBeenCalled();
+      expect(navigationAttempts).toHaveLength(0);
+    });
+
+    it('lets no error escape the failure branch', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      // The token exchange is subscribed to without an error callback, so anything
+      // the failure branch re-raises instead of swallowing becomes an unhandled RxJS
+      // error - reported out of band, on a later macrotask, where no assertion about
+      // the alert or about what was persisted can see it. RxJS's own hook is the
+      // deterministic way to observe that, and installing it is what turns "the
+      // alert was raised" into "the alert was the whole of the failure handling".
+      const unhandledErrors: unknown[] = [];
+      const previousOnUnhandledError = rxjsConfig.onUnhandledError;
+
+      rxjsConfig.onUnhandledError = (error: unknown) => {
+        unhandledErrors.push(error);
+      };
+
+      try {
+        dialogAfterClosed = of({ accessToken: 'a-rejected-token' });
+        loginAnonymousResult = throwError(() => new Error('401'));
+
+        await component.openLoginDialog();
+
+        // Queued after the report RxJS scheduled while the exchange was failing, so
+        // the drain is ordered rather than merely hopeful.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      } finally {
+        rxjsConfig.onUnhandledError = previousOnUnhandledError;
+      }
+
+      expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+      expect(unhandledErrors).toEqual([]);
+    });
+
+    it('leaves the flow usable after a rejected token', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      dialogAfterClosed = of({ accessToken: 'a-rejected-token' });
+      loginAnonymousResult = throwError(() => new Error('401'));
+
+      await component.openLoginDialog();
+
+      dialogAfterClosed = of({ accessToken: 'an-accepted-token' });
+      loginAnonymousResult = of({ authToken: 'an-auth-token' });
+
+      await component.openLoginDialog();
+
+      // This is what `catchError` returning `EMPTY` buys, and it cannot be seen from
+      // a single attempt: re-throwing would surface the same alert once and then
+      // leave every later attempt inert, because the failure would tear the
+      // subscription down instead of completing it.
+      expect(dialogOpen).toHaveBeenCalledTimes(2);
+      expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+      expect(tokenStorageServiceMock.saveToken).toHaveBeenCalledWith(
+        'an-auth-token',
+        false
+      );
+    });
+  });
+
+  describe('adopting a token', () => {
+    it('stays on the canvas when the viewer speaks the document language', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      component.setToken('an-auth-token');
+
+      // `/` is already the active route, so this request is satisfied immediately and
+      // selects nothing; the canvas re-hydrates from the viewer re-read above. What
+      // matters here is that the application is not left, because leaving it would
+      // discard the session that was just established.
+      expect(routerMock.navigate).toHaveBeenCalledWith(['/']);
+      expect(navigationAttempts).toHaveLength(0);
+    });
+
+    it('leaves for the viewer own locale when it differs from the document', async () => {
+      viewer = { settings: { language: 'de' } };
+
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      component.setToken('an-auth-token');
+
+      // Each locale is deployed under its own base path, so this one transition
+      // genuinely has to leave the application rather than route within it. jsdom
+      // refuses the navigation and reports it; the router being untouched is the
+      // other half of the statement.
+      expect(navigationAttempts).toHaveLength(1);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+      expect(callOrder).toEqual([
+        'beginIdentityTransition',
+        'saveToken',
+        'get(true)',
+        'leaveTheApplication'
+      ]);
+    });
+
+    // The three shapes that carry no language between them. None may be allowed to
+    // leave the application: without a language there is no other locale to leave
+    // for, and an unguarded read would compose `../undefined` and strand the visitor
+    // on a base path that does not exist.
+    it.each([
+      {
+        description: 'the viewer declares no language',
+        resolvedViewer: { settings: { language: undefined } }
+      },
+      {
+        description: 'the viewer carries no settings at all',
+        resolvedViewer: {}
+      },
+      { description: 'no viewer resolves', resolvedViewer: null }
+    ])('stays on the canvas when $description', async ({ resolvedViewer }) => {
+      viewer = resolvedViewer;
+
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      component.setToken('an-auth-token');
+
+      expect(routerMock.navigate).toHaveBeenCalledWith(['/']);
+      expect(navigationAttempts).toHaveLength(0);
+    });
+  });
+
+  describe('creating an account', () => {
+    it('opens the registration dialog with the terms step gated by the global permission', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      await component.openShowAccessTokenDialog();
+
+      const { component: dialogComponent, config } = openedDialog();
+
+      expect(dialogComponent).toBe(GfUserAccountRegistrationDialogComponent);
+      expect(config.data).toEqual({
+        deviceType: 'desktop',
+        needsToAcceptTermsOfService: true
+      });
+      expect(config.disableClose).toBe(true);
+    });
+
+    it('leaves the terms step out when the deployment sells no subscription', async () => {
+      await createComponent({
+        globalPermissions: [
+          permissions.createUserAccount,
+          permissions.enableAuthToken
+        ]
+      });
+
+      await component.openShowAccessTokenDialog();
+
+      expect(openedDialog().config.data).toMatchObject({
+        needsToAcceptTermsOfService: false
+      });
+    });
+
+    it.each([
+      {
+        deviceType: 'desktop',
+        expected: { height: undefined, width: '30rem' }
+      },
+      { deviceType: 'mobile', expected: { height: '98vh', width: '100vw' } }
+    ])(
+      'sizes the registration dialog for a $deviceType',
+      async ({ deviceType, expected }) => {
+        await createComponent({
+          deviceType,
+          globalPermissions: allGlobalPermissions
+        });
+
+        await component.openShowAccessTokenDialog();
+
+        const { config } = openedDialog();
+
+        expect(config.height).toBe(expected.height);
+        expect(config.width).toBe(expected.width);
+      }
+    );
+
+    it('adopts an issued token with stay-signed-in forced on, then re-reads the viewer bypassing the cache', async () => {
+      staySignedInSetting = 'false';
+
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      dialogAfterClosed = of('an-issued-token');
+
+      await component.openShowAccessTokenDialog();
+
+      // The asymmetry against `setToken` is deliberate and inherited from the
+      // register page: a freshly created account is kept signed in regardless of the
+      // preference, which is why the preference must not even be consulted here. The
+      // forced re-read is what makes the canvas transition out of this state.
+      expect(tokenStorageServiceMock.saveToken).toHaveBeenCalledWith(
+        'an-issued-token',
+        true
+      );
+      expect(settingsStorageServiceMock.getSetting).not.toHaveBeenCalled();
       expect(callOrder).toEqual([
         'beginIdentityTransition',
         'saveToken',
@@ -256,36 +776,168 @@ describe('GfSignInPromptComponent', () => {
       ]);
     });
 
-    it('honours the stay-signed-in preference', async () => {
-      await createComponent({ staySignedIn: 'false' });
+    it('adopts nothing when the registration dialog closes without a token', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
 
-      component.setToken('AUTH_TOKEN');
+      dialogAfterClosed = of(undefined);
 
-      expect(saveToken).toHaveBeenCalledWith('AUTH_TOKEN', false);
+      await component.openShowAccessTokenDialog();
+
+      expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+      expect(userServiceMock.get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the rendered surface', () => {
+    it('always offers signing in', async () => {
+      await createComponent();
+
+      expect(buttonLabelled('Sign in')).toBeTruthy();
     });
 
-    it('stays on the canvas when the language already matches', async () => {
+    it('opens the access-token dialog from the sign-in control', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      buttonLabelled('Sign in').click();
+
+      // The handler resolves the dialog's own chunk before opening it, so the
+      // request is made a microtask later than the click.
+      await fixture.whenStable();
+
+      expect(openedDialog().component).toBe(
+        GfLoginWithAccessTokenDialogComponent
+      );
+    });
+
+    // Both capabilities are required together: the registration dialog issues a
+    // security token, so offering it where token authentication is disabled would
+    // hand the visitor a credential the deployment refuses to accept.
+    it.each([
+      {
+        description: 'both capabilities are granted',
+        globalPermissions: [
+          permissions.createUserAccount,
+          permissions.enableAuthToken
+        ],
+        offered: true
+      },
+      {
+        description: 'only account creation is granted',
+        globalPermissions: [permissions.createUserAccount],
+        offered: false
+      },
+      {
+        description: 'only token authentication is granted',
+        globalPermissions: [permissions.enableAuthToken],
+        offered: false
+      },
+      {
+        description: 'neither is granted',
+        globalPermissions: [],
+        offered: false
+      }
+    ])(
+      'offers account creation: $offered when $description',
+      async ({ globalPermissions, offered }) => {
+        await createComponent({ globalPermissions });
+
+        expect(!!buttonLabelled('Create Account')).toBe(offered);
+      }
+    );
+
+    it('opens the registration dialog from the account control', async () => {
       await createComponent({
-        viewer: of({ settings: { language: document.documentElement.lang } })
+        globalPermissions: [
+          permissions.createUserAccount,
+          permissions.enableAuthToken
+        ]
       });
 
-      component.setToken('AUTH_TOKEN');
+      buttonLabelled('Create Account').click();
 
-      expect(routerNavigate).toHaveBeenCalledWith(['/']);
-      expect(reloadAttempts).toHaveLength(0);
+      await fixture.whenStable();
+
+      expect(openedDialog().component).toBe(
+        GfUserAccountRegistrationDialogComponent
+      );
     });
 
-    it('recovers by reloading when the viewer cannot be read', async () => {
-      await createComponent({ viewer: throwError(() => new Error('offline')) });
+    it('renders no in-application address and no marketing surface', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
 
-      component.setToken('AUTH_TOKEN');
+      // The whole public surface this state replaced is gone by directive, and there
+      // is no screen left for a link to select. Anchors and link directives are
+      // therefore absent rather than merely unused.
+      expect(host().querySelectorAll('a')).toHaveLength(0);
+      expect(host().querySelectorAll('[href]')).toHaveLength(0);
+      expect(host().innerHTML).not.toContain('routerlink');
+    });
+  });
+  /**
+   * Both credential paths persist the token *before* the viewer belonging to it is
+   * read, which is the right order - the read authenticates with that token - and
+   * which makes a failing read the interesting case rather than a footnote. The
+   * viewer store keeps whatever it last held when a forced read fails, and while this
+   * prompt is on screen that is nothing, so the canvas is never told to leave its
+   * signed-out branch. Without a handler the viewer is left facing a sign-in prompt
+   * for an account that exists and whose token is already stored, with no control on
+   * screen able to retry: every control here creates or adopts a *new* credential
+   * rather than re-reading the current one. Reloading is what recovers it, because it
+   * discards every in-memory cache and restarts resolution from the stored token -
+   * precisely the step that failed.
+   *
+   * The reload is observed rather than intercepted: jsdom implements
+   * `window.location` and its members as `[LegacyUnforgeable]`, so spying on
+   * `reload` throws. What it does emit is the same virtual-console report that
+   * {@link navigationAttempts} already collects.
+   */
+  describe('recovering from a viewer that cannot be read', () => {
+    /** Makes the next forced read fail, without disturbing the recorded ordering. */
+    const failTheViewerRead = () => {
+      userServiceMock.get = jest.fn((force?: boolean) => {
+        callOrder.push(force ? 'get(true)' : 'get()');
+
+        return throwError(() => new Error('offline'));
+      });
+    };
+
+    it('reloads after a freshly created account cannot be resolved', async () => {
+      await createComponent();
+
+      dialogAfterClosed = of('an-auth-token');
+
+      failTheViewerRead();
+
+      await component.openShowAccessTokenDialog();
+
+      expect(callOrder).toEqual([
+        'beginIdentityTransition',
+        'saveToken',
+        'get(true)',
+        'reportFailure',
+        'leaveTheApplication'
+      ]);
+      expect(navigationAttempts).toHaveLength(1);
+    });
+
+    it('reloads after an adopted token cannot be resolved, and navigates nowhere', async () => {
+      await createComponent();
+
+      failTheViewerRead();
+
+      component.setToken('an-auth-token');
 
       // This method is the sole continuation of the token sign-in path, so an
-      // unhandled failure here leaves the token persisted, the viewer unresolved,
-      // the canvas signed out and no navigation performed.
-      expect(reloadAttempts).toHaveLength(1);
-      expect(callOrder).toContain('reportFailure');
-      expect(routerNavigate).not.toHaveBeenCalled();
+      // unhandled failure here would leave the token persisted, the viewer
+      // unresolved, the canvas signed out and no navigation performed.
+      expect(callOrder).toEqual([
+        'beginIdentityTransition',
+        'saveToken',
+        'get(true)',
+        'reportFailure',
+        'leaveTheApplication'
+      ]);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
     });
   });
 });

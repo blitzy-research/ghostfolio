@@ -15,9 +15,33 @@
 // stamps them as this component's content, which is what keeps a bare `button`
 // selector from leaking: it matches the elements this template writes, in the bar
 // and in its menus, and nothing a child component renders.
+// The colour is `currentColor`, and that is the only value which actually works
+// for BOTH of the places this rule has to reach. Measured: it paints
+// rgb(25, 28, 28) on the light bar for 17.15:1, and rgb(224, 227, 226) on the
+// dark bar for 11.71:1 - because the bar sets a themed `color` that every
+// control inherits, and a menu row inherits the themed colour of the panel it
+// sits in. One declaration, correct in both themes and in the overlay, with
+// nothing left to keep in step.
+//
+// What stood here before was a literal light-theme ink plus a `.theme-dark { … }`
+// mirror, and the mirror was inert. Emulated encapsulation rewrites it to
+// `.theme-dark[_ngcontent-x] button[_ngcontent-x]`, but `.theme-dark` sits on the
+// document body, which carries no content attribute of this component - so it
+// matched nothing while compiling, linting and shipping perfectly cleanly. The
+// dark bar therefore kept painting the light ink, which composites to
+// rgb(5, 5, 5) over rgb(38, 38, 38): a 1.35:1 ring, geometrically present and
+// visually invisible, short of the 3:1 non-text minimum by a factor of 2.2.
+//
+// `:host-context(.theme-dark)` would have fixed the bar and NOT the menus, which
+// is the trap worth recording: it tests the ancestors of the host, and a menu
+// panel is attached to the document body outside this component's host
+// altogether. That asymmetry is exactly why a theme-conditional rule is the
+// wrong shape here and an inherited value is the right one. `currentColor` is
+// also among the values the design-system rules name as exempt from resolving
+// through a token, so this is compliant rather than an escape hatch.
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  outline: 2px solid currentColor;
   outline-offset: 2px;
 
   // Drawn inside the row for a menu item, not around it. A menu panel is sized
@@ -26,15 +50,6 @@ a:focus-visible {
   // survive. A negative offset keeps all four edges inside the clip.
   &.mat-mdc-menu-item {
     outline-offset: -2px;
-  }
-}
-
-// `.theme-dark` sits on the document body, which is an ancestor of both the bar
-// and the overlay its menus render into, so the mirror needs no host either.
-.theme-dark {
-  button:focus-visible,
-  a:focus-visible {
-    outline-color: var(--mat-sys-on-surface, #ffffff);
   }
 }
 
@@ -88,6 +103,20 @@ a:focus-visible {
         700 0.75rem/1rem var(--font-family-sans-serif)
       );
       padding: 0.25em 0.4em;
+    }
+
+    // A persistent, visible identity-state marker. The menu retains its radio
+    // semantics for choosing an identity; this pill ensures the borrowed state
+    // is also apparent while that menu is closed.
+    .gf-impersonation-indicator {
+      background-color: var(--mat-sys-error-container, #ffdad6);
+      border-radius: var(--mat-sys-corner-small, 4px);
+      color: var(--mat-sys-on-error-container, #410002);
+      font: var(
+        --mat-sys-label-medium,
+        500 0.75rem/1rem var(--font-family-sans-serif)
+      );
+      white-space: nowrap;
     }
   }
 }

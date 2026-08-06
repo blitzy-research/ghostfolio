@@ -2,10 +2,49 @@
   display: block;
   height: 100%;
 
+  // Centres the module's content without the overflow hazard `justify-content:
+  // center` carries. Auto margins absorb free space exactly as centring does,
+  // but a negative free space resolves them to zero rather than splitting it
+  // across both ends - so content taller than the box grows only downward, into
+  // scrollable space, instead of putting half of itself above the start edge
+  // where no gesture can reach it. Applied to the first and last children so a
+  // single child (the introduction state) receives both and is still centred.
+  //
+  // See the note in the template for the measurements this replaces.
+  .overview {
+    > :first-child {
+      margin-block-start: auto;
+    }
+
+    > :last-child {
+      margin-block-end: auto;
+    }
+  }
+
   .chart-container {
     aspect-ratio: 16 / 9;
     height: auto;
     max-width: 50rem;
+
+    // Makes this box authoritative over the chart's paint, which it is not by
+    // default. The chart sizes its own canvas imperatively through an inline
+    // pixel width, and it sits in an absolutely positioned child, so an
+    // oversized canvas is free to paint straight past this container without
+    // ever disturbing layout. That is not hypothetical: narrowing the viewport
+    // to 900px left the canvas at 631.7px inside a 581.33px container and it
+    // stayed there for over 17 seconds, bleeding 50.4px past the module's
+    // boundary, and the module's own overflow watcher correctly - and
+    // unhelpfully - advertised a sideways scroll for content that was only
+    // out of reach because the chart had mis-sized itself.
+    //
+    // Clipping here rather than constraining the canvas is deliberate. A
+    // `max-width` on the canvas would leave its bitmap dimensions untouched
+    // while shrinking its box, which distorts the drawing instead of fitting
+    // it. And the chart component is shared and preserved as-is, so its
+    // convergence is not this module's to change - what IS this module's
+    // responsibility is that hosting a page's content in a grid cell must not
+    // let that content escape the cell.
+    overflow: hidden;
 
     // Fallback for aspect-ratio (using padding hack)
     @supports not (aspect-ratio: 16 / 9) {

@@ -373,3 +373,254 @@ describe('encodeApiPath', () => {
     });
   });
 });
+
+/**
+ * Sharing of reads that are already on the wire.
+ *
+ * The canvas mounts many modules at once and several of them independently want
+ * the same figures. Measured on a canvas holding Overview, Summary, Holdings,
+ * FIRE, Allocations and Analysis, that produced 14 requests for 11 distinct
+ * URLs - `performance?range=max` twice at 177,765 bytes each and
+ * `holdings?range=max` twice at 15,788 bytes each - so 185 kB of a 449 kB API
+ * payload was spent re-fetching bytes the page already had in flight.
+ *
+ * Every assertion here is about a property that cannot be seen from a single
+ * call, which is why they live in their own suite: how many requests reach the
+ * transport, whether two callers with different questions are kept apart,
+ * whether the response mapping runs once or twice, and whether abandoning a read
+ * still cancels it. `httpTestingController.verify()` in `afterEach` is doing
+ * real work in all of them - it is what turns "one request was made" into "only
+ * one request was made".
+ */
+describe('DataService in-flight read sharing', () => {
+  const detailsPath = '/api/v1/portfolio/details';
+  const holdingsPath = '/api/v1/portfolio/holdings';
+  const performancePath = '/api/v2/portfolio/performance';
+
+  let dataService: DataService;
+  let httpTestingController: HttpTestingController;
+
+  // Dates arrive as strings and are parsed by the facade's own response mapping.
+  // Kept as a constant so a test can assert that the mapping ran, and ran once.
+  const firstActivity = '2024-01-15T00:00:00.000Z';
+
+  const detailsResponse = () => {
+    return {
+      holdings: {
+        AAPL: {
+          assetClass: 'EQUITY',
+          assetSubClass: 'STOCK',
+          dateOfFirstActivity: firstActivity,
+          value: 1234
+        }
+      },
+      summary: { dateOfFirstActivity: firstActivity }
+    };
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [DataService, provideHttpClient(), provideHttpClientTesting()]
+    });
+
+    dataService = TestBed.inject(DataService);
+    httpTestingController = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpTestingController.verify();
+  });
+
+  it('serves two overlapping identical reads from one request', () => {
+    const received: unknown[] = [];
+
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      received.push(response);
+    });
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      received.push(response);
+    });
+
+    // The assertion is the count. `match` returns every request made against the
+    // path, so two would fail here just as loudly as none.
+    const requests = httpTestingController.match(detailsPath);
+
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(detailsResponse());
+
+    // Sharing a request is only correct if it still answers everyone who asked.
+    expect(received.length).toBe(2);
+  });
+
+  it('keeps reads apart when their query strings differ', () => {
+    dataService.fetchPortfolioDetails().subscribe();
+    dataService.fetchPortfolioDetails({ withMarkets: true }).subscribe();
+
+    const requests = httpTestingController.match(
+      ({ url }) => url === detailsPath
+    );
+
+    // Two callers, two questions, two requests. This is the boundary that keeps
+    // the sharing honest: on the measured canvas, Allocations asks for
+    // `?withMarkets=true` and receives a materially different 21,040-byte body,
+    // so answering it with Summary's 17,628-byte response would be wrong rather
+    // than merely wasteful.
+    expect(requests.length).toBe(2);
+
+    expect(
+      requests
+        .map(({ request }) => request.params.get('withMarkets'))
+        .sort((a, b) => {
+          return String(a).localeCompare(String(b));
+        })
+    ).toEqual(
+      ['true', null].sort((a, b) => String(a).localeCompare(String(b)))
+    );
+
+    for (const request of requests) {
+      request.flush(detailsResponse());
+    }
+  });
+
+  it('runs the response mapping exactly once for a shared read', () => {
+    const received: any[] = [];
+
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      received.push(response);
+    });
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      received.push(response);
+    });
+
+    const requests = httpTestingController.match(detailsPath);
+
+    expect(requests.length).toBe(1);
+
+    // A second pass over the same object would throw rather than merely produce
+    // something wrong: the mapping rewrites `dateOfFirstActivity` in place, so
+    // the second `parseISO` would be handed the `Date` the first one produced
+    // and `parseISO` has no string to split. Reaching this line at all is part
+    // of the assertion.
+    expect(() => {
+      requests[0].flush(detailsResponse());
+    }).not.toThrow();
+
+    expect(received.length).toBe(2);
+
+    // Parsed once, so both callers hold a real date rather than an invalid one.
+    for (const response of received) {
+      expect(response.summary.dateOfFirstActivity instanceof Date).toBe(true);
+      expect(Number.isNaN(response.summary.dateOfFirstActivity.getTime())).toBe(
+        false
+      );
+      expect(response.holdings.AAPL.dateOfFirstActivity instanceof Date).toBe(
+        true
+      );
+    }
+  });
+
+  it('shares the reads the canvas actually duplicated', () => {
+    // Holdings is asked for by the Holdings module and by Analysis; performance
+    // by Overview and by Analysis. Both pairs were measured as byte-identical
+    // URLs, and both are asserted here so a future change to either method's
+    // parameter assembly cannot silently un-share it.
+    dataService.fetchPortfolioHoldings({ range: 'max' }).subscribe();
+    dataService.fetchPortfolioHoldings({ range: 'max' }).subscribe();
+
+    dataService.fetchPortfolioPerformance({ range: 'max' }).subscribe();
+    dataService.fetchPortfolioPerformance({ range: 'max' }).subscribe();
+
+    const holdingsRequests = httpTestingController.match(
+      ({ url }) => url === holdingsPath
+    );
+    const performanceRequests = httpTestingController.match(
+      ({ url }) => url === performancePath
+    );
+
+    expect(holdingsRequests.length).toBe(1);
+    expect(performanceRequests.length).toBe(1);
+
+    expect(holdingsRequests[0].request.params.get('range')).toBe('max');
+    expect(performanceRequests[0].request.params.get('range')).toBe('max');
+
+    holdingsRequests[0].flush({ holdings: [], markets: {} });
+    performanceRequests[0].flush({ chart: [], firstOrderDate: firstActivity });
+  });
+
+  it('does not answer a later read from an earlier response', () => {
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const first = httpTestingController.expectOne(detailsPath);
+
+    first.flush(detailsResponse());
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    // Nothing is retained once a read has answered, so a caller that arrives
+    // afterwards goes to the server. That is the property that makes this safe
+    // to apply to a facade whose callers write and then re-read: a cache with
+    // any lifetime at all could answer this second read from before the write.
+    // A failing assertion here means the sharing has become a cache.
+    httpTestingController.expectOne(detailsPath).flush(detailsResponse());
+  });
+
+  it('cancels the request when the last caller walks away', () => {
+    const subscription = dataService.fetchPortfolioDetails().subscribe();
+
+    const request = httpTestingController.expectOne(detailsPath);
+
+    expect(request.cancelled).toBe(false);
+
+    subscription.unsubscribe();
+
+    // A module destroyed while its read is outstanding must still abort it,
+    // otherwise sharing would have quietly cost the app its cancellation.
+    expect(request.cancelled).toBe(true);
+  });
+
+  it('keeps the request alive while another caller is still waiting', () => {
+    let received = 0;
+
+    const abandoned = dataService.fetchPortfolioDetails().subscribe();
+
+    dataService.fetchPortfolioDetails().subscribe(() => {
+      received += 1;
+    });
+
+    const request = httpTestingController.expectOne(detailsPath);
+
+    abandoned.unsubscribe();
+
+    // The one case where a read must survive its originator: the caller that
+    // joined it is still waiting on the answer.
+    expect(request.cancelled).toBe(false);
+
+    request.flush(detailsResponse());
+
+    expect(received).toBe(1);
+  });
+
+  it('goes back to the server after a failed read', () => {
+    let failures = 0;
+
+    dataService.fetchPortfolioDetails().subscribe({
+      error: () => {
+        failures += 1;
+      }
+    });
+
+    httpTestingController
+      .expectOne(detailsPath)
+      .flush(null, { status: 500, statusText: 'Internal Server Error' });
+
+    expect(failures).toBe(1);
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    // A failure has to release the read as thoroughly as a success does. Holding
+    // a rejected request would turn one server error into a permanent one for
+    // every caller that followed.
+    httpTestingController.expectOne(detailsPath).flush(detailsResponse());
+  });
+});

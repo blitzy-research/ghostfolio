@@ -17,17 +17,16 @@
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   }
 
-  // WCAG 1.4.3: the global light theme paints the filled-button label white,
-  // which computes 1.92:1 against the brand container fill. The on-primary
-  // fallback below is the palette's own contrast colour for that container and
-  // computes 9.27:1. Scoped to this card so the correction has no app-wide
-  // reach.
-  .sign-in-button {
-    --mat-button-filled-label-text-color: var(
-      --mat-sys-on-primary,
-      rgba(0, 0, 0, 0.87)
-    );
-  }
+  // No label-colour override lives here any more, and its removal is the point.
+  //
+  // This card once carried one, to lift the filled button's label off 1.92:1
+  // against the brand fill. It never took effect: the global stylesheet forces
+  // `color` on `.mat-mdc-unelevated-button.mat-primary` with `!important`, so
+  // redefining the token that Material's own non-important `color` reads was
+  // overridden before it could apply. The rule compiled, shipped, and did
+  // nothing - and being scoped here, it also implied the problem was local to
+  // this card when in fact every filled primary button and every primary FAB in
+  // the light theme was affected. Corrected at that global rule instead.
 }
 
 :host-context(.theme-dark) {

@@ -8,7 +8,13 @@
     [dataSource]="dataSource"
   >
     <ng-container matColumnDef="date">
-      <th *matHeaderCellDef class="px-2" mat-header-cell mat-sort-header>
+      <th
+        *matHeaderCellDef
+        class="px-2"
+        mat-header-cell
+        mat-sort-header
+        scope="col"
+      >
         <ng-container i18n>Date</ng-container>
       </th>
       <td *matCellDef="let element" class="px-2" mat-cell>
@@ -19,6 +25,7 @@
           <input formControlName="date" matInput [matDatepicker]="date" />
           <mat-datepicker-toggle matSuffix [for]="date">
             <ion-icon
+              aria-hidden="true"
               class="text-muted"
               matDatepickerToggleIcon
               name="calendar-clear-outline"
@@ -30,7 +37,7 @@
     </ng-container>
 
     <ng-container matColumnDef="value">
-      <th *matHeaderCellDef class="px-2 text-right" mat-header-cell>
+      <th *matHeaderCellDef class="px-2 text-right" mat-header-cell scope="col">
         <ng-container i18n>Value</ng-container>
       </th>
       <td *matCellDef="let element" class="px-2" mat-cell>
@@ -56,17 +63,26 @@
     </ng-container>
 
     <ng-container matColumnDef="actions" stickyEnd>
-      <th *matHeaderCellDef class="px-1 text-center" mat-header-cell></th>
+      <th
+        *matHeaderCellDef
+        class="px-1 text-center"
+        mat-header-cell
+        scope="col"
+      >
+        <span class="sr-only" i18n>Actions</span>
+      </th>
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         @if (showActions()) {
           <button
+            aria-label="Actions for this account balance"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
             mat-button
             type="button"
             [matMenuTriggerFor]="accountBalanceMenu"
             (click)="$event.stopPropagation()"
           >
-            <ion-icon name="ellipsis-horizontal" />
+            <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
           </button>
         }
         <mat-menu #accountBalanceMenu="matMenu" xPosition="before">
@@ -76,7 +92,7 @@
             (click)="onDeleteAccountBalance(element.id)"
           >
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="trash-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
               <span i18n>Delete</span>
             </span>
           </button>

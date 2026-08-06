@@ -29,7 +29,28 @@ import {
 import ms from 'ms';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { EMPTY } from 'rxjs';
-import { catchError, filter, startWith, switchMap, tap } from 'rxjs/operators';
+import {
+  catchError,
+  filter,
+  startWith,
+  switchMap,
+  tap,
+  timeout
+} from 'rxjs/operators';
+
+/**
+ * How long the module waits for a prompt before it gives up on the request.
+ *
+ * Without a deadline a response that never arrives is indistinguishable from one
+ * that is merely slow: the card holds its loading skeleton indefinitely, the
+ * copy action stays disabled, and nothing reaches the console - so the failure is
+ * invisible in every channel a viewer or a developer would look at. The value is
+ * deliberately generous next to the endpoint's normal response time, which is
+ * measured in tens of milliseconds, so a slow but working backend is never
+ * reported as broken; it exists to bound the pathological case, not to police
+ * latency.
+ */
+const PROMPT_REQUEST_TIMEOUT = ms('30 seconds');
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -161,6 +182,17 @@ export class GfAiChatModuleComponent implements OnInit {
               filters: this.userService.getFilters()
             })
             .pipe(
+              // The deadline belongs on the inner observable, immediately ahead
+              // of `catchError`, for the same reason `catchError` itself does: a
+              // request that never settles is delivered here as an error and
+              // handled by the failure branch below, whereas a `timeout` in the
+              // outer pipe would time out `valueChanges` and stop the module
+              // reacting to any later mode change. Living on the inner
+              // subscription also means a superseded request takes its timer with
+              // it when `switchMap` unsubscribes, so the countdown always belongs
+              // to the request currently on screen, and module teardown cancels
+              // it along with the request.
+              timeout(PROMPT_REQUEST_TIMEOUT),
               catchError(() => {
                 this.hasError = true;
                 this.isLoading = false;

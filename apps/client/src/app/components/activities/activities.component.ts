@@ -202,18 +202,35 @@ export class GfActivitiesComponent implements OnInit {
         this.dataSource = new MatTableDataSource(activities);
         this.totalItems = count;
 
-        // Nothing is opened automatically. On the route-per-screen shell the
-        // activities screen was the only thing on it, so greeting a user who had
-        // no activities with the create dialog was unambiguous. On one canvas the
-        // accounts module makes the same offer for the same user at the same
-        // moment, and which of the two responses arrives first decides whether one
-        // onboarding dialog appears or two appear stacked - an outcome the
-        // previous shell could not produce. The offer is made by the empty state
-        // the activities table already renders, whose call to action reaches
-        // {@link onCreateActivity}, and by this module's floating action button -
-        // both of which the viewer chooses to act on.
+        // Nothing opens a dialog from here, and the omission is the point.
+        //
+        // A viewer with no activities used to have the create dialog opened for
+        // them at the end of this fetch. On the route-per-screen shell that was a
+        // helpful shortcut: the activities screen was the only thing on it, the
+        // viewer had deliberately navigated there, and the form they were obviously
+        // after appeared. On one canvas the same code is an ambush. This module is
+        // one card among many that all load at once, nobody asked for it in
+        // particular, and the dialog it opened dimmed and blocked the entire canvas
+        // behind a full-viewport scrim - measured at 1440x900 as a 100% scrim over
+        // an 800x720 panel, with every other module unreachable behind it. The
+        // accounts module makes the same offer for the same viewer at the same
+        // moment, so which response arrived first decided whether one onboarding
+        // dialog appeared or two appeared stacked - an outcome the previous shell
+        // could not produce.
+        //
+        // Nor was it a one-off: the fetch runs on every load, so the modal returned
+        // on every visit, measured re-appearing 847 ms into a reload of a URL
+        // carrying no parameters at all, because the component re-created them
+        // itself. A viewer who had not yet recorded a first activity could not reach
+        // their own dashboard without dismissing a form first.
+        //
+        // The invitation is not lost, only made voluntary: the table still renders
+        // its "add your first activity" call to action for exactly this viewer,
+        // reaching {@link onCreateActivity}, and the module still carries its
+        // floating add button. Both route through the same query-parameter intent
+        // this used to fire unbidden, so the dialog is one click away - opened when
+        // it is asked for, which is what the call below serves.
         this.applyQueryParams();
-
         this.changeDetectorRef.markForCheck();
       });
   }

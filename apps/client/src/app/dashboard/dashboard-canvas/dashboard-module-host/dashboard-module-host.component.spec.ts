@@ -168,6 +168,21 @@ describe('GfDashboardModuleHostComponent', () => {
     fixture.detectChanges();
   };
 
+  /**
+   * Lets a real `MutationObserver` deliver what it has queued.
+   *
+   * Deliveries land at a microtask checkpoint, so yielding to the task queue is
+   * what makes them observable. This is deliberately not a fixture drain: the
+   * watcher registers its observer outside Angular, so there is no pending task
+   * for the fixture to know about and awaiting stability would return at once
+   * having flushed nothing.
+   */
+  const flushObservers = async () => {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  };
+
   const expectChromeToBeRendered = () => {
     expect(query('mat-card')).toBeTruthy();
     expect(query('mat-card-header')).toBeTruthy();
@@ -238,6 +253,22 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(query('mat-card-title').textContent.trim()).toBe(moduleName);
 
     expect(query('button[aria-label="Module actions"]')).toBeTruthy();
+  });
+
+  it('should preserve readable title space and a module-scale content gutter', async () => {
+    await bindResolvingDefinition();
+
+    expect(query('mat-card-header').classList).toContain('px-2');
+    expect(query('.gf-dashboard-module-drag-handle').classList).not.toContain(
+      'mr-2'
+    );
+    expect(query('mat-card-title').parentElement.classList).toContain(
+      'module-title'
+    );
+    expect(query('button[aria-label="Module actions"]').classList).toContain(
+      'module-actions'
+    );
+    expect(query('.gridster-item-content').classList).toContain('p-3');
   });
 
   it('should paint the resolved module only once its loader settles', async () => {
@@ -656,6 +687,420 @@ describe('GfDashboardModuleHostComponent', () => {
     await settle();
 
     expect(readMembers).toEqual([]);
+  });
+
+  describe('scroll affordance', () => {
+    /**
+     * Forces the scrolling body into a chosen geometry and lets the component
+     * re-measure it.
+     *
+     * The geometry has to be stubbed: this test DOM lays nothing out, so a real
+     * body reports `scrollHeight`, `clientHeight` and `scrollTop` all as 0 and
+     * every module would look like it fits. The properties are redefined on the
+     * element rather than mocked on the component so the measurement under test
+     * is the real one, reading the real element through the real view reference.
+     *
+     * The event is dispatched on the element instead of calling the handler, so
+     * the listener registration - which happens outside Angular - is part of what
+     * is covered.
+     */
+    const setBodyGeometry = ({
+      clientHeight,
+      clientWidth = 0,
+      scrollHeight,
+      scrollLeft = 0,
+      scrollTop,
+      scrollWidth = 0
+    }: {
+      clientHeight: number;
+      clientWidth?: number;
+      scrollHeight: number;
+      scrollLeft?: number;
+      scrollTop: number;
+      scrollWidth?: number;
+    }) => {
+      const body = query<HTMLElement>('.gridster-item-content');
+
+      for (const [property, value] of Object.entries({
+        clientHeight,
+        clientWidth,
+        scrollHeight,
+        scrollLeft,
+        scrollTop,
+        scrollWidth
+      })) {
+        Object.defineProperty(body, property, {
+          configurable: true,
+          value
+        });
+      }
+
+      body.dispatchEvent(new Event('scroll'));
+
+      fixture.detectChanges();
+    };
+
+    const hintAbove = () => {
+      return query('.gf-dashboard-module-scroll-hint-above');
+    };
+
+    const hintBelow = () => {
+      return query('.gf-dashboard-module-scroll-hint-below');
+    };
+
+    const hintEnd = () => {
+      return query('.gf-dashboard-module-scroll-hint-end');
+    };
+
+    const hintStart = () => {
+      return query('.gf-dashboard-module-scroll-hint-start');
+    };
+
+    /**
+     * Runs every scheduled frame callback immediately.
+     *
+     * Installed before the fixture is first rendered, because the watcher books
+     * its first measurement during `ngAfterViewInit`. Without this the assertions
+     * would race a real frame that Jest's fake DOM may never paint.
+     */
+    beforeEach(async () => {
+      jest
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((callback: FrameRequestCallback) => {
+          callback(0);
+
+          return 0;
+        });
+
+      await bindResolvingDefinition();
+    });
+
+    afterEach(() => {
+      jest.mocked(window.requestAnimationFrame).mockRestore();
+    });
+
+    it('should keep the scrolling body inside the positioned wrapper', () => {
+      // The wrapper is what the hints are positioned against, and the body must
+      // stay the element carrying the grid's ignore-content class - otherwise a
+      // drag would start from anywhere in the module's content.
+      expect(
+        query('.gf-dashboard-module-body > .gridster-item-content')
+      ).toBeTruthy();
+    });
+
+    it('should mark nothing when the body fits', () => {
+      setBodyGeometry({ clientHeight: 200, scrollHeight: 200, scrollTop: 0 });
+
+      expect(component.hasOverflowAbove).toBe(false);
+      expect(component.hasOverflowBelow).toBe(false);
+
+      expect(hintAbove()).toBeNull();
+      expect(hintBelow()).toBeNull();
+    });
+
+    it('should mark only below while the body sits at its start', () => {
+      setBodyGeometry({ clientHeight: 200, scrollHeight: 500, scrollTop: 0 });
+
+      expect(component.hasOverflowAbove).toBe(false);
+      expect(component.hasOverflowBelow).toBe(true);
+
+      expect(hintAbove()).toBeNull();
+      expect(hintBelow()).toBeTruthy();
+    });
+
+    it('should mark both directions in the middle of a scroll', () => {
+      setBodyGeometry({ clientHeight: 200, scrollHeight: 500, scrollTop: 150 });
+
+      expect(component.hasOverflowAbove).toBe(true);
+      expect(component.hasOverflowBelow).toBe(true);
+
+      expect(hintAbove()).toBeTruthy();
+      expect(hintBelow()).toBeTruthy();
+    });
+
+    it('should stop marking below once the end is reached', () => {
+      setBodyGeometry({ clientHeight: 200, scrollHeight: 500, scrollTop: 300 });
+
+      expect(component.hasOverflowAbove).toBe(true);
+      expect(component.hasOverflowBelow).toBe(false);
+
+      expect(hintAbove()).toBeTruthy();
+      expect(hintBelow()).toBeNull();
+    });
+
+    it('should tolerate a sub-pixel remainder at the end of a scroll', () => {
+      // A fractional layout leaves less than a pixel unscrolled; treating that as
+      // "more below" would leave the hint permanently lit, which says nothing.
+      setBodyGeometry({
+        clientHeight: 200,
+        scrollHeight: 500,
+        scrollTop: 299.6
+      });
+
+      expect(component.hasOverflowBelow).toBe(false);
+
+      expect(hintBelow()).toBeNull();
+    });
+
+    it('should mark only the end edge while a wide body sits at its start', () => {
+      setBodyGeometry({
+        clientHeight: 200,
+        clientWidth: 400,
+        scrollHeight: 200,
+        scrollLeft: 0,
+        scrollTop: 0,
+        scrollWidth: 900
+      });
+
+      expect(component.hasOverflowStart).toBe(false);
+      expect(component.hasOverflowEnd).toBe(true);
+
+      expect(hintStart()).toBeNull();
+      expect(hintEnd()).toBeTruthy();
+
+      // A body that fits vertically must not be marked vertically.
+      expect(hintAbove()).toBeNull();
+      expect(hintBelow()).toBeNull();
+    });
+
+    it('should mark both inline edges in the middle of a sideways scroll', () => {
+      setBodyGeometry({
+        clientHeight: 200,
+        clientWidth: 400,
+        scrollHeight: 200,
+        scrollLeft: 250,
+        scrollTop: 0,
+        scrollWidth: 900
+      });
+
+      expect(component.hasOverflowStart).toBe(true);
+      expect(component.hasOverflowEnd).toBe(true);
+
+      expect(hintStart()).toBeTruthy();
+      expect(hintEnd()).toBeTruthy();
+    });
+
+    it('should read a right-to-left scroll offset by its distance from the start', () => {
+      // A right-to-left locale reports the offset as a negative number; taking it
+      // at face value would leave the start edge unmarked no matter how far the
+      // reader had travelled.
+      setBodyGeometry({
+        clientHeight: 200,
+        clientWidth: 400,
+        scrollHeight: 200,
+        scrollLeft: -250,
+        scrollTop: 0,
+        scrollWidth: 900
+      });
+
+      expect(component.hasOverflowStart).toBe(true);
+      expect(component.hasOverflowEnd).toBe(true);
+    });
+
+    it('should stop marking the end edge once the far side is reached', () => {
+      setBodyGeometry({
+        clientHeight: 200,
+        clientWidth: 400,
+        scrollHeight: 200,
+        scrollLeft: 500,
+        scrollTop: 0,
+        scrollWidth: 900
+      });
+
+      expect(component.hasOverflowStart).toBe(true);
+      expect(component.hasOverflowEnd).toBe(false);
+
+      expect(hintStart()).toBeTruthy();
+      expect(hintEnd()).toBeNull();
+    });
+
+    it('should mark all four edges when a body continues in every direction', () => {
+      setBodyGeometry({
+        clientHeight: 200,
+        clientWidth: 400,
+        scrollHeight: 500,
+        scrollLeft: 250,
+        scrollTop: 150,
+        scrollWidth: 900
+      });
+
+      expect(hintAbove()).toBeTruthy();
+      expect(hintBelow()).toBeTruthy();
+      expect(hintEnd()).toBeTruthy();
+      expect(hintStart()).toBeTruthy();
+    });
+
+    it('should keep the hints out of the accessibility tree', () => {
+      // They duplicate nothing: the whole module subtree is in the accessibility
+      // tree whether or not it is scrolled into view.
+      setBodyGeometry({ clientHeight: 200, scrollHeight: 500, scrollTop: 150 });
+
+      expect(hintAbove().getAttribute('aria-hidden')).toBe('true');
+      expect(hintBelow().getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('should survive an environment without a ResizeObserver', () => {
+      // This test DOM provides none, so reaching for one unguarded would have
+      // thrown during `ngAfterViewInit` and taken the whole module host down.
+      // Reaching the assertions at all is the proof; the scroll path still works.
+      expect(query('mat-card')).toBeTruthy();
+
+      setBodyGeometry({ clientHeight: 200, scrollHeight: 500, scrollTop: 0 });
+
+      expect(hintBelow()).toBeTruthy();
+    });
+
+    it('should release its observers and its pending frame on destroy', () => {
+      const body = query<HTMLElement>('.gridster-item-content');
+      const removeEventListener = jest.spyOn(body, 'removeEventListener');
+      const cancelAnimationFrame = jest.spyOn(window, 'cancelAnimationFrame');
+
+      fixture.destroy();
+
+      expect(removeEventListener).toHaveBeenCalledWith(
+        'scroll',
+        expect.any(Function)
+      );
+
+      expect(cancelAnimationFrame).toHaveBeenCalled();
+
+      cancelAnimationFrame.mockRestore();
+    });
+
+    it('should clear a hint once content that sized itself catches up', async () => {
+      // The regression this covers, observed at runtime: narrowing the viewport
+      // resizes the body in one frame while a chart canvas inside it is still
+      // reporting its old width, so a hint is drawn from that transient
+      // measurement. The canvas then reflows - and that reflow adds no node,
+      // removes no node and changes no text, it only rewrites an attribute. An
+      // observer that ignores attributes therefore never hears about it, the
+      // body never changes size again, and the hint advertises overflow that no
+      // longer exists until something unrelated happens to scroll.
+      setBodyGeometry({
+        clientHeight: 200,
+        clientWidth: 200,
+        scrollHeight: 200,
+        scrollTop: 0,
+        scrollWidth: 900
+      });
+
+      expect(hintEnd()).toBeTruthy();
+
+      const body = query<HTMLElement>('.gridster-item-content');
+      const content = body.firstElementChild;
+
+      // Guarded rather than assumed: with nothing in the body there would be no
+      // attribute to rewrite and the test would pass without exercising anything.
+      expect(content).toBeTruthy();
+
+      Object.defineProperty(body, 'scrollWidth', {
+        configurable: true,
+        value: 200
+      });
+
+      content.setAttribute('width', '200');
+
+      await flushObservers();
+
+      fixture.detectChanges();
+
+      expect(hintEnd()).toBeNull();
+    });
+  });
+
+  describe('scroll affordance size watching', () => {
+    class FakeResizeObserver {
+      public static instances: FakeResizeObserver[] = [];
+
+      public observed: Element[] = [];
+
+      public unobserved: Element[] = [];
+
+      public constructor(public callback: () => void) {
+        FakeResizeObserver.instances.push(this);
+      }
+
+      public disconnect() {
+        this.observed = [];
+      }
+
+      public observe(target: Element) {
+        this.observed.push(target);
+      }
+
+      public unobserve(target: Element) {
+        this.unobserved.push(target);
+
+        this.observed = this.observed.filter((element) => {
+          return element !== target;
+        });
+      }
+    }
+
+    /**
+     * Installs the stand-in before the view is ever rendered.
+     *
+     * The order matters: the watcher registers during `ngAfterViewInit`, which
+     * the first change-detection pass triggers, so a stand-in installed after
+     * that pass would never be the one under test. The outer `beforeEach` only
+     * creates the fixture, which is what leaves room to render it here.
+     */
+    beforeEach(async () => {
+      FakeResizeObserver.instances = [];
+
+      (globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+        FakeResizeObserver;
+
+      jest
+        .spyOn(window, 'requestAnimationFrame')
+        .mockImplementation((callback: FrameRequestCallback) => {
+          callback(0);
+
+          return 0;
+        });
+
+      await bindResolvingDefinition();
+    });
+
+    afterEach(() => {
+      jest.mocked(window.requestAnimationFrame).mockRestore();
+
+      delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    });
+
+    it('should watch what fills the body as well as the body itself', () => {
+      const body = query<HTMLElement>('.gridster-item-content');
+      const [observer] = FakeResizeObserver.instances;
+
+      expect(observer).toBeTruthy();
+      expect(observer.observed).toContain(body);
+
+      // The second target is the load-bearing one. The body settles at its new
+      // size on the first frame of a resize and never reports again, so content
+      // that catches up afterwards is only visible through its own box.
+      expect(observer.observed).toContain(body.firstElementChild);
+      expect(observer.observed).toHaveLength(2);
+    });
+
+    it('should follow the body content when it is replaced', () => {
+      const body = query<HTMLElement>('.gridster-item-content');
+      const [observer] = FakeResizeObserver.instances;
+      const previous = body.firstElementChild;
+
+      const replacement = document.createElement('div');
+
+      body.replaceChildren(replacement);
+
+      // Any notification is enough to bring the watch back in step, and a scroll
+      // is the one this test can raise without depending on observer timing.
+      body.dispatchEvent(new Event('scroll'));
+
+      // A watch left on the replaced node is worse than an error: a detached
+      // element never reports a size change, so the signal would go quiet for
+      // good with nothing to show that it had.
+      expect(observer.unobserved).toContain(previous);
+      expect(observer.observed).toEqual([body, replacement]);
+    });
   });
 
   it('should expose no placement state of its own', () => {

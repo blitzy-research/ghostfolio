@@ -29,13 +29,32 @@
             <div class="mx-3 text-muted">
               <small i18n>or</small>
             </div>
+            <!--
+              The label names its destination rather than saying "Learn more".
+              Bare "Learn more" is indistinguishable from every other "Learn
+              more" to anyone reading the page as a list of links, and it is what
+              an SEO audit reports as non-descriptive.
+
+              Deliberately fixed in the VISIBLE text rather than with an
+              `aria-label`: the accessible name is what assistive technology
+              reads, but the rendered text is what a sighted reader and a crawler
+              read, and only changing the text serves all three. An `aria-label`
+              was measured to leave the audit red - it compares the element's own
+              text, never its accessible name - while also risking a "label in
+              name" mismatch by making the spoken name diverge from the printed
+              one. With no override the two are identical, so nothing can drift.
+
+              It fits: this row occupies 43-299px of a card that is over 1300px
+              wide, and the button is a flex item that wraps rather than
+              overflowing if a viewer makes the module narrow.
+            -->
             <a
               color="accent"
               mat-stroked-button
               target="_blank"
               [href]="pricingUrl"
             >
-              <ng-container i18n>Learn more</ng-container>
+              <ng-container i18n>Learn more about Premium</ng-container>
             </a>
           </mat-card-actions>
         </mat-card>
@@ -54,6 +73,7 @@
             class="px-1"
             mat-header-cell
             mat-sort-header="name"
+            scope="col"
           >
             <ng-container i18n>Name</ng-container>
           </th>
@@ -100,7 +120,7 @@
         </ng-container>
 
         <ng-container matColumnDef="status">
-          <th *matHeaderCellDef class="px-1" mat-header-cell>
+          <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
             <ng-container i18n>Status</ng-container>
           </th>
           <td *matCellDef="let element" class="px-1" mat-cell>
@@ -119,6 +139,7 @@
             class="justify-content-end px-1"
             mat-header-cell
             mat-sort-header="assetProfileCount"
+            scope="col"
           >
             <ng-container i18n>Asset Profiles</ng-container>
           </th>
@@ -132,7 +153,9 @@
         </ng-container>
 
         <ng-container matColumnDef="usage">
-          <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+          <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+            <span class="sr-only" i18n>Usage</span>
+          </th>
           <td *matCellDef="let element" class="px-1" mat-cell>
             @if (
               isGhostfolioDataProvider(element) &&
@@ -158,23 +181,31 @@
         </ng-container>
 
         <ng-container matColumnDef="actions">
-          <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+          <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+            <span class="sr-only" i18n>Actions</span>
+          </th>
 
           <td *matCellDef="let element" class="px-1 text-right" mat-cell>
             @if (isGhostfolioDataProvider(element)) {
               @if (isGhostfolioApiKeyValid === true) {
                 <button
+                  aria-label="Actions for this data provider"
                   class="mx-1 no-min-width px-2"
+                  i18n-aria-label
                   mat-button
                   [matMenuTriggerFor]="ghostfolioApiMenu"
                   (click)="$event.stopPropagation()"
                 >
-                  <ion-icon name="ellipsis-horizontal" />
+                  <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
                 </button>
                 <mat-menu #ghostfolioApiMenu="matMenu" xPosition="before">
                   <button mat-menu-item (click)="onRemoveGhostfolioApiKey()">
                     <span class="align-items-center d-flex">
-                      <ion-icon class="mr-2" name="trash-outline" />
+                      <ion-icon
+                        aria-hidden="true"
+                        class="mr-2"
+                        name="trash-outline"
+                      />
                       <span i18n>Remove API key</span>
                     </span>
                   </button>

@@ -42,11 +42,8 @@ import {
   LineElement,
   PointElement,
   TimeScale,
-  Tooltip,
   type TooltipOptions
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
-import annotationPlugin from 'chartjs-plugin-annotation';
 import { addIcons } from 'ionicons';
 import { arrowForwardOutline } from 'ionicons/icons';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
@@ -84,14 +81,17 @@ export class GfBenchmarkComparatorComponent implements OnChanges, OnDestroy {
   public hasPermissionToAccessAdminControl: boolean;
 
   public constructor(private dashboardIntentService: DashboardIntentService) {
+    // Controllers, elements and scales only - they hold no per-chart state, so
+    // registering them here keeps this component's bundle to the chart type it
+    // actually draws. Plugins and the date adapter belong to the shared chart
+    // registry, which installs them at module-evaluation time; see
+    // `registerChartConfiguration` for why that ordering is load-bearing.
     Chart.register(
-      annotationPlugin,
       LinearScale,
       LineController,
       LineElement,
       PointElement,
-      TimeScale,
-      Tooltip
+      TimeScale
     );
 
     registerChartConfiguration();

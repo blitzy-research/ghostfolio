@@ -11,6 +11,7 @@ import {
   Component,
   DestroyRef,
   HostListener,
+  Input,
   OnInit,
   QueryList,
   ViewChildren,
@@ -139,7 +140,44 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
    */
   public modules: DashboardModuleDefinition[] = [];
 
+  /**
+   * The module types currently on the canvas.
+   *
+   * Supplied by the canvas, which owns the arrangement, and read for one purpose
+   * only: telling a row that its module is already placed so it can say so. It is
+   * deliberately a list of TYPES and not of grid items - no coordinate and no size
+   * reaches this component - so the grid remains the single authority on geometry
+   * and this holds no copy of it.
+   */
+  @Input() placedModuleTypes: DashboardModuleType[] = [];
+
+  /**
+   * The module types the canvas has no room for.
+   *
+   * Read for one purpose, exactly as {@link placedModuleTypes} is: telling a row
+   * that clicking it cannot currently succeed, so the catalog stops inviting an
+   * action that would silently do nothing. Also a list of TYPES and nothing more -
+   * answering *why* there is no room needs the grid's geometry, which is why the
+   * canvas answers it and this only reports the answer.
+   */
+  @Input() unavailableModuleTypes: DashboardModuleType[] = [];
+
   public searchFormControl = new FormControl<string>('');
+
+  /**
+   * Which row currently holds the list's single tab stop.
+   *
+   * A roving-focus list has exactly one: the row the key manager last moved to,
+   * or the first row before any movement. Publishing it here is what lets Tab
+   * reach the results at all - every row being permanently untabbable is what made
+   * the whole result list unreachable from the keyboard, and narrowing the list by
+   * search made that worse rather than better, because there was then nothing else
+   * for Tab to land on either.
+   *
+   * It is reset to the first row whenever the results change, since the row that
+   * held it may no longer be in the list.
+   */
+  public tabbableIndex = 0;
 
   protected readonly moduleAdded = output<DashboardModuleType>();
 
@@ -211,10 +249,17 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
 
       const currentItem = this.getCurrentModuleCatalogItem();
 
+      // Moves the tab stop with the focus, which is the other half of the roving
+      // pattern: a viewer who arrowed to a row and then tabbed away must come back
+      // to that row rather than to the top of the list.
+      this.tabbableIndex = Math.max(this.keyManager.activeItemIndex ?? 0, 0);
+
       if (currentItem?.rowElement) {
         currentItem.rowElement.nativeElement?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
+          // `nearest` rather than `center`: this list is a scroll region of its
+          // own, and asking to centre a row scrolls it even when the row is
+          // already fully visible, which makes every arrow press jolt the panel.
+          block: 'nearest'
         });
       }
 
@@ -312,6 +357,45 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
   }
 
   /**
+   * Adopts focus that arrived at a row from somewhere other than the arrow keys -
+   * a Tab into the list, a click, the browser restoring focus after the panel
+   * reopens.
+   *
+   * Both halves matter and they are different things. The tab stop moves, so that
+   * leaving and re-entering the panel returns to the row the viewer is on. The key
+   * manager's active index is updated WITHOUT moving focus, which is the whole
+   * point of `updateActiveItem`: it means the next arrow press steps from the row
+   * the viewer is actually on rather than from wherever the manager last put
+   * focus itself - and from its initial "nothing active", that first press would
+   * otherwise jump to one end of the list.
+   *
+   * @param aIndex Position of the row that took focus, in display order.
+   */
+  public onModuleCatalogItemFocused(aIndex: number) {
+    this.tabbableIndex = aIndex;
+
+    this.keyManager?.updateActiveItem(aIndex);
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * @param aModuleType The module type a row offers.
+   * @returns Whether that module is already on the canvas.
+   */
+  public isPlaced(aModuleType: DashboardModuleType): boolean {
+    return this.placedModuleTypes?.includes(aModuleType) ?? false;
+  }
+
+  /**
+   * @param aModuleType The module type a row offers.
+   * @returns Whether the canvas currently has no room for that module.
+   */
+  public isUnavailable(aModuleType: DashboardModuleType): boolean {
+    return this.unavailableModuleTypes?.includes(aModuleType) ?? false;
+  }
+
+  /**
    * A module that declares no permission is unconditionally visible; one that
    * declares a permission is visible only while the viewer holds it. Inverting that
    * direction would expose the administrative modules to everyone.
@@ -399,6 +483,11 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
 
     this.removeFocusFromModuleCatalogItems();
     this.keyManager?.setActiveItem(-1);
+
+    // Back to the first row, because the row that held the tab stop may not be in
+    // the new list at all - and a tab stop pointing at a row that no longer exists
+    // is the same thing as no tab stop.
+    this.tabbableIndex = 0;
 
     // Required rather than defensive: these updates originate from a stream and
     // from the user store, never from a template-triggered check, and this view

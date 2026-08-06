@@ -215,6 +215,9 @@
       "executor": "@nx/angular:dev-server",
       "options": {
         "buildTarget": "client:build",
+        "headers": {
+          "Referrer-Policy": "strict-origin"
+        },
         "proxyConfig": "apps/client/proxy.conf.json",
         "ssl": true,
         "sslCert": "apps/client/localhost.cert",
@@ -298,6 +301,7 @@
     "test": {
       "executor": "@nx/jest:jest",
       "options": {
+        "codeCoverage": true,
         "jestConfig": "apps/client/jest.config.ts",
         "tsConfig": "apps/client/tsconfig.spec.json"
       },

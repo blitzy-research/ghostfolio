@@ -13,12 +13,15 @@
             (keydown.enter)="onLoginWithAccessToken(); $event.preventDefault()"
           />
           <button
+            aria-label="Show or hide the security token"
+            i18n-aria-label
             mat-button
             matSuffix
             type="button"
             (click)="isAccessTokenHidden = !isAccessTokenHidden"
           >
             <ion-icon
+              aria-hidden="true"
               [name]="isAccessTokenHidden ? 'eye-outline' : 'eye-off-outline'"
             />
           </button>
@@ -38,6 +41,7 @@
             href="../api/v1/auth/google"
             mat-stroked-button
             ><img
+              alt=""
               class="mr-2"
               src="../assets/icons/google.svg"
               style="height: 1rem"

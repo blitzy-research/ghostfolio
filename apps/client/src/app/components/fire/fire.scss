@@ -7,6 +7,38 @@
 :host {
   display: block;
 
+  // Cancels a Bootstrap gutter that escapes its container.
+  //
+  // `gf-fire-calculator` opens with `<div class="container p-0">` wrapping a
+  // `<div class="row">`. A Bootstrap row carries -15px horizontal margins that
+  // are only ever correct because the container it sits in supplies +15px of
+  // padding to absorb them; `p-0` removes exactly that padding, so the margins
+  // escape the container on both sides. Measured inside a FIRE module: the row
+  // spanned -4.00 to 967.33 against a content box of 11 to 952, i.e. 15.00px
+  // past the left edge and 15.33px past the right, reported by the module region
+  // as 15px of horizontal overflow (scrollWidth 956 against clientWidth 941).
+  // The left-hand 15px is the worse half - it lands in negative scroll space,
+  // which no gesture can reach.
+  //
+  // Zeroing the margins is the fix rather than restoring the container padding
+  // because the two are equivalent here and this one needs no `!important` to
+  // beat the `p-0` utility. The outcome is identical either way: the columns keep
+  // their own 15px padding, so it still acts as the internal gutter and painted
+  // content lands in the same place. No FIRE content moves out of view - none was
+  // ever clipped, only the invisible margin box overhung - and there is exactly
+  // one row in that template, so no nested-grid math depends on these margins.
+  //
+  // Scoped to this component rather than fixed in `libs/ui`: the calculator is a
+  // shared component the plan preserves verbatim (AAP 0.2.6), and the overhang
+  // only matters once it is hosted in a fixed-width grid cell, which is this
+  // refactor's doing. `::ng-deep` is required because the container and row are
+  // written in the calculator's own template and never carry this component's
+  // content attribute; the `gf-fire-calculator` ancestor keeps the rule from
+  // reaching any other row on the canvas.
+  ::ng-deep gf-fire-calculator > .container.p-0 > .row {
+    margin-inline: 0;
+  }
+
   .safe-withdrawal-rate-select {
     @include select-arrow(variables.$dark-primary-text);
 

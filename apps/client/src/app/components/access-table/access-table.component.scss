@@ -1,11 +1,29 @@
 :host {
   display: block;
 
+  // WCAG 1.4.3. Brand primary 500 is a light teal, so as link text on a light card
+  // it measured 1.92:1 against a required 4.5:1, and the hover state reached for
+  // primary 300 - lighter still, i.e. worse. The replacement is the darkened
+  // primary this app already uses for text-on-surface elsewhere, at 6.6:1, with
+  // hover expressed as an underline rather than a colour so the affordance cannot
+  // trade contrast away. The underline also follows this repository's own link
+  // convention.
+  //
+  // The dark mirror is not symmetry for its own sake: primary 500 was already
+  // perfectly legible on a dark card at 7.99:1, so applying the darkened value
+  // unconditionally would have FIXED the light theme by breaking the dark one down
+  // to 2.32:1. Each theme gets the value that is correct against its own surface.
   a {
-    color: rgba(var(--palette-primary-500), 1);
+    color: var(--mat-sys-primary, #006a68);
 
     &:hover {
-      color: rgba(var(--palette-primary-300), 1);
+      text-decoration: underline;
     }
+  }
+}
+
+:host-context(.theme-dark) {
+  a {
+    color: var(--mat-sys-primary, #47dbd7);
   }
 }

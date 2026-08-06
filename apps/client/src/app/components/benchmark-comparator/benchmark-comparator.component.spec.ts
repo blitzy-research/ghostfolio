@@ -1,7 +1,10 @@
 import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { DashboardModuleType } from '@ghostfolio/common/dashboard';
+import { registerChartConfiguration } from '@ghostfolio/ui/chart';
 
 import { TestBed } from '@angular/core/testing';
+import { Chart } from 'chart.js';
+import annotationPlugin from 'chartjs-plugin-annotation';
 
 import { GfBenchmarkComparatorComponent } from './benchmark-comparator.component';
 
@@ -87,5 +90,17 @@ describe('GfBenchmarkComparatorComponent', () => {
     // Nothing else is provided in this suite, so the component resolving at all is
     // the assertion: it holds no router, no registry and no canvas reference.
     expect(component).toBeInstanceOf(GfBenchmarkComparatorComponent);
+  });
+
+  it('registers the shared annotation plugin idempotently before chart use', () => {
+    const registeredPlugin = Chart.registry.plugins.get(annotationPlugin.id);
+
+    expect(registeredPlugin).toBe(annotationPlugin);
+
+    registerChartConfiguration();
+
+    expect(Chart.registry.plugins.get(annotationPlugin.id)).toBe(
+      registeredPlugin
+    );
   });
 });

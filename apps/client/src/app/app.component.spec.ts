@@ -219,20 +219,49 @@ describe('GfAppComponent', () => {
     return dialogRequests.at(-1);
   };
 
+  /**
+   * Yields until every pending microtask and macrotask has run.
+   *
+   * The shell resolves each dialog's own chunk with a dynamic `import()` before
+   * opening it - which is what keeps those chunks out of the initial bundle - so a
+   * dialog opens on a later tick than the parameter that asked for it. Waiting
+   * here is what lets these assertions observe the request rather than race it.
+   */
+  const settle = () => {
+    return new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  };
+
   beforeEach(() => {
     colorSchemeListeners = [];
 
     // jsdom implements no `matchMedia`, and the shell reads the operating system's
     // colour-scheme preference through it on construction. The stub reports the
     // light preference and keeps whatever listener is attached, so the theme
-    // behaviour is observable rather than merely survivable. `addListener` is the
-    // deprecated form and is the one the shell calls, so it is the one provided.
+    // behaviour is observable rather than merely survivable.
+    //
+    // `addEventListener`/`removeEventListener` are what the shell calls, and both
+    // halves are provided deliberately: the removal is the only way to assert that
+    // the listener is released with the component, which the deprecated
+    // `addListener` form the shell used to call offered no way to do at all.
     originalMatchMedia = window.matchMedia;
     window.matchMedia = jest.fn(() => ({
-      addListener: (listener: (event: { matches: boolean }) => void) => {
+      addEventListener: (
+        _type: string,
+        listener: (event: { matches: boolean }) => void
+      ) => {
         colorSchemeListeners.push(listener);
       },
-      matches: false
+      matches: false,
+      removeEventListener: (
+        _type: string,
+        listener: (event: { matches: boolean }) => void
+      ) => {
+        colorSchemeListeners = colorSchemeListeners.filter((registered) => {
+          return registered !== listener;
+        });
+      }
     })) as unknown as typeof window.matchMedia;
   });
 
@@ -256,6 +285,8 @@ describe('GfAppComponent', () => {
       await createComponent();
 
       queryParams.next(holdingParams);
+
+      await settle();
 
       const { component, config } = openedDialog();
 
@@ -311,6 +342,8 @@ describe('GfAppComponent', () => {
 
       queryParams.next(holdingParams);
 
+      await settle();
+
       const { config } = openedDialog();
 
       // The viewer is re-read at open time rather than taken from the shell's own
@@ -349,6 +382,8 @@ describe('GfAppComponent', () => {
 
       queryParams.next(holdingParams);
 
+      await settle();
+
       const { config } = openedDialog();
 
       expect(config.data.hasPermissionToCreateActivity).toBe(false);
@@ -359,6 +394,8 @@ describe('GfAppComponent', () => {
       await createComponent({ deviceType: 'mobile' });
 
       queryParams.next(holdingParams);
+
+      await settle();
 
       const { config } = openedDialog();
 
@@ -373,6 +410,8 @@ describe('GfAppComponent', () => {
       await createComponent();
 
       queryParams.next(holdingParams);
+
+      await settle();
 
       // The empty command array is the route-agnostic convention - it rewrites the
       // current URL rather than addressing anything - and merging is what preserves
@@ -457,7 +496,7 @@ describe('GfAppComponent', () => {
     it('opens the registration dialog with the terms step gated by the global permission', async () => {
       const component = await createComponent();
 
-      component.onCreateAccount();
+      await component.onCreateAccount();
 
       const { component: dialogComponent, config } = openedDialog();
 
@@ -482,7 +521,7 @@ describe('GfAppComponent', () => {
       async ({ deviceType, expected }) => {
         const component = await createComponent({ deviceType });
 
-        component.onCreateAccount();
+        await component.onCreateAccount();
 
         const { config } = openedDialog();
 
@@ -496,7 +535,7 @@ describe('GfAppComponent', () => {
 
       dialogAfterClosed = of('an-issued-token');
 
-      component.onCreateAccount();
+      await component.onCreateAccount();
 
       // Both halves matter and so does their order. The token is persisted with
       // `staySignedIn` forced on, matching the register page's deliberate decision
@@ -517,7 +556,7 @@ describe('GfAppComponent', () => {
 
       dialogAfterClosed = of(undefined);
 
-      component.onCreateAccount();
+      await component.onCreateAccount();
 
       expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
       expect(callOrder).toEqual([]);
@@ -621,6 +660,36 @@ describe('GfAppComponent', () => {
 
       // An explicit choice wins: the system switching to dark must not undo it.
       expect(document.body.classList.contains('theme-light')).toBe(true);
+    });
+
+    // The theme is applied on EVERY emission of the viewer's record, and the
+    // appearance control in the toolbar refreshes that record on every use - so
+    // registering the system listener alongside the theme it applies added one more
+    // listener each time, none of them ever removed, each re-running the same work.
+    it('watches the operating system once, however many times the viewer record arrives', async () => {
+      await createComponent();
+
+      expect(colorSchemeListeners).toHaveLength(1);
+
+      for (let emission = 0; emission < 5; emission += 1) {
+        stateChanged.next({
+          user: createViewer({ settings: { baseCurrency: 'CHF' } })
+        });
+      }
+
+      expect(colorSchemeListeners).toHaveLength(1);
+    });
+
+    it('stops watching the operating system when the shell goes away', async () => {
+      await createComponent();
+
+      expect(colorSchemeListeners).toHaveLength(1);
+
+      fixture.destroy();
+
+      // Released rather than left behind: the listener closes over the component, so
+      // an un-removed one keeps it alive and keeps re-theming a torn-down shell.
+      expect(colorSchemeListeners).toHaveLength(0);
     });
 
     it('survives a viewer request that never answers', async () => {

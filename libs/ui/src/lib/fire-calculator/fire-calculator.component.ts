@@ -41,10 +41,8 @@ import {
   Chart,
   type ChartData,
   type ChartDataset,
-  LinearScale,
-  Tooltip
+  LinearScale
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
 import Color from 'color';
 import {
   add,
@@ -60,6 +58,7 @@ import { isNumber } from 'lodash';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { debounceTime } from 'rxjs';
 
+import { registerChartConfiguration } from '../chart';
 import { FireCalculatorService } from './fire-calculator.service';
 
 @Component({
@@ -128,13 +127,14 @@ export class GfFireCalculatorComponent implements OnChanges, OnDestroy {
     private fireCalculatorService: FireCalculatorService,
     private formBuilder: FormBuilder
   ) {
-    Chart.register(
-      BarController,
-      BarElement,
-      CategoryScale,
-      LinearScale,
-      Tooltip
-    );
+    // Controllers, elements and scales only - they hold no per-chart state, so
+    // registering them here keeps this component's bundle to the chart type it
+    // actually draws. Plugins and the date adapter belong to the shared chart
+    // registry, which installs them at module-evaluation time so that no chart
+    // can be built before them; see `registerChartConfiguration`.
+    Chart.register(BarController, BarElement, CategoryScale, LinearScale);
+
+    registerChartConfiguration();
 
     this.calculatorForm.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))

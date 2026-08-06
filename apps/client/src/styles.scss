@@ -272,6 +272,12 @@ body {
     .mdc-button {
       &.mat-accent,
       &.mat-primary {
+        // Dark-theme counterpart of the light-theme correction below; see the
+        // explanation there. The lighter primary is what Material itself computes
+        // for this theme, and it clears 9.72:1 on the canvas surface.
+        --mat-button-outlined-label-text-color: var(--mat-sys-primary, #47dbd7);
+        --mat-button-text-label-text-color: var(--mat-sys-primary, #47dbd7);
+
         --mat-button-filled-label-text-color: rgba(var(--dark-primary-text));
       }
     }
@@ -292,6 +298,20 @@ body {
       .svgMap-tooltip-content table td span {
         color: rgba(var(--light-primary-text));
       }
+    }
+
+    // Bootstrap's own `.text-muted` is theme-invariant: it resolves to a dark grey
+    // that was chosen against a white page, so on this theme's near-black surfaces
+    // it measured 3.23:1 and missed the 4.5:1 that body text has to clear. The
+    // override belongs here rather than in the utility layer because the utility is
+    // correct on the light theme and wrong only on this one, and it is scoped inside
+    // the dark block so nothing on the light theme is touched.
+    //
+    // `--light-secondary-text` is the palette's own secondary foreground for a dark
+    // surface - 70% white - which is the same relationship the light theme's own
+    // secondary text has to its background, so the two themes now agree.
+    .text-muted {
+      color: rgba(var(--light-secondary-text)) !important;
     }
 
     .with-placeholder-as-option {
@@ -446,7 +466,26 @@ ngx-skeleton-loader {
 .mat-mdc-fab,
 .mat-mdc-unelevated-button {
   &.mat-primary {
-    color: rgba(var(--light-primary-text)) !important;
+    // WCAG 1.4.3, and the correction of an inversion rather than a preference.
+    //
+    // Both of these surfaces are filled with the brand primary, which is a LIGHT
+    // teal in both themes - #36cfcc here, #47dbd7 in the dark theme. A light fill
+    // needs a dark foreground, and the dark theme's counterpart of this very rule
+    // already says so: it asks for `--dark-primary-text`. This one asked for
+    // `--light-primary-text`, which resolves to pure white, so a floating action
+    // button's glyph and a filled button's label were painted white on light teal
+    // and measured 1.92:1 against a required 4.5:1 - short by a factor of 2.34, and
+    // not even clearing the 3:1 floor for large text. The two themes disagreed
+    // about a container they render almost identically, and the light one was
+    // wrong.
+    //
+    // This is where it has to be fixed. The declaration is `!important` on `color`
+    // itself, so it overrides Material's own `color: var(--mat-button-filled-
+    // label-text-color, ...)` outright - which means overriding that token from a
+    // component stylesheet, as this work first attempted, changes nothing at all
+    // and does so silently. `--dark-primary-text` is the palette's own contrast
+    // colour for a light container and computes 9.27:1 on it.
+    color: var(--mat-sys-on-primary, rgba(var(--dark-primary-text))) !important;
   }
 }
 
@@ -498,7 +537,34 @@ ngx-skeleton-loader {
 .mdc-button {
   &.mat-accent,
   &.mat-primary {
-    --mat-button-filled-label-text-color: rgba(var(--light-primary-text));
+    // Restores the brand label colour on the container-less button variants.
+    //
+    // The theme asks for these labels in `--dark-primary-text`, but that custom
+    // property holds a bare `r, g, b, a` LIST for `rgba()` to consume - the rest of
+    // this file always writes `rgba(var(--dark-primary-text))` - so passing it
+    // straight through yields `color: 0, 0, 0, 0.87`, which is not a colour. The
+    // declaration is then invalid at computed-value time, `color` falls back to
+    // `inherit`, and a button the author marked as the primary action renders in the
+    // surrounding body text colour: near-black, indistinguishable from a plain one.
+    //
+    // Fixed here rather than at the theme, which this work treats as read-only. The
+    // values are Material's own computed primary for each theme - it emits them
+    // correctly before the broken declaration overrides them - so this restores the
+    // library's intent rather than inventing a colour. Both clear WCAG AA for normal
+    // text on the surface they sit on: 6.44:1 here, 9.72:1 in the dark theme.
+    //
+    // The filled variant's label sits on a brand-filled container, so it takes the
+    // on-primary foreground rather than the brand colour. That is the same dark
+    // value, and for the same reason, as the `!important` correction earlier in
+    // this file - kept in step here so the two never disagree about the colour of
+    // one label. White was measurably wrong on this container: 1.92:1.
+    --mat-button-outlined-label-text-color: var(--mat-sys-primary, #006a68);
+    --mat-button-text-label-text-color: var(--mat-sys-primary, #006a68);
+
+    --mat-button-filled-label-text-color: var(
+      --mat-sys-on-primary,
+      rgba(var(--dark-primary-text))
+    );
   }
 }
 

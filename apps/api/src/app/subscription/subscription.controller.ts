@@ -99,11 +99,31 @@ export class SubscriptionController {
       request.query.checkoutSessionId as string
     );
 
-    Logger.log(
-      `Subscription for user '${userId}' has been created via Stripe`,
-      'SubscriptionController'
-    );
+    if (userId) {
+      Logger.log(
+        `Subscription for user '${userId}' has been created via Stripe`,
+        'SubscriptionController'
+      );
+    } else {
+      // The service reports a checkout session it could not turn into a
+      // subscription by resolving without a user. Stating the success
+      // unconditionally would tell an operator reading the log that an
+      // entitlement exists when none was granted - and would interpolate a
+      // literal `undefined` where the account should be - which is exactly the
+      // wrong conclusion to reach while investigating a billing complaint. The
+      // failure is recorded instead, without the checkout session identifier:
+      // the service has already logged the underlying provider error, and the
+      // identifier belongs to a payment session rather than in an operations log.
+      Logger.warn(
+        'A Stripe checkout session could not be turned into a subscription',
+        'SubscriptionController'
+      );
+    }
 
+    // Redirected either way, deliberately. Whoever has just paid is returning
+    // from the payment provider in a browser, so leaving them on an API response
+    // because provisioning failed would strand them; the log above is what
+    // distinguishes the two outcomes.
     response.redirect(
       `${this.configurationService.get('ROOT_URL')}/${DEFAULT_LANGUAGE_CODE}/`
     );

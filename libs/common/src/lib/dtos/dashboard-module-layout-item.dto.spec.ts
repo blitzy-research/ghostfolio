@@ -134,4 +134,62 @@ describe('DashboardModuleLayoutItemDto', () => {
       })
     ).toEqual(['cols']);
   });
+  it('rejects every known module below either of its declared minimums', () => {
+    // The sweep the single-module case above cannot give: one module carrying the
+    // strictest minimum proves the rule fires, and this proves it fires for all of
+    // them - so a module whose declared footprint is raised later is covered by
+    // this suite the moment it is raised, without the spec being touched.
+    const hasMinimumError = (
+      errors: { constraints?: Record<string, string> }[]
+    ) => {
+      return errors.some(({ constraints }) => {
+        return Boolean(constraints?.satisfiesDashboardModuleMinimum);
+      });
+    };
+
+    const failures: string[] = [];
+
+    for (const { minItemCols, minItemRows, moduleType } of Object.values(
+      dashboardModules
+    )) {
+      const belowColumnMinimum = validate({
+        moduleType,
+        cols: minItemCols - 1,
+        rows: minItemRows,
+        x: 0,
+        y: 0
+      });
+      const belowRowMinimum = validate({
+        moduleType,
+        cols: minItemCols,
+        rows: minItemRows - 1,
+        x: 0,
+        y: 0
+      });
+
+      if (!hasMinimumError(belowColumnMinimum)) {
+        failures.push(`${moduleType}: columns`);
+      }
+
+      if (!hasMinimumError(belowRowMinimum)) {
+        failures.push(`${moduleType}: rows`);
+      }
+    }
+
+    expect(failures).toEqual([]);
+  });
+
+  it('keeps an unknown module type writable at the far corner of the grid', () => {
+    // The forward-compatibility case at the extremes the per-field bounds allow, so
+    // the deferral is not accidentally coupled to an origin of zero.
+    expect(
+      validate({
+        cols: 2,
+        moduleType: 'some-future-module',
+        rows: 2,
+        x: 10,
+        y: 98
+      })
+    ).toEqual([]);
+  });
 });

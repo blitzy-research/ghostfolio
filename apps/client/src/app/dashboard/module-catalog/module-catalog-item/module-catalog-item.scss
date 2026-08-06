@@ -16,6 +16,107 @@
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     cursor: grab;
 
+    // The Material button inside the card is the control; the card is its
+    // container. The button therefore contributes no surface and no geometry of
+    // its own - both belong to the card - while keeping what only it can give:
+    // the state layer, the ripple and the focus handling.
+    //
+    // The adjustments are made through Material's own button tokens wherever one
+    // exists, so they participate in theming instead of fighting it. Note the
+    // token family is `--mat-button-<variant>-*`, and this row is the text
+    // variant; `--mat-text-button-*` is a different, older spelling that this
+    // version does not read, so a rule written that way is silently inert.
+    //
+    // The text variant needs no background override: its base rule already sets
+    // `background: transparent` and the variant defines no container-colour
+    // token, so the card's surface is what shows through.
+    button {
+      // `auto`, so the row's height stays the sum of its Bootstrap padding and
+      // its line box. The token's own default is a fixed 40px, which would
+      // silently take the row's height away from the spacing utilities that are
+      // this codebase's convention for it.
+      --mat-button-text-container-height: auto;
+
+      // Matches the card, so the ripple and the state layer - both of which
+      // inherit their radius from the button - stay inside the card's corners.
+      --mat-button-text-container-shape: var(--mat-sys-corner-medium, 4px);
+
+      // The variant's own default label colour is the brand primary, which on
+      // this surface is the ~1.9:1 teal-on-white the report flagged elsewhere.
+      // A catalog row is body text on a card, so it takes the on-surface
+      // foreground and clears 4.5:1.
+      --mat-button-text-label-text-color: var(
+        --mat-sys-on-surface,
+        rgba(0, 0, 0, 0.87)
+      );
+
+      // A list row reads as body text, not as a button label, so the type role
+      // is body-medium rather than the variant's default label-large. Fixing
+      // this at the token level also keeps the row stable if the theme is ever
+      // migrated to `mat.theme()`, at which point the defaults would start
+      // resolving and would otherwise restyle the row without warning.
+      --mat-button-text-label-text-font: var(
+        --mat-sys-body-medium-font,
+        var(--font-family-sans-serif)
+      );
+      --mat-button-text-label-text-size: var(--mat-sys-body-medium-size, 1rem);
+      --mat-button-text-label-text-tracking: var(
+        --mat-sys-body-medium-tracking,
+        normal
+      );
+      --mat-button-text-label-text-transform: none;
+      --mat-button-text-label-text-weight: var(
+        --mat-sys-body-medium-weight,
+        400
+      );
+
+      // Material overlays a 48px touch target, absolutely positioned and
+      // centred, to lift a 40px button to the recommended hit size. Here it is
+      // actively harmful: catalog rows sit flush against each other, so a target
+      // taller than its row overhangs the neighbouring rows and a click near a
+      // boundary would add the wrong module. The row is full-drawer-width and
+      // its own box already exceeds 40px, so the hit area stays generous
+      // without it.
+      --mat-button-text-touch-target-display: none;
+
+      // Not tokenised because there is no token for it: the 64px floor comes
+      // from the shared button base and would force the row to overflow a narrow
+      // drawer. Alignment needs no rule here - the template's spacing utilities
+      // already override the base rule's centring.
+      min-width: 0;
+
+      // Material projects the row's content into a label span of its own, and
+      // that span - not the button - is what lays the content out. Material
+      // already makes it a flex row but leaves it sized to its content, so the
+      // trailing marker's automatic margin has no free space to push against
+      // and the marker sits against the name instead. Letting the span span the
+      // row gives that margin something to distribute.
+      //
+      // `::ng-deep` is required, not stylistic. The label span is created by
+      // Material's own template, so it never carries this component's content
+      // attribute, and an ordinary nested rule would be scoped to that
+      // attribute and silently match nothing - it would compile, lint and read
+      // correctly while doing nothing at all. The piercing combinator is the
+      // convention this codebase already uses for library-owned elements, and
+      // the ancestor chain above it stays scoped to this component, so nothing
+      // leaks to any other Material button.
+      ::ng-deep {
+        .mdc-button__label {
+          width: 100%;
+
+          // A flex item refuses to shrink below its content by default, so a
+          // long module name grows the span to its full intrinsic width instead
+          // of ellipsising: the text is then severed by an ancestor's clip and
+          // the marker is pushed out of the row entirely. This is the one
+          // declaration that makes the name's truncation take effect, and it
+          // matters most for the longer translations among the thirteen locales.
+          > .text-truncate {
+            min-width: 0;
+          }
+        }
+      }
+    }
+
     &:hover {
       background-color: var(--mat-sys-surface-container-high, #f5f5f5);
       border-color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
@@ -39,6 +140,46 @@
       border-style: dashed;
       cursor: grabbing;
     }
+
+    // Already on the canvas. Marked on the leading edge as well as by the word
+    // beside the name, so the state never rests on colour alone.
+    &.is-placed {
+      border-inline-start-color: var(
+        --mat-sys-on-surface-variant,
+        rgba(0, 0, 0, 0.54)
+      );
+      border-inline-start-width: 3px;
+    }
+
+    // The grid has no room for this module. Marked on the leading edge like a
+    // placed row, but dotted rather than solid, so the two states are told apart
+    // by edge STYLE as well as by the word beside the name - neither state rests
+    // on colour, and neither rests on the same cue as the other.
+    //
+    // The row keeps its hover and active treatment on purpose: it is still
+    // actionable, and activating it is what explains the refusal, so making it
+    // look inert would suppress the very affordance that gives the reason.
+    &.is-unavailable {
+      border-inline-start-color: var(
+        --mat-sys-on-surface-variant,
+        rgba(0, 0, 0, 0.54)
+      );
+      border-inline-start-style: dotted;
+      border-inline-start-width: 3px;
+    }
+  }
+
+  // One rule for both trailing markers: they are the same kind of thing said
+  // about the row - a short, secondary, uppercase state label - so they take the
+  // same type role and the same foreground.
+  .placed-marker,
+  .unavailable-marker {
+    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    font-size: var(--mat-sys-label-small-size, 0.6875rem);
+    font-weight: var(--mat-sys-label-small-weight, 500);
+    letter-spacing: var(--mat-sys-label-small-tracking, 0.03125rem);
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 }
 
@@ -47,6 +188,10 @@
     background-color: var(--mat-sys-surface-container, #262626);
     border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
     color: var(--mat-sys-on-surface, #ffffff);
+
+    button {
+      --mat-button-text-label-text-color: var(--mat-sys-on-surface, #ffffff);
+    }
 
     // Each dark state is restated because the fallback differs and the fallback
     // is what paints; nesting also lifts these rules above their light
@@ -68,6 +213,25 @@
       );
       border-color: var(--mat-sys-on-surface, #ffffff);
     }
+
+    &.is-placed {
+      border-inline-start-color: var(
+        --mat-sys-on-surface-variant,
+        rgba(255, 255, 255, 0.7)
+      );
+    }
+
+    &.is-unavailable {
+      border-inline-start-color: var(
+        --mat-sys-on-surface-variant,
+        rgba(255, 255, 255, 0.7)
+      );
+    }
+  }
+
+  .placed-marker,
+  .unavailable-marker {
+    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
   }
 }
 
@@ -75,12 +239,32 @@
 // order the focused-state tiebreaker. The catalog owns a roving virtual focus,
 // so `has-focus` is the row's only focus indicator and the outline is what
 // carries it to 3:1 (WCAG 2.2 SC 2.4.11); the brand fill alone does not.
+//
+// The offset is negative on purpose. Rows sit flush against one another, so a
+// ring drawn outside the card would be overlapped by its neighbours and read as
+// a partial box; drawn just inside the card's own border it stays whole, and it
+// keeps 3:1 against both the fill it sits on and the drawer surface beyond.
 :host.has-focus mat-card {
   background-color: var(--mat-sys-primary-container, rgba(54, 207, 204, 0.16));
   outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 :host-context(.theme-dark).has-focus mat-card {
+  outline-color: var(--mat-sys-on-surface, #ffffff);
+}
+
+// The row's button can also take real focus without the key manager having put
+// it there - the browser restoring focus, or Tab landing on the one row that
+// holds the list's tab stop. Material's own focus ring cannot cover that here
+// because this theme does not enable strong focus indicators, so the ring is
+// declared explicitly, with the same width, colour and inset as the roving
+// indicator above so the two forms of focus are indistinguishable.
+:host button:focus-visible {
+  outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  outline-offset: -2px;
+}
+
+:host-context(.theme-dark) button:focus-visible {
   outline-color: var(--mat-sys-on-surface, #ffffff);
 }

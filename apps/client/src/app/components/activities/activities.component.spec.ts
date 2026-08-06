@@ -259,6 +259,11 @@ describe('GfActivitiesComponent', () => {
     it('should request the create dialog when the notice is clicked', async () => {
       await createComponent();
 
+      // Asserted rather than cleared away: initialization must request nothing at
+      // all, so the click below is the only navigation this component has made
+      // and the count assertion covers both facts at once.
+      expect(navigations).toEqual([]);
+
       createActivityButton().click();
 
       // `createDialog` is shared with the accounts and account-access modules,
@@ -420,6 +425,52 @@ describe('GfActivitiesComponent', () => {
       });
 
       expect(dialogMock.open).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('the onboarding invitation', () => {
+    it('should request no dialog while initializing for a viewer with no activities', async () => {
+      const open = jest.fn();
+
+      await createComponent();
+
+      TestBed.inject(MatDialog).open = open;
+
+      // The seeded viewer holds zero activities and may create one, which is
+      // exactly the case that used to have the create dialog opened for it at the
+      // end of the first fetch. On a canvas that is an ambush: the module is one
+      // card among many that all load together, and the dialog it raised covered
+      // and blocked every other module behind a full-viewport scrim - on every
+      // visit, because the fetch runs on every load.
+      //
+      // Both halves are asserted, because either alone would be satisfiable by a
+      // broken component: that no dialog REQUEST was made, and that no dialog was
+      // opened by any other route.
+      expect(dataServiceMock.fetchActivities).toHaveBeenCalled();
+      expect(viewer.activitiesCount).toBe(0);
+
+      expect(navigations).toEqual([]);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+
+      // And the invitation is still on screen, so the dialog remains one click
+      // away rather than being unreachable.
+      expect(createActivityButton()).toBeTruthy();
+    });
+
+    it('should still honour a create request that names this module', async () => {
+      // The removal above must not have cost the module its ability to respond
+      // when a request genuinely arrives - the parameters the invitation and the
+      // floating action button both write.
+      const open = jest.fn();
+
+      await createComponent();
+
+      TestBed.inject(MatDialog).open = open;
+
+      component['openCreateActivityDialog']();
+
+      expect(open).toHaveBeenCalledTimes(1);
     });
   });
 });

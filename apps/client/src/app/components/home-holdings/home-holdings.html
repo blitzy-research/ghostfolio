@@ -20,11 +20,32 @@
               [formControl]="viewModeFormControl"
               [hideSingleSelectionIndicator]="true"
             >
-              <mat-button-toggle i18n-title title="Table" value="TABLE">
-                <ion-icon name="reorder-four-outline" />
+              <!--
+                `aria-label` is required here in addition to `title`, and the two
+                are not redundant. `title` lands on this `mat-button-toggle` host,
+                but the focusable control is the `<button>` Material renders
+                INSIDE it, which inherits nothing from the host and was therefore
+                nameless. `aria-label` is a declared input on this component and
+                is forwarded onto that inner button, which is the only way to name
+                it without touching the library.
+              -->
+              <mat-button-toggle
+                aria-label="Show holdings as a table"
+                i18n-aria-label
+                i18n-title
+                title="Table"
+                value="TABLE"
+              >
+                <ion-icon aria-hidden="true" name="reorder-four-outline" />
               </mat-button-toggle>
-              <mat-button-toggle i18n-title title="Chart" value="CHART">
-                <ion-icon name="grid-outline" />
+              <mat-button-toggle
+                aria-label="Show holdings as a chart"
+                i18n-aria-label
+                i18n-title
+                title="Chart"
+                value="CHART"
+              >
+                <ion-icon aria-hidden="true" name="grid-outline" />
               </mat-button-toggle>
             </mat-button-toggle-group>
           </div>

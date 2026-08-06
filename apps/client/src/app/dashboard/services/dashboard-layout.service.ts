@@ -1,4 +1,4 @@
-import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
+import type { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
 import { reportSanitizedError } from '@ghostfolio/common/helper';
 import {
   DashboardModuleLayoutItem,

@@ -8,6 +8,22 @@
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   }
 
+  // The outline is what makes this read as a control, so it is stated rather than
+  // left to the component default: this theme does not emit the --mat-sys layer, so
+  // a default resolving to nothing would put the missing affordance straight back.
+  // The label is stated for the same reason and lands on the surface-text token, so
+  // it clears the contrast floor on the card without needing a brand fill.
+  .browse-modules-button {
+    --mat-button-outlined-label-text-color: var(
+      --mat-sys-on-surface,
+      rgba(0, 0, 0, 0.87)
+    );
+    --mat-button-outlined-outline-color: var(
+      --mat-sys-outline,
+      rgba(0, 0, 0, 0.38)
+    );
+  }
+
   .secondary-text {
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
   }
@@ -26,6 +42,14 @@
     background: var(--mat-sys-surface-container, #262626);
     border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
     color: var(--mat-sys-on-surface, #ffffff);
+  }
+
+  .browse-modules-button {
+    --mat-button-outlined-label-text-color: var(--mat-sys-on-surface, #ffffff);
+    --mat-button-outlined-outline-color: var(
+      --mat-sys-outline,
+      rgba(255, 255, 255, 0.5)
+    );
   }
 
   .secondary-text {

@@ -3,9 +3,21 @@
   horizontal gutter that cancels the negative margins of the rows below - without
   it they bleed past their cell - while dropping the responsive max-width that
   made this content read as a page nested inside a grid cell.
+
+  `justify-content-center` is deliberately ABSENT, and the stylesheet centres this
+  content with auto margins instead. Centring a flex column whose content is
+  taller than the box distributes the overflow to BOTH ends, and the half that
+  lands above the start edge is unreachable: it is not counted in `scrollHeight`
+  and a negative `scrollTop` is clamped to zero. Measured here at 8x6 before the
+  change: 569.19px of content in a 479px box put 45.09px - including the top of
+  the chart canvas, and with it every tooltip drawn near the top - permanently off
+  the top of the module, and scrolling the one available direction doubled it to
+  90.09px. Auto margins centre exactly as well when there IS free space and
+  collapse to zero when there is not, so the overflow can only ever go downward,
+  where it is scrollable.
 -->
 <div
-  class="align-items-center container-fluid d-flex flex-column h-100 justify-content-center overview p-0 position-relative"
+  class="align-items-center container-fluid d-flex flex-column h-100 overview p-0 position-relative"
 >
   @if (
     !hasImpersonationId &&
@@ -14,7 +26,7 @@
   ) {
     <div class="justify-content-center row w-100">
       <div class="col introduction">
-        <h4 i18n>Welcome to Ghostfolio</h4>
+        <h4 class="h6" i18n>Welcome to Ghostfolio</h4>
         <p i18n>Ready to take control of your personal finances?</p>
         <ol class="font-weight-bold">
           <li

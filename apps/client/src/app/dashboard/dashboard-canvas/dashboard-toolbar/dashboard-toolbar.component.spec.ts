@@ -1,10 +1,17 @@
 import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
+import { GfModuleRegistryService } from '@ghostfolio/client/dashboard/module-registry.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import {
+  DashboardModule,
+  dashboardModules
+} from '@ghostfolio/common/dashboard';
 import { Filter, InfoItem, User } from '@ghostfolio/common/interfaces';
 import { permissions } from '@ghostfolio/common/permissions';
 import { DateRange } from '@ghostfolio/common/types';
+import { GfAssistantComponent } from '@ghostfolio/ui/assistant/assistant.component';
+import { QuickLinkSearchResultItem } from '@ghostfolio/ui/assistant/interfaces/interfaces';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 
 import { reflectComponentType } from '@angular/core';
@@ -14,27 +21,29 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 // position is load-bearing: this group is evaluated before the relative imports
 // below, and the subject of this spec is one of them.
 import '@angular/localize/init';
-import { Router } from '@angular/router';
+import { By } from '@angular/platform-browser';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 
 import { DashboardModuleType } from '../../enums/dashboard-module-type';
 import { GfDashboardToolbarComponent } from './dashboard-toolbar.component';
 
-// Cuts the one dependency of the bar that this environment cannot load.
+// Cuts the one dependency of the bar that this suite has no use for.
 // `@ionic/angular/standalone` re-exports `@ionic/core`, which ships plain `.js`
-// ES modules rather than `.mjs`, and this project's Jest transform deliberately
-// admits only `.mjs` from `node_modules` - the workspace-wide setting that
-// `libs/ui` shares - so importing the bar, which names `IonIcon` among its own
-// `imports`, would fail this suite before a single test ran. The accommodation
-// belongs here rather than in that global configuration, which every other spec
-// in this project is transformed by.
+// ES modules rather than `.mjs`; both this project's and `libs/ui`'s Jest
+// transforms name the `@ionic` and `@stencil` families explicitly so that it
+// parses, so this stand-in is no longer what makes the bar importable. It is
+// kept deliberately all the same: the bar's glyphs carry no behaviour this
+// suite asserts, and standing them in keeps the whole Stencil runtime - and its
+// custom-element registration - out of a suite about a control bar, while the
+// rendered markup keeps the same shape.
 //
 // A bare class would not do: Angular validates every entry of an `imports`
 // array, so the stand-in is a real standalone component carrying the same
-// `ion-icon` selector, which also keeps the rendered markup identical in shape.
-// The decorator is applied as a function because this factory is hoisted above
-// the file's own imports, so no class declared here would exist yet.
+// `ion-icon` selector. The decorator is applied as a function because this
+// factory is hoisted above the file's own imports, so no class declared here
+// would exist yet.
 jest.mock('@ionic/angular/standalone', () => {
   // Reached through the namespace rather than destructured, so that `Component`
   // is not shadowed in the files that name it for their own stand-ins.
@@ -117,18 +126,27 @@ describe('GfDashboardToolbarComponent', () => {
    * reach either capability would raise a `TypeError` and fail the suite
    * outright, which turns both separations from a claim into a structural
    * property of the harness.
+   *
+   * The two optional search accessors are supplied by - and only by - the group
+   * that mounts the *real* assistant, which issues those reads itself. They are
+   * declared optional rather than required precisely so that the guarantee above
+   * survives: neither names a layout write nor a token exchange, and every other
+   * test in this suite still receives a facade without them.
    */
   let dataServiceMock: {
+    fetchAccounts?: jest.Mock;
     fetchInfo: jest.Mock;
+    fetchPortfolioHoldings?: jest.Mock;
     putUserSetting: jest.Mock;
   };
 
   /**
-   * The assistant's own collaborator, supplied because the assistant is built
-   * with the view that declares it. Left empty on purpose: the assistant reaches
-   * for it only once a search is under way, and no test here starts one.
+   * The assistant's own collaborator, supplied because the assistant is built with
+   * the view that declares it. Left empty by default on purpose: the assistant
+   * reaches for it only once a search is under way, so only the group that runs a
+   * real search fills the accessor in.
    */
-  let adminServiceMock: Record<string, never>;
+  let adminServiceMock: { fetchAdminMarketData?: jest.Mock };
 
   let dashboardIntentServiceMock: { getRevealModuleSubject: jest.Mock };
   let deviceDetectorServiceMock: { getDeviceInfo: jest.Mock };
@@ -159,6 +177,7 @@ describe('GfDashboardToolbarComponent', () => {
   let stateChangedSubject: BehaviorSubject<{ user: User }>;
 
   let consoleErrorSpy: jest.SpyInstance;
+  let consoleWarnSpy: jest.SpyInstance;
 
   let navigationAttempts: string[];
 
@@ -347,6 +366,18 @@ describe('GfDashboardToolbarComponent', () => {
           provide: ImpersonationStorageService,
           useValue: impersonationStorageServiceMock
         },
+        {
+          provide: ActivatedRoute,
+          // Present only so that the real assistant's result rows can be rendered:
+          // each row carries a link directive, which injects this even when the link it
+          // is given resolves to nothing - and for a quick link it resolves to nothing
+          // by design. Deliberately empty, because a member of it being read would mean
+          // an address was being composed after all, and the negative-surface tests
+          // below would then be asserting against a stub that had quietly enabled the
+          // thing they forbid. The `Router` above stays a recording stub for the same
+          // reason.
+          useValue: {} as ActivatedRoute
+        },
         { provide: LayoutService, useValue: layoutServiceMock },
         { provide: Router, useValue: routerMock },
         { provide: UserService, useValue: userServiceMock }
@@ -510,6 +541,286 @@ describe('GfDashboardToolbarComponent', () => {
     });
   });
 
+  /**
+   * The producer and the consumer of the module-selection contract, pinned to each
+   * other.
+   *
+   * Every other test in this group hands {@link GfDashboardToolbarComponent.onSelectModule}
+   * a discriminator written by hand, and the assistant that supplies one in production
+   * is replaced by {@link createAssistantStub} - both correct in isolation, and
+   * together they leave the seam between them unchecked. The assistant lives in
+   * `libs/ui`, which may not import this application, so nothing in the compiler
+   * relates what it emits to what is resolved here; its result contract changed from
+   * an in-application address to a module discriminator, and a later divergence
+   * between the two sides would keep both suites green.
+   *
+   * These tests therefore use the **real** `GfAssistantComponent` that the bar's own
+   * template declares, drive its **real** search pipeline over the **real** shared
+   * module metadata, and follow the emission through the template binding the bar
+   * actually writes - `(moduleSelected)="onSelectModule($event)"` - to the intent bus,
+   * and then into the **real** `GfModuleRegistryService`. That last hop is the half
+   * that cannot be asserted from inside `libs/ui`, and it is what makes an emitted
+   * discriminator provably resolvable rather than merely well-formed.
+   */
+  describe('the assistant contract, end to end', () => {
+    /** The real debounce window in the assistant's own search pipeline. */
+    const SEARCH_DEBOUNCE = 300;
+
+    /** The real preselection delay, so the settled results are what get read. */
+    const PRESELECTION_DELAY = 100;
+
+    /** Angular's advisory that a `@for` block tracks its items by identity. */
+    const TRACK_BY_IDENTITY_ADVISORY = 'NG0956';
+
+    let assistant: GfAssistantComponent;
+    let received: DashboardModuleType[];
+    let registry: GfModuleRegistryService;
+
+    /**
+     * Collected rather than silenced. Rendering the assistant's real results makes
+     * Angular advise that its template tracks rows by identity, which it genuinely
+     * does - the search pipeline builds fresh result objects on every pass - so the
+     * advisory belongs to that template and not to this suite. Recognising it and
+     * asserting that nothing else was warned keeps the run's log meaningful, which a
+     * blanket spy on `console.warn` would destroy.
+     */
+    let trackingAdvisories: string[];
+
+    /** Anything warned that was not that advisory; asserted empty and forwarded. */
+    let otherWarnings: unknown[][];
+
+    /**
+     * Brings up the real assistant the way the bar does, and hands back the instance
+     * the bar itself holds rather than one this spec constructed.
+     *
+     * The panel has to be opened first: the assistant is projected into a `mat-menu`,
+     * whose content is stamped from a template only once the menu is shown, so before
+     * that there is no instance to reach - not through the bar's own view query and not
+     * through the fixture's DOM, since the panel renders into an overlay outside it.
+     * Opening it through the real trigger is also what makes `onOpenAssistant()` - the
+     * handler the panel's `menuOpened` binding calls - operate on a real collaborator
+     * instead of a stand-in.
+     */
+    const renderWithRealAssistant = () => {
+      renderWithUser();
+
+      component.assistentMenuTriggerElement.openMenu();
+
+      fixture.detectChanges();
+
+      const projected = fixture.debugElement.query(
+        By.directive(GfAssistantComponent)
+      );
+
+      assistant = component.assistantElement;
+
+      // Verified rather than assumed, on both counts. This is the one place in the
+      // workspace where the bar's binding and the assistant's output are checked
+      // against each other, so it would be worthless against a stand-in substituted by
+      // mistake - hence the instance check - and worthless again if the bar's view
+      // reference pointed at some other instance than the one its template declared,
+      // hence the identity check.
+      expect(assistant).toBeInstanceOf(GfAssistantComponent);
+      expect(assistant).toBe(projected.componentInstance);
+
+      component.onOpenAssistant();
+
+      jest.advanceTimersByTime(PRESELECTION_DELAY);
+
+      fixture.detectChanges();
+    };
+
+    /** Runs a real search through the assistant's real pipeline and settles it. */
+    const search = (searchTerm: string) => {
+      assistant.searchFormControl.setValue(searchTerm);
+
+      jest.advanceTimersByTime(SEARCH_DEBOUNCE);
+
+      fixture.detectChanges();
+
+      jest.advanceTimersByTime(PRESELECTION_DELAY);
+
+      fixture.detectChanges();
+    };
+
+    beforeEach(() => {
+      // Only the searches the real assistant issues need answering; the bar itself
+      // reaches neither accessor. Added to the existing doubles rather than to new
+      // ones so that every other test in this suite keeps the collaborators it had.
+      adminServiceMock.fetchAdminMarketData = jest
+        .fn()
+        .mockReturnValue(of({ count: 0, marketData: [] }));
+      dataServiceMock.fetchAccounts = jest
+        .fn()
+        .mockReturnValue(of({ accounts: [] }));
+      dataServiceMock.fetchPortfolioHoldings = jest
+        .fn()
+        .mockReturnValue(of({ holdings: [] }));
+
+      received = [];
+      revealModuleSubject.subscribe((intent) => received.push(intent));
+
+      trackingAdvisories = [];
+      otherWarnings = [];
+
+      // Asserted on the expression rather than on the binding, so the stored value is
+      // typed too: `Function.prototype.bind` widens its result to `any`.
+      const reportWarning = console.warn.bind(console) as (
+        ...args: unknown[]
+      ) => void;
+
+      consoleWarnSpy = jest
+        .spyOn(console, 'warn')
+        .mockImplementation((...args: unknown[]) => {
+          const [detail] = args;
+          const report = typeof detail === 'string' ? detail : '';
+
+          if (report.includes(TRACK_BY_IDENTITY_ADVISORY)) {
+            trackingAdvisories.push(report);
+
+            return;
+          }
+
+          otherWarnings.push(args);
+
+          reportWarning(...args);
+        });
+
+      registry = TestBed.inject(GfModuleRegistryService);
+
+      // Installed after the bar has been built, so only the assistant's own debounce
+      // and preselection are driven by hand.
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      // Dismissed before the clock is handed back, so the panel's own teardown runs
+      // against the timers this group installed rather than leaving an open overlay
+      // behind for the next test to find.
+      component.assistentMenuTriggerElement?.closeMenu();
+
+      fixture.detectChanges();
+
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('reveals the module a real assistant emission names', () => {
+      renderWithRealAssistant();
+
+      search('Watchlist');
+
+      const quickLinks = assistant.searchResults
+        .quickLinks as QuickLinkSearchResultItem[];
+
+      expect(quickLinks.length).toBeGreaterThan(0);
+
+      // Exactly what the rendered row does when it is activated: the row emits its
+      // item's discriminator, the assistant republishes it, and the bar's template
+      // binding delivers it here.
+      assistant.onSelectModule(quickLinks[0].moduleType);
+
+      expect(received).toEqual([DashboardModuleType.WATCHLIST]);
+    });
+
+    it('resolves every discriminator a real assistant emits through the registry', () => {
+      renderWithRealAssistant();
+
+      const emitted: DashboardModuleType[] = [];
+
+      // Every distinct display name in the shared map, so the assertion covers the
+      // whole vocabulary the assistant can offer this viewer rather than whichever
+      // entries one fuzzy search returned. Distinct, because the assistant discards a
+      // term that has not changed and would settle on nothing for a repeat.
+      const searchTerms = [
+        ...new Set(
+          Object.values<DashboardModule>(dashboardModules).map(({ name }) => {
+            return name;
+          })
+        )
+      ];
+
+      for (const searchTerm of searchTerms) {
+        search(searchTerm);
+
+        for (const quickLink of assistant.searchResults
+          .quickLinks as QuickLinkSearchResultItem[]) {
+          assistant.onSelectModule(quickLink.moduleType);
+
+          emitted.push(quickLink.moduleType);
+        }
+      }
+
+      expect(emitted.length).toBeGreaterThan(0);
+      expect(received).toEqual(emitted);
+
+      // The seam this suite exists for: a discriminator that the registry cannot
+      // resolve would leave the canvas nothing to reveal, and the row would look live
+      // while doing nothing.
+      for (const moduleType of received) {
+        expect(registry.get(moduleType)).toBeDefined();
+      }
+    });
+
+    it('emits a module discriminator rather than an in-application address', () => {
+      renderWithRealAssistant();
+
+      search('Holdings');
+
+      const quickLinks = assistant.searchResults
+        .quickLinks as QuickLinkSearchResultItem[];
+
+      expect(quickLinks.length).toBeGreaterThan(0);
+
+      for (const quickLink of quickLinks) {
+        // The shape of the emission is the contract that changed. An address would be
+        // an array of segments, and the bar would forward it onto the bus unresolved -
+        // which is precisely the regression that would pass both sides' own suites.
+        expect(typeof quickLink.moduleType).toBe('string');
+        expect(Array.isArray(quickLink.moduleType)).toBe(false);
+        expect(quickLink).not.toHaveProperty('routerLink');
+      }
+    });
+
+    it('offers a real viewer no module the registry gates away from them', () => {
+      // The bar's default viewer holds no administration permission, so the gated
+      // modules must not be offered at all. Deleting the page chrome removed the only
+      // client-side admin gate, which is what makes this filter load-bearing rather
+      // than cosmetic.
+      renderWithRealAssistant();
+
+      search('Users');
+
+      const emittedModuleTypes = (
+        assistant.searchResults.quickLinks as QuickLinkSearchResultItem[]
+      ).map(({ moduleType }) => {
+        return moduleType;
+      });
+
+      expect(emittedModuleTypes).not.toContain(DashboardModuleType.ADMIN_USERS);
+      expect(received).toEqual([]);
+    });
+
+    it('reports no diagnostic beyond the assistant own identity tracking', () => {
+      renderWithRealAssistant();
+
+      search('Holdings');
+
+      // A second settled search is what provokes the advisory: the rows are re-created
+      // only when the collection is replaced, which is exactly what the pipeline does.
+      search('Holding');
+
+      // The advisory is expected, and asserting that it is the *only* thing warned is
+      // what makes it evidence rather than noise. Anything else appearing here would be
+      // a real diagnostic that mounting the real assistant had introduced, and this
+      // group must not hide one behind a blanket spy.
+      expect(trackingAdvisories.length).toBeGreaterThan(0);
+      expect(otherWarnings).toEqual([]);
+    });
+  });
+
   describe('onDateRangeChange', () => {
     it('persists the selected range', () => {
       component.onDateRangeChange('1y' as DateRange);
@@ -525,6 +836,138 @@ describe('GfDashboardToolbarComponent', () => {
 
       expect(userServiceMock.get).toHaveBeenCalledTimes(1);
       expect(userServiceMock.get).toHaveBeenCalledWith(true);
+    });
+  });
+
+  /**
+   * The appearance control. It is the one capability the deleted page chrome never
+   * had - the appearance could only be reached through the account-settings screen -
+   * so it is new surface rather than rehomed surface, and this is what pins it.
+   */
+  describe('the appearance control', () => {
+    const themeButton = () => {
+      return host().querySelector<HTMLButtonElement>(
+        `button[aria-label="${component.darkAppearanceLabel}"], button[aria-label="${component.lightAppearanceLabel}"]`
+      );
+    };
+
+    afterEach(() => {
+      document.body.classList.remove('theme-dark');
+    });
+
+    it('offers the control to a resolved viewer', () => {
+      renderWithUser();
+
+      expect(themeButton()).toBeTruthy();
+    });
+
+    // The bar renders nothing at all without a viewer, and persisting an appearance
+    // needs one, so the control goes with it.
+    it('offers nothing while no viewer is resolved', () => {
+      stateChangedSubject.next({ user: null });
+
+      fixture.detectChanges();
+
+      expect(themeButton()).toBeNull();
+    });
+
+    // Read from the class the shell maintains, because that is the effective
+    // appearance: `colorScheme` is allowed to be unset, and unset means "follow the
+    // operating system", which only the shell resolves.
+    it('reads the appearance actually painted rather than the stored setting', () => {
+      document.body.classList.add('theme-dark');
+
+      renderWithUser();
+
+      expect(component.isDarkTheme).toBe(true);
+
+      document.body.classList.remove('theme-dark');
+
+      renderWithUser();
+
+      expect(component.isDarkTheme).toBe(false);
+    });
+
+    // Named for the ACTION, not the state. A control named after its state leaves a
+    // screen-reader user unable to tell whether it reports where they are or where
+    // the press will take them.
+    it('names the direction the press will take, in both directions', () => {
+      renderWithUser();
+
+      expect(themeButton().getAttribute('aria-label')).toBe(
+        'Switch to dark appearance'
+      );
+      expect(themeButton().getAttribute('title')).toBe(
+        'Switch to dark appearance'
+      );
+
+      document.body.classList.add('theme-dark');
+
+      renderWithUser();
+
+      expect(themeButton().getAttribute('aria-label')).toBe(
+        'Switch to light appearance'
+      );
+    });
+
+    it('shows the glyph of the appearance it switches to', () => {
+      // Read as a PROPERTY: `ion-icon` is matched by `CUSTOM_ELEMENTS_SCHEMA`, so
+      // Angular assigns `[name]` to the element instead of writing an attribute, and
+      // nothing defines the custom element here to reflect it back.
+      const glyphName = () => {
+        return (
+          themeButton().querySelector('ion-icon') as unknown as { name: string }
+        ).name;
+      };
+
+      renderWithUser();
+
+      expect(glyphName()).toBe('moon-outline');
+
+      document.body.classList.add('theme-dark');
+
+      renderWithUser();
+
+      expect(glyphName()).toBe('sunny-outline');
+    });
+
+    // Written through the viewer's own setting - the same one the account-settings
+    // appearance control writes - so the two can never disagree and the choice
+    // survives a reload. This is what makes it a control for an existing preference
+    // rather than a second, competing theme mechanism.
+    it('stores the opposite appearance as the viewer own setting', () => {
+      renderWithUser();
+
+      themeButton().click();
+
+      expect(dataServiceMock.putUserSetting).toHaveBeenCalledTimes(1);
+      expect(dataServiceMock.putUserSetting).toHaveBeenCalledWith({
+        colorScheme: 'DARK'
+      });
+
+      dataServiceMock.putUserSetting.mockClear();
+      document.body.classList.add('theme-dark');
+
+      renderWithUser();
+
+      themeButton().click();
+
+      expect(dataServiceMock.putUserSetting).toHaveBeenCalledWith({
+        colorScheme: 'LIGHT'
+      });
+    });
+
+    // Applying the theme stays the shell's job; re-reading the viewer is what hands
+    // it the new value. Nothing here adds or removes a class.
+    it('forces a re-read of the viewer and touches no class itself', () => {
+      renderWithUser();
+
+      const classesBefore = document.body.className;
+
+      component.onToggleTheme();
+
+      expect(userServiceMock.get).toHaveBeenCalledWith(true);
+      expect(document.body.className).toBe(classesBefore);
     });
   });
 

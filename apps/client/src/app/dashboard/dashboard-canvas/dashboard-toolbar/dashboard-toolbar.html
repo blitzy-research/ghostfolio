@@ -3,20 +3,17 @@
   `hasFilters`, `hasImpersonationId`, `impersonationId`,
   `hasPermissionForSubscription`, `hasPermissionToAccessAdminControl`,
   `hasPermissionToAccessAssistant`, `hasPermissionToChangeDateRange`,
-  `hasPermissionToChangeFilters`, `hasPromotion`, `isMenuOpen`, `pricingUrl` and
-  `assistantElement`, plus the handlers `closeAssistant()`,
+  `hasPermissionToChangeFilters`, `hasPromotion`, `isDarkTheme`, `isMenuOpen`,
+  `isThemeUpdating`, `pricingUrl`, `themeToggleLabel` and `assistantElement`,
+  plus the handlers `closeAssistant()`,
   `impersonateAccount()`, `onDateRangeChange()`, `onFiltersChanged()`,
   `onLogoClick()`, `onMenuClosed()`, `onMenuOpened()`, `onOpenAssistant()`,
-  `onSelectModule()` and `onSignOut()`. It imports GfAssistantComponent,
+  `onSelectModule()`, `onSignOut()` and `onToggleTheme()`. It imports
+  GfAssistantComponent,
   GfLogoComponent, GfPremiumIndicatorComponent, IonIcon, MatBadgeModule,
   MatButtonModule, MatMenuModule and MatToolbarModule alongside
-  CUSTOM_ELEMENTS_SCHEMA, and registers exactly six glyphs: closeOutline,
-  menuOutline, optionsOutline, personCircleOutline, radioButtonOffOutline and
-  radioButtonOnOutline. Two glyphs the former page chrome named are absent by
-  design - the duplicate that an adjacent binding already overrode on the
-  identity rows, and the source-repository mark that only the signed-out branch
-  ever showed - so the registration list stays exactly as long as this file
-  needs it.
+  CUSTOM_ELEMENTS_SCHEMA, and registers the menu, identity, assistant and
+  light/dark appearance glyphs this template renders.
 
   This is a control surface, not a way of getting somewhere. The application
   resolves to one canvas, so each capability rescued from the deleted page
@@ -49,12 +46,19 @@
   @if (user) {
     <!--
       A button rather than a link, because activating the mark reloads the
-      content in place instead of going anywhere. It needs no label of its own:
-      the logo renders the product name as text, so it already has a spoken
-      name, and adding a second one would leave what is seen and what is heard
-      disagreeing.
+      complete canvas in place instead of going anywhere. Its explicit action
+      label tells sighted and non-sighted viewers that the product mark is a
+      control rather than a passive brand image.
     -->
-    <button matButton (click)="onLogoClick()">
+    <button
+      aria-label="Refresh dashboard"
+      class="gf-dashboard-refresh"
+      i18n-aria-label
+      i18n-title
+      matButton
+      title="Refresh dashboard"
+      (click)="onLogoClick()"
+    >
       <gf-logo class="px-2" />
     </button>
     <span class="gf-spacer"></span>
@@ -121,6 +125,23 @@
           </mat-menu>
         </li>
       }
+      <li class="d-inline-flex list-inline-item">
+        <button
+          class="gf-theme-toggle h-100 no-min-width px-2"
+          matButton
+          type="button"
+          [attr.aria-label]="themeToggleLabel"
+          [attr.aria-pressed]="isDarkTheme"
+          [attr.title]="themeToggleLabel"
+          [disabled]="isThemeUpdating"
+          (click)="onToggleTheme()"
+        >
+          <ion-icon
+            aria-hidden="true"
+            [name]="isDarkTheme ? 'sunny-outline' : 'moon-outline'"
+          />
+        </button>
+      </li>
       @if (hasPromotion) {
         <li class="d-inline-flex list-inline-item">
           <!--
@@ -139,9 +160,11 @@
             aria-label="Upgrade Plan"
             class="gf-promotion h-100 no-min-width px-2"
             i18n-aria-label
+            i18n-title
             mat-button
             rel="noopener noreferrer"
             target="_blank"
+            title="Upgrade Plan"
             [href]="pricingUrl"
           >
             <span aria-hidden="true" class="gf-promotion-mark">%</span>
@@ -149,27 +172,77 @@
         </li>
       }
       <li class="list-inline-item">
+        <!--
+          Switches the appearance between light and dark.
+
+          It writes the viewer's own `colorScheme` setting, which is the same
+          setting the account-settings appearance control writes, so the two can
+          never disagree and the choice outlives the session. Applying it remains
+          the shell's job.
+
+          The name states the ACTION rather than the current state - "Switch to
+          dark appearance" rather than "Dark" - because a control named after its
+          state leaves a screen-reader user unable to tell whether it reports
+          where they are or where the press will take them. The glyph is hidden
+          from assistive technology for the same reason the other toolbar glyphs
+          are: the button is already named, so announcing the icon would repeat it.
+
+          It carries no permission gate on purpose. Changing one's own appearance
+          needs no entitlement, and the whole bar already renders only for a
+          resolved viewer, which is the only precondition persisting it has.
+        -->
         <button
-          aria-label="Account"
           class="no-min-width px-1"
-          i18n-aria-label
           mat-button
+          type="button"
+          [attr.aria-label]="
+            isDarkTheme ? lightAppearanceLabel : darkAppearanceLabel
+          "
+          [title]="isDarkTheme ? lightAppearanceLabel : darkAppearanceLabel"
+          (click)="onToggleTheme()"
+        >
+          <ion-icon
+            aria-hidden="true"
+            size="large"
+            [name]="isDarkTheme ? 'sunny-outline' : 'moon-outline'"
+          />
+        </button>
+      </li>
+      <li class="list-inline-item">
+        <button
+          class="no-min-width px-1"
+          mat-button
+          [attr.aria-label]="
+            hasImpersonationId ? impersonationTooltip : accountLabel
+          "
+          [attr.title]="
+            hasImpersonationId ? impersonationTooltip : accountLabel
+          "
           [matMenuTriggerFor]="accountMenu"
           (menuClosed)="onMenuClosed()"
           (menuOpened)="onMenuOpened()"
         >
-          <ion-icon
-            aria-hidden="true"
-            class="d-none d-sm-block"
-            name="person-circle-outline"
-            size="large"
-          />
-          <ion-icon
-            aria-hidden="true"
-            class="d-block d-sm-none"
-            size="large"
-            [name]="isMenuOpen ? 'close-outline' : 'menu-outline'"
-          />
+          @if (hasImpersonationId) {
+            <span
+              class="align-items-center d-flex gf-impersonation-indicator px-2"
+              role="status"
+            >
+              {{ impersonationStatusLabel }}
+            </span>
+          } @else {
+            <ion-icon
+              aria-hidden="true"
+              class="d-none d-sm-block"
+              name="person-circle-outline"
+              size="large"
+            />
+            <ion-icon
+              aria-hidden="true"
+              class="d-block d-sm-none"
+              size="large"
+              [name]="isMenuOpen ? 'close-outline' : 'menu-outline'"
+            />
+          }
         </button>
         <mat-menu #accountMenu="matMenu" xPosition="before">
           @if (

@@ -1,5 +1,5 @@
 import { SettingsStorageService } from '@ghostfolio/client/services/settings-storage.service';
-import { AuthDeviceDto } from '@ghostfolio/common/dtos';
+import type { AuthDeviceDto } from '@ghostfolio/common/dtos';
 import {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON
@@ -7,11 +7,7 @@ import {
 
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import {
-  startAuthentication,
-  startRegistration
-} from '@simplewebauthn/browser';
-import { of } from 'rxjs';
+import { from, of } from 'rxjs';
 import { catchError, switchMap, tap } from 'rxjs/operators';
 
 @Injectable({
@@ -19,6 +15,25 @@ import { catchError, switchMap, tap } from 'rxjs/operators';
 })
 export class WebAuthnService {
   private static readonly WEB_AUTH_N_DEVICE_ID = 'WEB_AUTH_N_DEVICE_ID';
+
+  /**
+   * Loads the WebAuthn browser client on first use instead of at start-up.
+   *
+   * This service is reachable from the viewer store, which every page load
+   * resolves, so a static import placed the whole credential library in the
+   * initial bundle for every visitor - including the overwhelming majority who
+   * never enrol a device. Since the route table collapsed onto a single canvas
+   * there is no longer a route boundary to keep it out, so the boundary is
+   * declared here.
+   *
+   * The promise is memoised, so the module is fetched at most once per session
+   * and a second enrolment attempt resolves immediately. `isSupported()` and
+   * `isEnabled()` deliberately do NOT touch it: both answer from the platform and
+   * from local settings, and `signOut()` calls `isEnabled()` on every sign-out.
+   */
+  private static webAuthnBrowser: Promise<
+    typeof import('@simplewebauthn/browser')
+  >;
 
   public constructor(
     private http: HttpClient,
@@ -45,7 +60,11 @@ export class WebAuthnService {
           return of(null);
         }),
         switchMap((attOps) => {
-          return startRegistration({ optionsJSON: attOps });
+          return WebAuthnService.loadWebAuthnBrowser().pipe(
+            switchMap(({ startRegistration }) => {
+              return startRegistration({ optionsJSON: attOps });
+            })
+          );
         }),
         switchMap((credential) => {
           return this.http.post<AuthDeviceDto>(
@@ -90,7 +109,11 @@ export class WebAuthnService {
       )
       .pipe(
         switchMap((optionsJSON) => {
-          return startAuthentication({ optionsJSON });
+          return WebAuthnService.loadWebAuthnBrowser().pipe(
+            switchMap(({ startAuthentication }) => {
+              return startAuthentication({ optionsJSON });
+            })
+          );
         }),
         switchMap((credential) => {
           return this.http.post<{ authToken: string }>(
@@ -102,6 +125,16 @@ export class WebAuthnService {
           );
         })
       );
+  }
+
+  /**
+   * @returns The WebAuthn browser client, fetched on first call and reused
+   * afterwards.
+   */
+  private static loadWebAuthnBrowser() {
+    WebAuthnService.webAuthnBrowser ??= import('@simplewebauthn/browser');
+
+    return from(WebAuthnService.webAuthnBrowser);
   }
 
   private getDeviceId() {

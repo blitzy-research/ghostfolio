@@ -19,7 +19,13 @@
   [dataSource]="dataSource"
 >
   <ng-container matColumnDef="name">
-    <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header="name">
+    <th
+      *matHeaderCellDef
+      class="px-1"
+      mat-header-cell
+      mat-sort-header="name"
+      scope="col"
+    >
       <ng-container i18n>Name</ng-container>
     </th>
     <td *matCellDef="let element" class="px-1" mat-cell>
@@ -28,7 +34,13 @@
   </ng-container>
 
   <ng-container matColumnDef="userId">
-    <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header="userId">
+    <th
+      *matHeaderCellDef
+      class="px-1"
+      mat-header-cell
+      mat-sort-header="userId"
+      scope="col"
+    >
       <ng-container i18n>User</ng-container>
     </th>
     <td *matCellDef="let element" class="px-1" mat-cell>
@@ -42,6 +54,7 @@
       class="justify-content-end px-1"
       mat-header-cell
       mat-sort-header="activityCount"
+      scope="col"
     >
       <ng-container i18n>Activities</ng-container>
     </th>
@@ -55,20 +68,24 @@
   </ng-container>
 
   <ng-container matColumnDef="actions" stickyEnd>
-    <th *matHeaderCellDef class="px-1 text-center" mat-header-cell></th>
+    <th *matHeaderCellDef class="px-1 text-center" mat-header-cell scope="col">
+      <span class="sr-only" i18n>Actions</span>
+    </th>
     <td *matCellDef="let element" class="px-1 text-center" mat-cell>
       <button
+        aria-label="Actions for this tag"
         class="mx-1 no-min-width px-2"
+        i18n-aria-label
         mat-button
         [matMenuTriggerFor]="tagMenu"
         (click)="$event.stopPropagation()"
       >
-        <ion-icon name="ellipsis-horizontal" />
+        <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
       </button>
       <mat-menu #tagMenu="matMenu" xPosition="before">
         <button mat-menu-item (click)="onUpdateTag(element)">
           <span class="align-items-center d-flex">
-            <ion-icon class="mr-2" name="create-outline" />
+            <ion-icon aria-hidden="true" class="mr-2" name="create-outline" />
             <span><ng-container i18n>Edit</ng-container>...</span>
           </span>
         </button>
@@ -79,7 +96,7 @@
           (click)="onDeleteTag(element.id)"
         >
           <span class="align-items-center d-flex">
-            <ion-icon class="mr-2" name="trash-outline" />
+            <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
             <span i18n>Delete</span>
           </span>
         </button>

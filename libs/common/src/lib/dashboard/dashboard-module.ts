@@ -125,9 +125,23 @@ export interface DashboardModule {
  * entry per module type.
  */
 export const dashboardModules = {
+  // Seven rows rather than six because this module's height requirement is
+  // deterministic, so a default can actually satisfy it. Its chart is pinned to a
+  // 16:9 box capped at 50rem, which at this width is exactly 450px, and the
+  // performance figures below it add 4px of margin plus 115px - 569px in total,
+  // against the 479px of body six rows leaves. The result was that the headline
+  // value and the performance percentage sat entirely below the fold on a
+  // freshly added module. Seven rows give 620px of cell and 569px of body: an
+  // exact fit, with nothing hidden and no scrolling required.
+  //
+  // The data-driven modules are deliberately NOT treated this way. What a
+  // holdings table or an admin list needs depends on the viewer's own data - the
+  // users table measured 2,334px, which no sane default can accommodate - so
+  // there the honest answer is the scroll hint on the module chrome, not a taller
+  // default that would be wrong for the next viewer.
   [DashboardModuleType.PORTFOLIO_OVERVIEW]: {
     defaultItemCols: 8,
-    defaultItemRows: 6,
+    defaultItemRows: 7,
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.PORTFOLIO_OVERVIEW,
@@ -150,10 +164,10 @@ export const dashboardModules = {
     name: $localize`Summary`
   },
   [DashboardModuleType.MARKETS]: {
-    defaultItemCols: 4,
+    defaultItemCols: 6,
     defaultItemRows: 4,
-    minItemCols: 3,
-    minItemRows: 3,
+    minItemCols: 6,
+    minItemRows: 4,
     moduleType: DashboardModuleType.MARKETS,
     name: $localize`Markets`
   },
@@ -163,7 +177,13 @@ export const dashboardModules = {
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.MARKETS_PREMIUM,
-    name: $localize`Markets`,
+    // Qualified so it cannot be confused with the ungated markets module above,
+    // which a fully entitled viewer sees in the same catalog. The qualifier names
+    // what the permission on the next line actually grants, and the module's own
+    // word stays first so a search for it still finds both. Composed from two
+    // messages the application already translates - the same technique the shared
+    // route registry uses - so no locale is left with a new untranslated string.
+    name: $localize`Markets` + ' · ' + $localize`Market Data`,
     permission: permissions.readMarketDataOfMarkets
   },
   [DashboardModuleType.WATCHLIST]: {
@@ -201,8 +221,8 @@ export const dashboardModules = {
   [DashboardModuleType.FIRE]: {
     defaultItemCols: 8,
     defaultItemRows: 8,
-    minItemCols: 4,
-    minItemRows: 5,
+    minItemCols: 6,
+    minItemRows: 6,
     moduleType: DashboardModuleType.FIRE,
     // Proper noun; intentionally not localized.
     name: 'FIRE'
@@ -231,13 +251,17 @@ export const dashboardModules = {
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.ACCOUNT_SETTINGS,
-    name: $localize`Settings`
+    // Qualified because the admin module of the same purpose was also called
+    // just `Settings`, and an administrator sees both rows in one list. What
+    // used to disambiguate them was the URL they sat behind; on a single canvas
+    // the name is all there is, so it has to carry the distinction itself.
+    name: $localize`Account settings`
   },
   [DashboardModuleType.ACCOUNT_MEMBERSHIP]: {
     defaultItemCols: 4,
-    defaultItemRows: 4,
-    minItemCols: 3,
-    minItemRows: 3,
+    defaultItemRows: 5,
+    minItemCols: 4,
+    minItemRows: 5,
     moduleType: DashboardModuleType.ACCOUNT_MEMBERSHIP,
     name: $localize`Membership`
   },
@@ -283,7 +307,12 @@ export const dashboardModules = {
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.ADMIN_SETTINGS,
-    name: $localize`Settings`,
+    // Qualified for the same reason as the markets module above: an administrator
+    // also holds the account settings module, and two rows reading `Settings`
+    // cannot be told apart. The qualifier is the name this family already carries
+    // on its overview module, and both halves are messages the application
+    // already translates.
+    name: $localize`Admin Control` + ' · ' + $localize`Settings`,
     permission: permissions.accessAdminControl
   },
   [DashboardModuleType.ADMIN_USERS]: {

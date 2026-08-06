@@ -11,20 +11,51 @@
   key handling of our own. The card cannot be that element - it renders a div -
   so the button carries the focus, the drag and the activation, and the card
   keeps drawing every state around it.
+
+  The button is a Material button rather than a bare one, and that is a
+  correctness fix rather than a flourish: an unstyled `button` paints the user
+  agent's own control chrome - an opaque grey face, a 2 px outset border and
+  square corners - straight over the card's tokenised surface, which both looks
+  broken and violates the design-system rule that a library component is used
+  wherever one exists. `matButton` resolves its own surface, shape, typography
+  and state layer from Material's tokens, so the card supplies the container and
+  the button supplies the control.
 -->
-<mat-card appearance="outlined" [class.is-dragging]="isDragging">
+<mat-card
+  appearance="outlined"
+  [class.is-dragging]="isDragging"
+  [class.is-placed]="isPlaced"
+  [class.is-unavailable]="isUnavailable"
+>
   <!--
     The accessible name is composed in the class rather than declared here,
     because it interpolates the module name and Angular cannot localize a bound
     attribute - `i18n-aria-label` only applies to a static one.
+
+    `tabindex` is bound rather than fixed at -1. The rows share ONE tab stop
+    between them - the roving pattern the parent's key manager drives - and that
+    pattern only works if exactly one row is reachable by Tab at a time. Fixing
+    every row at -1 removed the tab stop altogether, which left the whole result
+    list unreachable from the keyboard: Tab went from the search field straight
+    past every module.
+
+    It is bound as the `tabIndex` PROPERTY, not as `[attr.tabindex]`. That is the
+    canonical form for this one attribute - Angular's own property-name mapping
+    rewrites `tabindex` to `tabIndex` - and it is the form that works: the
+    attribute binding was measured setting nothing at all on this element, while
+    the sibling `[attr.aria-label]` bound normally. The property also reflects
+    back into the content attribute, so both the focus order the browser computes
+    and the attribute assistive technology reads end up correct.
   -->
   <button
     #row
-    class="align-items-center d-flex px-3 py-2 text-left w-100"
+    class="align-items-center d-flex justify-content-start px-3 py-2 text-left w-100"
     draggable="true"
-    tabindex="-1"
+    matButton
     type="button"
+    [attr.aria-disabled]="isUnavailable ? 'true' : null"
     [attr.aria-label]="ariaLabel"
+    [tabIndex]="isTabbable ? 0 : -1"
     (blur)="removeFocus()"
     (click)="onClick()"
     (dragend)="onDragEnd()"
@@ -32,5 +63,30 @@
     (focus)="onFocus()"
   >
     <span class="text-truncate">{{ definition.name }}</span>
+
+    <!--
+      Tells the viewer this module is already on their canvas, so a row whose
+      click reveals the existing module rather than adding a second one no longer
+      looks identical to one that adds. Hidden from assistive technology because
+      the button's own name already carries the same distinction - announcing it
+      twice would be noise - and marked as decorative rather than removed from
+      the flow so the visual and the spoken form stay in step.
+    -->
+    @if (isPlaced) {
+      <span aria-hidden="true" class="ml-auto placed-marker pl-2" i18n
+        >Added</span
+      >
+    } @else if (isUnavailable) {
+      <!--
+        Tells the viewer why this row will not add anything: the grid has no room
+        left for this module's footprint. Chained to the placed marker rather than
+        rendered independently so a row can never claim to be both, and hidden
+        from assistive technology for the same reason the placed marker is - the
+        button's own name already carries it, and saying it twice is noise.
+      -->
+      <span aria-hidden="true" class="ml-auto pl-2 unavailable-marker" i18n
+        >No room</span
+      >
+    }
   </button>
 </mat-card>

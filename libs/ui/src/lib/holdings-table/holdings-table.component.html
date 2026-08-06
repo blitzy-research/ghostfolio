@@ -8,7 +8,9 @@
     [dataSource]="dataSource"
   >
     <ng-container matColumnDef="icon" sticky>
-      <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <span class="sr-only" i18n>Logo</span>
+      </th>
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         <gf-entity-logo
           [dataSource]="element.dataSource"
@@ -19,7 +21,13 @@
     </ng-container>
 
     <ng-container matColumnDef="nameWithSymbol">
-      <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header="name">
+      <th
+        *matHeaderCellDef
+        class="px-1"
+        mat-header-cell
+        mat-sort-header="name"
+        scope="col"
+      >
         <ng-container i18n>Name</ng-container>
       </th>
       <td *matCellDef="let element" class="line-height-1 px-1" mat-cell>
@@ -41,6 +49,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>First Activity</ng-container>
       </th>
@@ -65,6 +74,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Quantity</ng-container>
       </th>
@@ -89,6 +99,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Value</ng-container>
       </th>
@@ -113,6 +124,7 @@
         class="justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <span class="d-none d-sm-block" i18n>Allocation</span>
         <span class="d-block d-sm-none" title="Allocation">%</span>
@@ -134,6 +146,7 @@
         class="justify-content-end px-1"
         mat-header-cell
         mat-sort-header="netPerformanceWithCurrencyEffect"
+        scope="col"
       >
         <ng-container i18n>Change</ng-container>
       </th>
@@ -157,6 +170,7 @@
         class="justify-content-end px-1"
         mat-header-cell
         mat-sort-header="netPerformancePercentWithCurrencyEffect"
+        scope="col"
       >
         <span class="d-none d-sm-block" i18n>Performance</span>
         <span class="d-block d-sm-none" title="Performance">±</span>

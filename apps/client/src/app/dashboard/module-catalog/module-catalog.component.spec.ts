@@ -55,10 +55,28 @@ interface DataTransferStub {
 @Component({
   imports: [GfModuleCatalogComponent],
   selector: 'gf-test-module-catalog-host',
-  template: '<gf-module-catalog (moduleAdded)="onModuleAdded($event)" />'
+  template: `<gf-module-catalog
+    [placedModuleTypes]="placedModuleTypes"
+    [unavailableModuleTypes]="unavailableModuleTypes"
+    (moduleAdded)="onModuleAdded($event)"
+  />`
 })
 class GfTestModuleCatalogHostComponent {
   public readonly addedModuleTypes: DashboardModuleType[] = [];
+
+  /**
+   * Stands in for what the canvas passes down: the types currently on the grid.
+   * Empty by default, so every test that does not care about placement sees the
+   * catalog exactly as a viewer with a blank canvas would.
+   */
+  public placedModuleTypes: DashboardModuleType[] = [];
+
+  /**
+   * The other thing the canvas passes down: the types the grid has no room for.
+   * Also empty by default, so a test that does not care about capacity sees the
+   * catalog as a viewer with room to spare would.
+   */
+  public unavailableModuleTypes: DashboardModuleType[] = [];
 
   public onModuleAdded(moduleType: DashboardModuleType) {
     this.addedModuleTypes.push(moduleType);
@@ -813,15 +831,25 @@ describe('GfModuleCatalogComponent', () => {
       expect(focusedRowIndexes()).toEqual([0]);
     });
 
-    it('should scroll the newly focused row into view', () => {
+    // `nearest` and nothing else. Both of the options this used to pass were
+    // reported defects rather than preferences: `center` re-scrolls a row that
+    // is already fully visible, which drags the surrounding viewport on every
+    // arrow press, and `smooth` animates that displacement so the list is still
+    // moving when the next key arrives. `nearest` scrolls only when the row is
+    // actually out of view, which is the whole requirement.
+    it('should scroll a newly focused row into view without displacing the viewport', () => {
       advance();
 
       dispatchKeydown('ArrowDown', DOWN_ARROW);
 
-      expect(scrollIntoViewMock).toHaveBeenCalledWith({
-        behavior: 'smooth',
-        block: 'center'
-      });
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({ block: 'nearest' });
+
+      const [[options]] = scrollIntoViewMock.mock.calls as [
+        [ScrollIntoViewOptions]
+      ];
+
+      expect(options.behavior).toBeUndefined();
+      expect(options.block).not.toBe('center');
     });
 
     it('should step through the rows one at a time', () => {
@@ -908,8 +936,98 @@ describe('GfModuleCatalogComponent', () => {
       expect(row.tagName).toBe('BUTTON');
       expect(row.type).toBe('button');
       expect(row.disabled).toBe(false);
-      expect(row.tabIndex).toBe(-1);
       expect(row.getAttribute('aria-label')).toBe('Add Holdings module');
+    });
+
+    // The rows share exactly one tab stop, which is what makes this a roving
+    // list. Asserted as a whole-list shape rather than per row, because both
+    // ways of getting it wrong are silent: every row at -1 leaves the results
+    // unreachable from the keyboard - the reported defect, where Tab jumped
+    // from the search field straight past every module - while every row at 0
+    // turns one list into twenty-one consecutive tab stops.
+    it('should give the rows a single shared tab stop', () => {
+      advance();
+
+      expect(rowElements().map(({ tabIndex }) => tabIndex)).toEqual([
+        0,
+        ...Array.from({ length: rowElements().length - 1 }, () => -1)
+      ]);
+    });
+
+    // The tab stop follows the roving focus, so returning to the list with Tab
+    // resumes where the arrows left off instead of jumping back to the top.
+    it('should move the shared tab stop onto the row the arrows moved to', () => {
+      advance();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      expect(
+        rowElements().findIndex(({ tabIndex }) => {
+          return tabIndex === 0;
+        })
+      ).toBe(1);
+      expect(
+        rowElements().filter(({ tabIndex }) => {
+          return tabIndex === 0;
+        })
+      ).toHaveLength(1);
+    });
+
+    // Focus arriving from outside the key manager - a Tab into the list, a click,
+    // the browser restoring it when the panel reopens - has to be adopted, or the
+    // next arrow press is measured from "nothing active" and jumps to one end of
+    // the list instead of stepping one row from where the viewer is.
+    it('should step from the row that was tabbed into rather than from the top', () => {
+      advance();
+
+      rowElements()[2].focus();
+      fixture.detectChanges();
+
+      expect(focusedRowIndexes()).toEqual([2]);
+      expect(
+        rowElements().findIndex(({ tabIndex }) => {
+          return tabIndex === 0;
+        })
+      ).toBe(2);
+
+      dispatchKeydown('ArrowUp', UP_ARROW);
+
+      expect(focusedRowIndexes()).toEqual([1]);
+      expect(document.activeElement).toBe(rowElements()[1]);
+    });
+
+    it('should return the tab stop to the first row when the results change', () => {
+      advance();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      expect(
+        rowElements().findIndex(({ tabIndex }) => {
+          return tabIndex === 0;
+        })
+      ).toBe(1);
+
+      // A nomination that outlived its row would point past the end of a narrowed
+      // list and leave the whole panel out of the tab order again.
+      component.searchFormControl.setValue('Holdings');
+      advance();
+
+      expect(rowElements().map(({ tabIndex }) => tabIndex)).toEqual([0]);
+    });
+
+    it('should keep the scrolling results box out of the tab order', () => {
+      advance();
+
+      // A browser makes a scroll container keyboard-focusable on its own unless the
+      // author says otherwise, which put this box in the tab order ahead of the
+      // rows as an unnamed control whose announced name was the run-together
+      // labels of everything inside it.
+      const resultContainer = queryElement('.result-container');
+
+      expect(resultContainer.getAttribute('tabindex')).toBe('-1');
+      expect(resultContainer.getAttribute('role')).toBe('list');
     });
 
     it('should add the row exactly once when its button is activated', () => {
@@ -1029,7 +1147,25 @@ describe('GfModuleCatalogComponent', () => {
         'text/plain',
         DashboardModuleType.HOLDINGS
       );
-      expect(dataTransfer.effectAllowed).toBe('copy');
+    });
+
+    // The single most breakable line in the drag path, and the reason
+    // drag-to-add silently did nothing. A browser dispatches `drop` only where
+    // the effect the SOURCE allows and the effect the TARGET requests intersect,
+    // and the grid engine's own dragover handler unconditionally requests
+    // `move`. A source offering only `copy` therefore intersects with nothing:
+    // the operation resolves to `none`, no drop is ever dispatched, and the
+    // gesture ends in dragend having added no module. Nothing else about it
+    // looks wrong, which is why it is pinned here.
+    it('should allow the move effect the grid engine requests on dragover', () => {
+      advance();
+
+      const dataTransfer = createDataTransferStub();
+
+      dispatchDragStart(rowElements()[0], dataTransfer);
+
+      expect(dataTransfer.effectAllowed).toBe('copyMove');
+      expect(dataTransfer.effectAllowed).toMatch(/move/i);
     });
 
     it('should write the discriminator of the row that is being dragged', () => {
@@ -1085,12 +1221,226 @@ describe('GfModuleCatalogComponent', () => {
     });
   });
 
+  // A row whose click reveals a module already on the canvas used to be
+  // indistinguishable from one that adds a new module, so the same gesture did
+  // two different things with no way to tell which. The distinction is carried
+  // three ways on purpose: a visible marker, a state class for the leading-edge
+  // rule, and - the one that matters most - a different accessible name, since
+  // the visible marker is hidden from assistive technology precisely so the name
+  // is not announced twice.
+  describe('rows for modules already on the canvas', () => {
+    function setPlacedModuleTypes(moduleTypes: DashboardModuleType[]) {
+      host.placedModuleTypes = moduleTypes;
+
+      fixture.detectChanges();
+    }
+
+    it('should mark only the placed rows', () => {
+      advance();
+
+      setPlacedModuleTypes([DashboardModuleType.MARKETS]);
+
+      expect(
+        rowComponents().map(({ isPlaced }) => {
+          return isPlaced;
+        })
+      ).toEqual([false, true, false]);
+      expect(queryElements('.placed-marker')).toHaveLength(1);
+      expect(
+        queryElements('gf-module-catalog-item mat-card.is-placed')
+      ).toHaveLength(1);
+    });
+
+    it('should name the command each row actually performs', () => {
+      advance();
+
+      setPlacedModuleTypes([DashboardModuleType.MARKETS]);
+
+      expect(
+        rowElements().map((row) => {
+          return row.getAttribute('aria-label');
+        })
+      ).toEqual([
+        'Add Holdings module',
+        'Reveal Markets module',
+        'Add Watchlist module'
+      ]);
+    });
+
+    it('should keep the marker out of the accessibility tree', () => {
+      advance();
+
+      setPlacedModuleTypes([DashboardModuleType.MARKETS]);
+
+      // Decorative rather than removed from the flow: the row's own name already
+      // draws the distinction, so announcing it again would only be noise.
+      expect(queryElement('.placed-marker').getAttribute('aria-hidden')).toBe(
+        'true'
+      );
+    });
+
+    it('should mark no row when the canvas is empty', () => {
+      advance();
+
+      expect(
+        rowComponents().every(({ isPlaced }) => {
+          return !isPlaced;
+        })
+      ).toBe(true);
+      expect(queryElements('.placed-marker')).toHaveLength(0);
+    });
+
+    // Placement is presentation here and nothing more. A placed row stays fully
+    // actionable, because its click is what reveals the module already on the
+    // canvas - disabling it would remove the only way to do that.
+    it('should leave a placed row actionable', () => {
+      advance();
+
+      setPlacedModuleTypes([DashboardModuleType.HOLDINGS]);
+
+      const [row] = rowElements();
+
+      expect(row.disabled).toBe(false);
+
+      row.click();
+
+      expect(host.addedModuleTypes).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+  });
+
+  /**
+   * The grid is bounded, so a module can be unplaced and still have nowhere to go.
+   * A row in that state must say so, because otherwise it looks exactly like a row
+   * that would work and its click appears to do nothing at all.
+   */
+  describe('rows the canvas has no room for', () => {
+    function setUnavailableModuleTypes(moduleTypes: DashboardModuleType[]) {
+      host.unavailableModuleTypes = moduleTypes;
+
+      fixture.detectChanges();
+    }
+
+    it('should mark only the rows with no room', () => {
+      advance();
+
+      setUnavailableModuleTypes([DashboardModuleType.WATCHLIST]);
+
+      expect(
+        rowComponents().map(({ isUnavailable }) => {
+          return isUnavailable;
+        })
+      ).toEqual([false, false, true]);
+      expect(queryElements('.unavailable-marker')).toHaveLength(1);
+      expect(
+        queryElements('gf-module-catalog-item mat-card.is-unavailable')
+      ).toHaveLength(1);
+    });
+
+    it('should say so in the row name', () => {
+      advance();
+
+      setUnavailableModuleTypes([DashboardModuleType.WATCHLIST]);
+
+      expect(
+        rowElements().map((row) => {
+          return row.getAttribute('aria-label');
+        })
+      ).toEqual([
+        'Add Holdings module',
+        'Add Markets module',
+        'Add Watchlist module, no room on the dashboard'
+      ]);
+    });
+
+    // `aria-disabled` rather than `disabled`, and the difference matters. A disabled
+    // button cannot be focused, so a keyboard user would find the row skipped with
+    // no explanation and a pointer user would get no response at all. Left enabled
+    // and merely marked, the row stays reachable and its activation is what produces
+    // the canvas's explanation of how to make room.
+    it('should mark the row unavailable without making it unreachable', () => {
+      advance();
+
+      setUnavailableModuleTypes([DashboardModuleType.HOLDINGS]);
+
+      const [row] = rowElements();
+
+      expect(row.getAttribute('aria-disabled')).toBe('true');
+      expect(row.disabled).toBe(false);
+
+      row.click();
+
+      expect(host.addedModuleTypes).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+
+    it('should carry no such marking while there is room', () => {
+      advance();
+
+      expect(
+        rowComponents().every(({ isUnavailable }) => {
+          return !isUnavailable;
+        })
+      ).toBe(true);
+      expect(queryElements('.unavailable-marker')).toHaveLength(0);
+      expect(
+        rowElements().every((row) => {
+          return row.getAttribute('aria-disabled') === null;
+        })
+      ).toBe(true);
+    });
+
+    it('should keep the marker out of the accessibility tree', () => {
+      advance();
+
+      setUnavailableModuleTypes([DashboardModuleType.HOLDINGS]);
+
+      expect(
+        queryElement('.unavailable-marker').getAttribute('aria-hidden')
+      ).toBe('true');
+    });
+
+    // Placement wins, because a placed row reveals the module already on the canvas
+    // rather than adding anything - it always has somewhere to go. Showing both
+    // markers, or naming the row as having no room, would misdescribe it. The canvas
+    // already excludes placed types from the unavailable list; this pins the row's
+    // own behaviour so it stays correct even if it is ever told both.
+    it('should prefer the placed treatment when told both', () => {
+      advance();
+
+      host.placedModuleTypes = [DashboardModuleType.HOLDINGS];
+      setUnavailableModuleTypes([DashboardModuleType.HOLDINGS]);
+
+      const [row] = rowElements();
+
+      expect(row.getAttribute('aria-label')).toBe('Reveal Holdings module');
+      expect(queryElements('.placed-marker')).toHaveLength(1);
+      expect(queryElements('.unavailable-marker')).toHaveLength(0);
+    });
+  });
+
   describe('architectural invariants', () => {
-    it('should expose one output, no input and the selector the canvas binds', () => {
+    // The catalog's whole surface, pinned. Both inputs are things only the canvas
+    // can tell it, and both are deliberately lists of TYPES rather than layout
+    // state - no coordinate, no size, and nothing the catalog could use to place
+    // anything itself:
+    //
+    //   - `placedModuleTypes`, so a row that reveals a module already on the
+    //     canvas can look different from one that adds a new one;
+    //   - `unavailableModuleTypes`, so a row the grid has no room for says so
+    //     instead of inviting a click that silently does nothing.
+    //
+    // The second is the sharper case of the rule and worth stating: whether a
+    // module still fits is a question about geometry, so the canvas - which owns
+    // the grid - answers it, and only the answer crosses the boundary. Weigh any
+    // further input the same way: the catalog is meant to know WHAT exists, never
+    // where it sits.
+    it('should expose one output, two inputs and the selector the canvas binds', () => {
       const mirror = reflectComponentType(GfModuleCatalogComponent);
 
       expect(mirror.selector).toBe('gf-module-catalog');
-      expect(mirror.inputs).toEqual([]);
+      expect(mirror.inputs.map(({ propName }) => propName)).toEqual([
+        'placedModuleTypes',
+        'unavailableModuleTypes'
+      ]);
       expect(mirror.outputs.map(({ propName }) => propName)).toEqual([
         'moduleAdded'
       ]);

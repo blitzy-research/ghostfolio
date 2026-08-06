@@ -1,6 +1,6 @@
 <mat-form-field appearance="outline" class="w-100">
-  <button disabled mat-icon-button matPrefix>
-    <ion-icon name="search-outline" />
+  <button aria-hidden="true" disabled mat-icon-button matPrefix>
+    <ion-icon aria-hidden="true" name="search-outline" />
   </button>
   <mat-chip-grid #chipList aria-label="Search keywords">
     @for (filter of selectedFilters; track filter) {
@@ -11,8 +11,8 @@
         (removed)="onRemoveFilter(filter)"
       >
         {{ filter.label ?? '' | gfSymbol }}
-        <button matChipRemove>
-          <ion-icon name="close-outline" />
+        <button aria-label="Remove this filter" i18n-aria-label matChipRemove>
+          <ion-icon aria-hidden="true" name="close-outline" />
         </button>
       </mat-chip-row>
     }
@@ -43,6 +43,7 @@
   </mat-autocomplete>
 
   <button
+    aria-hidden="true"
     disabled
     mat-icon-button
     matSuffix

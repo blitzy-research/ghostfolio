@@ -12,6 +12,7 @@ import {
   inject,
   output
 } from '@angular/core';
+import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 
 // Type-only: this interface is named in a decorated `@Input()` signature, and
@@ -54,7 +55,7 @@ import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatCardModule],
+  imports: [MatButtonModule, MatCardModule],
   selector: 'gf-module-catalog-item',
   styleUrls: ['./module-catalog-item.scss'],
   templateUrl: './module-catalog-item.html'
@@ -88,15 +89,65 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
    *
    * The host around it is deliberately NOT focusable: a focusable wrapper about
    * a focusable control would be a second tab stop announcing the same command
-   * twice. The button carries `tabindex="-1"` instead, keeping the rows out of
-   * the natural tab order while leaving them programmatically focusable, which
-   * is the roving pattern the parent's key manager drives.
+   * twice. The button's own `tabindex` is bound from {@link isTabbable}, so the
+   * rows share exactly one tab stop between them while all of them stay
+   * programmatically focusable - the roving pattern the parent's key manager
+   * drives.
    */
   @ViewChild('row', { read: ElementRef })
   public rowElement: ElementRef<HTMLElement>;
 
+  /**
+   * Whether the module this row offers is already on the canvas.
+   *
+   * Presentation only, and deliberately not layout state: it is a membership
+   * answer about module TYPES, carries no coordinate or size, and is supplied by
+   * the canvas - which owns the arrangement - rather than derived or cached here.
+   * Its purpose is that a row whose click reveals an existing module no longer
+   * looks identical to a row whose click adds one.
+   */
+  @Input() isPlaced = false;
+
+  /**
+   * Whether this row is the one the Tab key reaches.
+   *
+   * The rows share a single tab stop, which is what a roving-focus list is: the
+   * parent decides which row holds it, and every other row stays reachable only
+   * programmatically. Without one row answering `true` the entire result list is
+   * unreachable from the keyboard.
+   */
+  @Input() isTabbable = false;
+
+  /**
+   * Whether the canvas has no room for the module this row offers.
+   *
+   * Presentation and naming only, on the same terms as {@link isPlaced}: a
+   * membership answer about module TYPES, holding no coordinate and no size, and
+   * supplied by the canvas because answering it needs the grid geometry this
+   * component must never see.
+   *
+   * The row stays enabled while it is set, which is the accessible choice rather
+   * than a lenient one. A `disabled` button cannot be focused, so a keyboard user
+   * would find the row skipped with no explanation, and a pointer user would get
+   * no response to a click; left enabled and marked with `aria-disabled`, the row
+   * is still reachable, still announces why it is unavailable, and its activation
+   * is what produces the canvas's explanation of what to do about it.
+   */
+  @Input() isUnavailable = false;
+
   public hasFocus = false;
   public isDragging = false;
+
+  /**
+   * Raised whenever this row takes focus, so the parent can adopt a focus move it
+   * did not make itself - a Tab into the list, a click, or the browser restoring
+   * focus after the panel reopens.
+   *
+   * Without it the key manager keeps measuring from wherever it last put focus,
+   * and from its initial "nothing active" the first arrow press jumps to one end
+   * of the list instead of stepping one row from where the viewer actually is.
+   */
+  protected readonly focused = output<void>();
 
   protected readonly moduleAdded = output<DashboardModuleType>();
 
@@ -121,7 +172,22 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
    * is interpolated as a placeholder rather than re-translated.
    */
   public get ariaLabel() {
-    return $localize`Add ${this.definition?.name}:moduleName: module`;
+    // Separate messages rather than one with conditional fragments, because the
+    // rows genuinely offer different commands: an unplaced row adds the module, a
+    // placed row scrolls the one already on the canvas into view, and a row the
+    // grid has no room for can do neither. A single name for all three would
+    // misdescribe two of them.
+    //
+    // Placement is tested first on purpose: a module already on the canvas is
+    // revealed by its row no matter how full the grid is, so it is never reported
+    // as having nowhere to go.
+    if (this.isPlaced) {
+      return $localize`Reveal ${this.definition?.name}:moduleName: module`;
+    }
+
+    return this.isUnavailable
+      ? $localize`Add ${this.definition?.name}:moduleName: module, no room on the dashboard`
+      : $localize`Add ${this.definition?.name}:moduleName: module`;
   }
 
   /**
@@ -185,7 +251,20 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
       return;
     }
 
-    event.dataTransfer.effectAllowed = 'copy';
+    // `copyMove`, and the reason is a hard protocol requirement rather than a
+    // preference. The browser only fires a drop when the effect the SOURCE allows
+    // and the effect the TARGET requests intersect. The grid engine's own dragover
+    // handler unconditionally sets `dropEffect = 'move'` over a free cell, so a
+    // source allowing only `copy` leaves an empty intersection: the browser
+    // resolves the operation to `none`, no drop event is ever dispatched, and the
+    // gesture ends in `dragleave` -> `dragend` having added nothing at all.
+    //
+    // `copyMove` admits the engine's `move` while still describing what actually
+    // happens - the row stays in the catalog - so the pointer keeps its copy
+    // affordance over anything else that might accept it. Do not narrow this back
+    // to `copy`: it compiles, lints and looks right, and silently breaks
+    // drag-to-add.
+    event.dataTransfer.effectAllowed = 'copyMove';
     event.dataTransfer.setData('text/plain', this.definition.moduleType);
 
     this.isDragging = true;
@@ -198,6 +277,8 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
    */
   public onFocus() {
     this.hasFocus = true;
+
+    this.focused.emit();
 
     this.changeDetectorRef.markForCheck();
   }

@@ -1,12 +1,14 @@
 <div class="d-flex justify-content-end">
   <button
+    aria-label="Actions for this user"
     class="mx-1 no-min-width px-2"
+    i18n-aria-label
     mat-button
     type="button"
     [matMenuTriggerFor]="userDetailActionsMenu"
     (click)="$event.stopPropagation()"
   >
-    <ion-icon name="ellipsis-vertical" />
+    <ion-icon aria-hidden="true" name="ellipsis-vertical" />
   </button>
   <mat-menu
     #userDetailActionsMenu="matMenu"

@@ -1,3 +1,5 @@
+import { dashboardModules } from '@ghostfolio/common/dashboard';
+
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
@@ -145,6 +147,45 @@ describe('the dashboard module wrappers', () => {
           (directory) => `${directory}/${directory}.module.component.ts`
         )
       );
+    });
+
+    // A display name is not decoration. The catalog builds each row's accessible
+    // name from it, so two modules sharing one name give a screen reader two rows
+    // it announces identically - and because a row shows nothing but the name,
+    // they are indistinguishable by eye as well. Two collisions existed and both
+    // were reachable by one viewer at once: `Settings` for the account and admin
+    // modules, and `Markets` for the plain and the extended market modules.
+    //
+    // What used to keep them apart was the URL each sat behind. On a single
+    // canvas there is no URL, so the name has to carry the distinction itself.
+    // Asserted over the real shared map rather than a stub, since that map is
+    // where a future collision would be introduced.
+    it('gives every registered module a distinct display name', () => {
+      const names = Object.values(dashboardModules).map(({ name }) => {
+        return name;
+      });
+      const duplicated = [
+        ...new Set(
+          names.filter((name, index) => {
+            return names.indexOf(name) !== index;
+          })
+        )
+      ];
+
+      // Reported as the offending names rather than as a bare count, so a
+      // failure says which modules collided instead of only that some did.
+      expect(duplicated).toEqual([]);
+      expect(new Set(names).size).toBe(Object.keys(DashboardModuleType).length);
+    });
+
+    it('gives every registered module a non-empty display name', () => {
+      expect(
+        Object.entries(dashboardModules)
+          .filter(([, { name }]) => {
+            return !name?.trim();
+          })
+          .map(([moduleType]) => moduleType)
+      ).toEqual([]);
     });
   });
 

@@ -629,6 +629,73 @@ describe('GfDashboardLayoutService', () => {
       expect(readPatchedDto(0)).toEqual({ modules: [], version: 1 });
       expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
+
+    it('writes back the entries the canvas could not draw alongside the ones it did', () => {
+      jest.useFakeTimers();
+
+      // The canvas hands over its *canonical* arrangement: the modules it drew,
+      // plus the saved entries it had to withhold - a module type the registry no
+      // longer knows, or one gated behind a permission the viewer does not
+      // currently hold. Sending only what has a grid cell would make every
+      // ordinary drag a deletion of everything the viewer cannot presently see.
+      service.scheduleSave(VIEWER_ID, [
+        createGridItem({ cols: 6, x: 1 }),
+        { cols: 8, moduleType: 'admin-overview', rows: 6, x: 0, y: 6 },
+        { cols: 4, moduleType: 'legacy-net-worth', rows: 4, x: 8, y: 6 }
+      ]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(readPatchedDto(0)).toEqual({
+        modules: [
+          { cols: 6, moduleType: 'portfolio-overview', rows: 4, x: 1, y: 0 },
+          { cols: 8, moduleType: 'admin-overview', rows: 6, x: 0, y: 6 },
+          { cols: 4, moduleType: 'legacy-net-worth', rows: 4, x: 8, y: 6 }
+        ],
+        version: 1
+      });
+    });
+
+    it('projects the withheld entries onto the wire fields too', () => {
+      jest.useFakeTimers();
+
+      // Projected rather than spread through, because the server applies
+      // `forbidNonWhitelisted`: one stray key on one entry rejects the whole
+      // request with 400 and the arrangement would stop saving altogether.
+      service.scheduleSave(VIEWER_ID, [
+        createGridItem(),
+        {
+          cols: 8,
+          minItemCols: 4,
+          moduleType: 'admin-overview',
+          rows: 6,
+          x: 0,
+          y: 6
+        }
+      ] as never);
+
+      jest.advanceTimersByTime(500);
+
+      const dto = readPatchedDto(0);
+
+      expect(Object.keys(dto.modules[1]).sort()).toEqual(wireFields);
+      expect(dto.modules[1]).not.toHaveProperty('minItemCols');
+    });
+
+    it('writes exactly what it was given when nothing had to be withheld', () => {
+      jest.useFakeTimers();
+
+      // The ordinary case, asserted next to the one above so that carrying the
+      // withheld entries through cannot be mistaken for adding an entry of its
+      // own: an arrangement whose every module is on the canvas is written as it
+      // stands.
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(readPatchedDto(0).modules).toHaveLength(1);
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('error handling', () => {

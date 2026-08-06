@@ -3,11 +3,11 @@ import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { DashboardModuleType } from '@ghostfolio/client/dashboard/enums/dashboard-module-type';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { UpdateUserSettingDto } from '@ghostfolio/common/dtos';
+import type { UpdateUserSettingDto } from '@ghostfolio/common/dtos';
 import { Filter, InfoItem, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { publicRoutes } from '@ghostfolio/common/routes/routes';
-import { DateRange } from '@ghostfolio/common/types';
+import { ColorScheme, DateRange } from '@ghostfolio/common/types';
 import { GfAssistantComponent } from '@ghostfolio/ui/assistant/assistant.component';
 import { GfLogoComponent } from '@ghostfolio/ui/logo';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
@@ -20,7 +20,9 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
+  DOCUMENT,
   HostListener,
+  Inject,
   OnInit,
   ViewChild
 } from '@angular/core';
@@ -34,10 +36,12 @@ import { addIcons } from 'ionicons';
 import {
   closeOutline,
   menuOutline,
+  moonOutline,
   optionsOutline,
   personCircleOutline,
   radioButtonOffOutline,
-  radioButtonOnOutline
+  radioButtonOnOutline,
+  sunnyOutline
 } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
 
@@ -127,8 +131,39 @@ export class GfDashboardToolbarComponent implements OnInit {
   @ViewChild('assistant') assistantElement: GfAssistantComponent;
   @ViewChild('assistantTrigger') assistentMenuTriggerElement: MatMenuTrigger;
 
+  /**
+   * The two names the appearance control takes, one per direction.
+   *
+   * Held here rather than declared on the element because `i18n-aria-label`
+   * localizes only a STATIC attribute; the name has to change with the current
+   * appearance, so it is bound, and a bound attribute has to be localized in code.
+   *
+   * Both name the action rather than the state, so the control reads as a command
+   * in either direction. They are separate messages rather than one with an
+   * interpolated word, because a translator needs the whole sentence to inflect it.
+   */
+  public readonly darkAppearanceLabel = $localize`Switch to dark appearance`;
+
   public deviceType: string;
   public hasFilters: boolean;
+  /**
+   * Whether the dark appearance is the one currently painted.
+   *
+   * Read from the class the shell maintains on `<body>`, deliberately, because that
+   * class IS the effective answer. The setting alone cannot give it: `colorScheme`
+   * is allowed to be unset, and an unset one means "follow the operating system" -
+   * so deciding from the setting would require this component to repeat the shell's
+   * media-query fallback and then keep the copy in step with it. Reading what the
+   * shell decided instead leaves exactly one place that resolves the appearance.
+   *
+   * Refreshed on every emission of the viewer's record, which is precisely when the
+   * shell re-applies the theme, so the icon and the label can never describe a
+   * previous appearance.
+   */
+  public isDarkTheme: boolean;
+
+  /** Companion of {@link darkAppearanceLabel} for the other direction. */
+  public readonly lightAppearanceLabel = $localize`Switch to light appearance`;
   public hasImpersonationId: boolean;
   public hasPermissionForSubscription: boolean;
   public hasPermissionToAccessAdminControl: boolean;
@@ -153,6 +188,7 @@ export class GfDashboardToolbarComponent implements OnInit {
     private dataService: DataService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
+    @Inject(DOCUMENT) private document: Document,
     private impersonationStorageService: ImpersonationStorageService,
     private layoutService: LayoutService,
     private userService: UserService
@@ -168,10 +204,12 @@ export class GfDashboardToolbarComponent implements OnInit {
     addIcons({
       closeOutline,
       menuOutline,
+      moonOutline,
       optionsOutline,
       personCircleOutline,
       radioButtonOffOutline,
-      radioButtonOnOutline
+      radioButtonOnOutline,
+      sunnyOutline
     });
 
     // Subscribed here rather than in `ngOnInit` because both streams emit
@@ -201,6 +239,10 @@ export class GfDashboardToolbarComponent implements OnInit {
 
         this.hasPermissionToChangeDateRange = !!this.user;
         this.hasPermissionToChangeFilters = !!this.user;
+
+        // Read after the shell has applied the theme for this same emission, so
+        // the control describes the appearance that is actually painted.
+        this.isDarkTheme = this.document.body.classList.contains('theme-dark');
 
         this.hasPromotion = this.user
           ? !!this.user.subscription?.offer?.coupon ||
@@ -305,6 +347,40 @@ export class GfDashboardToolbarComponent implements OnInit {
   public onDateRangeChange(dateRange: DateRange) {
     this.dataService
       .putUserSetting({ dateRange })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.userService
+          .get(true)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe();
+      });
+  }
+
+  /**
+   * Switches the viewer between the light and dark appearance.
+   *
+   * Written through the viewer's own `colorScheme` setting - the very setting the
+   * account-settings appearance control writes - rather than by touching the theme
+   * directly. That is what makes this a toolbar affordance for an existing
+   * preference instead of a second, competing theme mechanism: the two controls
+   * cannot disagree, the choice survives a reload, and it follows the viewer to
+   * another browser.
+   *
+   * Applying it stays the shell's job. Re-reading the viewer is what hands the new
+   * value to the shell, which re-applies the theme on every emission of that
+   * record; nothing here adds or removes a class.
+   *
+   * Note what this deliberately cannot do: return to "follow the system", which is
+   * the third state the setting supports and which the account-settings control
+   * keeps. A toolbar toggle answers one question - light or dark - and offering a
+   * tri-state cycle from a single icon would leave the viewer guessing which of
+   * three states one more press lands on.
+   */
+  public onToggleTheme() {
+    const colorScheme: ColorScheme = this.isDarkTheme ? 'LIGHT' : 'DARK';
+
+    this.dataService
+      .putUserSetting({ colorScheme })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.userService

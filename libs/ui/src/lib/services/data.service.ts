@@ -1,4 +1,9 @@
-import {
+// `import type`, and not merely as a style: every one of these is used only in a
+// parameter or return position here, while a value import pulls the whole DTO
+// barrel - and the validation decorators every DTO carries - into the bundle of
+// anything that reaches this facade. Since this facade is reached on first paint,
+// that meant shipping all of it to every visitor.
+import type {
   CreateAccessDto,
   CreateAccountBalanceDto,
   CreateAccountDto,
@@ -84,7 +89,7 @@ import {
 import { format, parseISO } from 'date-fns';
 import { cloneDeep, groupBy, isNumber } from 'lodash';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { finalize, map, shareReplay } from 'rxjs/operators';
 
 /**
  * The spellings a URL parser treats as a relative path segment rather than as a
@@ -178,6 +183,18 @@ export function encodeApiPath(
 })
 export class DataService {
   private readonly http = inject(HttpClient);
+
+  /**
+   * The reads that are currently on the wire, keyed by the exact request they
+   * represent.
+   *
+   * An entry lives only for as long as its request does. It is removed the
+   * moment the response arrives, the request errors, or the last subscriber
+   * walks away - so this is a register of work in progress, never a cache of
+   * results, and no caller can ever be handed a value fetched before something
+   * it did. See `coalesceInFlightGet`.
+   */
+  private readonly inFlightGetRequests = new Map<string, Observable<unknown>>();
 
   public buildFiltersAsQueryParams({ filters }: { filters?: Filter[] }) {
     let params = new HttpParams();
@@ -645,11 +662,10 @@ export class DataService {
       params = params.append('withMarkets', withMarkets);
     }
 
-    return this.http
-      .get<any>('/api/v1/portfolio/details', {
-        params
-      })
-      .pipe(
+    const url = '/api/v1/portfolio/details';
+
+    return this.coalesceInFlightGet(this.buildInFlightGetKey(url, params), () =>
+      this.http.get<any>(url, { params }).pipe(
         map((response) => {
           if (response.holdings) {
             for (const symbol of Object.keys(response.holdings)) {
@@ -683,7 +699,8 @@ export class DataService {
 
           return response;
         })
-      );
+      )
+    );
   }
 
   public fetchPortfolioHoldings({
@@ -699,11 +716,10 @@ export class DataService {
       params = params.append('range', range);
     }
 
-    return this.http
-      .get<PortfolioHoldingsResponse>('/api/v1/portfolio/holdings', {
-        params
-      })
-      .pipe(
+    const url = '/api/v1/portfolio/holdings';
+
+    return this.coalesceInFlightGet(this.buildInFlightGetKey(url, params), () =>
+      this.http.get<PortfolioHoldingsResponse>(url, { params }).pipe(
         map((response) => {
           if (response.holdings) {
             for (const symbol of Object.keys(response.holdings)) {
@@ -731,7 +747,8 @@ export class DataService {
 
           return response;
         })
-      );
+      )
+    );
   }
 
   public fetchPortfolioPerformance({
@@ -756,11 +773,10 @@ export class DataService {
       params = params.append('withItems', withItems);
     }
 
-    return this.http
-      .get<any>(`/api/v2/portfolio/performance`, {
-        params
-      })
-      .pipe(
+    const url = `/api/v2/portfolio/performance`;
+
+    return this.coalesceInFlightGet(this.buildInFlightGetKey(url, params), () =>
+      this.http.get<any>(url, { params }).pipe(
         map((response) => {
           if (response.firstOrderDate) {
             response.firstOrderDate = parseISO(response.firstOrderDate);
@@ -768,7 +784,8 @@ export class DataService {
 
           return response;
         })
-      );
+      )
+    );
   }
 
   public fetchPortfolioReport() {
@@ -1031,5 +1048,88 @@ export class DataService {
 
       (window as any).info = info;
     });
+  }
+
+  /**
+   * Builds the key that decides whether two reads are the same read.
+   *
+   * The key is the request line itself - path plus serialised query string - so
+   * two callers collide only when the bytes they would each have put on the wire
+   * are identical. That direction of error matters: `HttpParams.toString()`
+   * preserves append order, so two callers that assemble the same parameters in
+   * a different order produce different keys and are simply not shared. Missing
+   * a chance to share is harmless; sharing a response between callers that asked
+   * different questions would not be, and this key makes that impossible.
+   */
+  private buildInFlightGetKey(url: string, params: HttpParams): string {
+    const queryString = params.toString();
+
+    return queryString ? `${url}?${queryString}` : url;
+  }
+
+  /**
+   * Serves every concurrent caller of an identical read from one request.
+   *
+   * The canvas mounts many modules at once and several of them legitimately want
+   * the same figures, each asking through its own component. Measured on a
+   * canvas holding Overview, Summary, Holdings, FIRE, Allocations and Analysis,
+   * that produced 14 requests for 11 distinct URLs: `/api/v2/portfolio/
+   * performance?range=max` was fetched twice (177,765 bytes each time) and
+   * `/api/v1/portfolio/holdings?range=max` twice (15,788 bytes each), 185 kB of
+   * a 449 kB API payload spent fetching bytes the page already had in flight.
+   * The redundant call also made the first one slower, since both queued against
+   * the same connection pool.
+   *
+   * Only genuinely overlapping reads are joined. There is no expiry and nothing
+   * is retained: the entry is dropped when the request settles, so a caller can
+   * only ever join a request that had not yet answered when it asked. Two
+   * callers in that position are asking the same question of the same server
+   * state and cannot be told apart by the answer they receive, which is why this
+   * shares work without changing what any caller observes. A cache with a
+   * lifetime, however short, would not have that property - a read issued just
+   * after a write could be answered from before it.
+   *
+   * Cancellation still reaches the network. `refCount` releases the underlying
+   * subscription once the last subscriber leaves, so a module destroyed while
+   * its read is outstanding still aborts it - unless another module is waiting
+   * on the same read, which is precisely when it should not be aborted.
+   *
+   * `createRequest` is invoked with the caller's own response mapping already
+   * applied, and the sharing sits above it, so that mapping runs exactly once
+   * per request no matter how many callers join. That is load-bearing rather
+   * than incidental: these mappings rewrite the response in place - `parseISO`
+   * over `dateOfFirstActivity`, for one - and are not safe to run twice over the
+   * same object, because the second pass would be handed the `Date` the first
+   * pass produced. Every consumer of the shared result reads it without
+   * modifying it, which is what makes one mapped object safe to hand to all of
+   * them.
+   */
+  private coalesceInFlightGet<T>(
+    cacheKey: string,
+    createRequest: () => Observable<T>
+  ): Observable<T> {
+    const inFlightRequest = this.inFlightGetRequests.get(cacheKey) as
+      | Observable<T>
+      | undefined;
+
+    if (inFlightRequest) {
+      return inFlightRequest;
+    }
+
+    const request = createRequest().pipe(
+      // Placed above `shareReplay` so it observes the request itself rather than
+      // any one subscriber, and therefore fires on all three ways a request can
+      // end - answered, failed, or abandoned by everyone waiting. Leaving the
+      // key behind on the abandoned path would be the damaging one: a request
+      // nobody is subscribed to any more would still be handed out.
+      finalize(() => {
+        this.inFlightGetRequests.delete(cacheKey);
+      }),
+      shareReplay({ bufferSize: 1, refCount: true })
+    );
+
+    this.inFlightGetRequests.set(cacheKey, request);
+
+    return request;
   }
 }

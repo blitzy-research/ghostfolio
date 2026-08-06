@@ -8,8 +8,12 @@
   GfDashboardModuleHostComponent, GfDashboardToolbarComponent,
   GfEmptyCanvasStateComponent, GfModuleCatalogComponent,
   GfPublicPortfolioComponent, GfSignInPromptComponent, IonIcon, MatButtonModule,
-  MatCardModule and MatSidenavModule alongside CUSTOM_ELEMENTS_SCHEMA, and
-  registers exactly two glyphs: addOutline and closeOutline.
+  MatCardModule, MatSidenavModule and NgxSkeletonLoaderModule alongside
+  CUSTOM_ELEMENTS_SCHEMA, and registers exactly two glyphs: addOutline and
+  closeOutline. GfPublicPortfolioComponent is listed in `imports` but is used
+  ONLY inside the `@defer` block below, which is what makes Angular emit it as
+  its own chunk rather than part of the initial bundle - referencing it anywhere
+  else in this template would silently undo that.
 
   Three obligations of that contract are load-bearing rather than stylistic:
 
@@ -67,7 +71,36 @@
   -->
   <div class="flex-grow-1 overflow-auto">
     <div class="container">
-      <gf-public-portfolio />
+      <!--
+        Deferred, and the reason is measurable rather than stylistic. This
+        component is the one branch of the canvas a signed-in viewer never sees,
+        yet it reaches the widest dependency graph of anything here - two data
+        tables, the proportion charts and the world map, and through them the
+        charting and map libraries. Referenced eagerly it dragged all of that into
+        the initial bundle for every visitor, which is what pushed the initial
+        graph to 3.21 MB against a 1.17 MB pre-refactor baseline. `@defer` makes
+        Angular emit it as its own chunk instead, because it is used nowhere else
+        in this template, restoring the code-splitting boundary the collapsed
+        route table used to provide for it.
+
+        `when isPublicPortfolio` rather than a viewport or interaction trigger:
+        this branch is already guarded on exactly that condition, so the chunk is
+        requested precisely when the branch is drawn and never otherwise. The
+        placeholder is the same skeleton treatment the module bodies use, so the
+        wait reads as loading rather than as an empty page.
+      -->
+      @defer (when isPublicPortfolio) {
+        <gf-public-portfolio />
+      } @placeholder {
+        <ngx-skeleton-loader
+          animation="pulse"
+          class="d-block py-3"
+          [theme]="{
+            height: '24rem',
+            width: '100%'
+          }"
+        />
+      }
     </div>
   </div>
 } @else if (isSignedOut) {
@@ -165,6 +198,33 @@
       </div>
     }
 
+    <!--
+      The grid declined to place a module because the arrangement has no room
+      left for it. Said in the open, because the alternative is what this fixes:
+      the engine simply adds nothing, so a viewer clicking a catalog row sees no
+      module appear, no message, and no reason - and clicks again.
+
+      A plain notice rather than an alert or a dialog: nothing is broken, no
+      request failed, and the state is fully within the viewer's control. The
+      remedy names both ways out - make a module smaller, or take one off - and
+      the notice clears itself the moment either is done, so it can never linger
+      after the condition has gone. `role="status"` announces it politely without
+      moving focus; the sentence is deliberately the same one written to the
+      canvas's live region, so a sighted and a screen-reader user are told the
+      same thing.
+    -->
+    @if (hasCapacityError) {
+      <div
+        class="align-items-center d-flex justify-content-center px-3 pt-3"
+        role="status"
+      >
+        <span class="text-center" i18n>
+          There is no room left on the dashboard. Make a module smaller or
+          remove one to add another.
+        </span>
+      </div>
+    }
+
     <mat-sidenav-container>
       <!--
       `mode="side"` is not a preference. An `over` or `push` drawer lays a
@@ -186,7 +246,20 @@
         [opened]="isCatalogOpen"
         (openedChange)="onCatalogOpenedChange($event)"
       >
-        <gf-module-catalog (moduleAdded)="onAddModule($event)" />
+        <!--
+          Two projections for display, and nothing more. The placed types let a row
+          say that its module is already on the canvas; the unavailable types let a
+          row say the grid has no room for it, so a viewer is not invited to click
+          something that cannot succeed. Both are lists of discriminators - never a
+          coordinate and never a size - so the grid stays the sole authority on
+          geometry, and the second is computed by the canvas precisely because
+          answering it requires geometry the catalog must not hold.
+        -->
+        <gf-module-catalog
+          [placedModuleTypes]="placedModuleTypes"
+          [unavailableModuleTypes]="unavailableModuleTypes"
+          (moduleAdded)="onAddModule($event)"
+        />
       </mat-sidenav>
 
       <mat-sidenav-content>
@@ -214,7 +287,7 @@
           this application loads globally.
         -->
         <div aria-live="polite" class="sr-only" role="status">
-          {{ geometryAnnouncement }}
+          {{ canvasAnnouncement }}
         </div>
 
         <gridster [options]="options">
@@ -278,11 +351,26 @@
     catalog's empty-state action so both share one translation. The glyph is hidden
     from assistive technology because the button is already named.
   -->
-    <div class="gf-dashboard-catalog-trigger">
+    <div
+      class="gf-dashboard-catalog-trigger"
+      [class.is-catalog-open]="isCatalogOpen"
+    >
+      <!--
+        No `color="primary"`. That attribute is the Material 2 palette API, which
+        this version keeps only for backwards compatibility, and here it was
+        actively harmful: it adds a `mat-primary` class that a global stylesheet
+        keys an `!important` foreground colour off, forcing the glyph to plain
+        white over the brand teal container. Measured, that pairing is 1.92:1 -
+        below the 3:1 that WCAG 2.2 SC 1.4.11 requires of a control - and no
+        amount of token work on this button could win against it. Dropping the
+        attribute lets the foreground token resolve normally and takes the glyph
+        to roughly 9:1 in both themes. The teal container is unaffected, since it
+        comes from the theme's own fab override keyed on the theme class rather
+        than on the palette class.
+      -->
       <button
         aria-controls="gfDashboardModuleCatalog"
         aria-label="Browse modules"
-        color="primary"
         i18n-aria-label
         i18n-title
         mat-fab
@@ -291,10 +379,19 @@
         [attr.aria-expanded]="isCatalogOpen"
         (click)="onToggleCatalog()"
       >
+        <!--
+          A grid glyph rather than a plus, and the distinction is the point. Five
+          feature modules render their own circular `mat-fab` with a plus - "Add
+          activity", "Add account" and so on - and all of them can now be on the
+          canvas at once, so a plus here was one more identical teal disc with no
+          way to tell which one added what. A grid says what this control actually
+          opens, and it agrees with the button's own name, "Browse modules".
+          `close-outline` while open is unambiguous either way.
+        -->
         <ion-icon
           aria-hidden="true"
           size="large"
-          [name]="isCatalogOpen ? 'close-outline' : 'add-outline'"
+          [name]="isCatalogOpen ? 'close-outline' : 'grid-outline'"
         />
       </button>
     </div>

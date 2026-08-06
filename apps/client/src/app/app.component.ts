@@ -23,13 +23,15 @@ import { addIcons } from 'ionicons';
 import { openOutline } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
 
-import { GfHoldingDetailDialogComponent } from './components/holding-detail-dialog/holding-detail-dialog.component';
-import {
+// Type-only, both of them. Each dialog class is resolved on demand where it is
+// opened, so naming one here as a value would put its whole graph back into the
+// shell's chunk and undo the code splitting the collapsed route table has to
+// re-establish somewhere.
+import type {
   HoldingDetailDialogParams,
   HoldingDetailDialogResult
 } from './components/holding-detail-dialog/interfaces/interfaces';
-import { UserAccountRegistrationDialogParams } from './components/user-account-registration-dialog/interfaces/interfaces';
-import { GfUserAccountRegistrationDialogComponent } from './components/user-account-registration-dialog/user-account-registration-dialog.component';
+import type { UserAccountRegistrationDialogParams } from './components/user-account-registration-dialog/interfaces/interfaces';
 import { GfDashboardLayoutService } from './dashboard/services/dashboard-layout.service';
 import { GfAppQueryParams } from './interfaces/interfaces';
 import { ImpersonationStorageService } from './services/impersonation-storage.service';
@@ -51,6 +53,15 @@ export class GfAppComponent implements OnInit {
   public hasPermissionForSubscription: boolean;
   public info: InfoItem;
   public user: User | undefined;
+
+  /**
+   * Whether the operating system's colour preference is already being watched.
+   *
+   * A latch rather than a counter, because exactly one listener is wanted for the
+   * shell's lifetime. The theme is applied on every emission of the viewer's
+   * record, so without this the listener was re-registered each time.
+   */
+  private hasObservedSystemColorScheme = false;
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   /**
@@ -123,7 +134,11 @@ export class GfAppComponent implements OnInit {
             if (this.openedHoldingDetailAddress !== address) {
               this.openedHoldingDetailAddress = address;
 
-              this.openHoldingDetailDialog({
+              // Voided rather than awaited: the handler resolves the dialog's own
+              // chunk before opening it, so it is asynchronous, and nothing here
+              // depends on the dialog having opened. Its failure path is handled
+              // inside, where the address is released again.
+              void this.openHoldingDetailDialog({
                 dataSource,
                 symbol
               });
@@ -231,13 +246,24 @@ export class GfAppComponent implements OnInit {
    * and restarts resolution from the stored token — the same remedy, for the same
    * reason, as switching the impersonated identity.
    */
-  public onCreateAccount() {
+  public async onCreateAccount() {
+    // Resolved here rather than imported at the top of the file. This dialog
+    // reaches a large graph of its own and is opened only when a visitor asks to
+    // create an account, so a static reference would place all of it in the
+    // initial bundle for every visitor - the canvas is the one screen the
+    // application has, so there is no longer a route boundary to do this for us.
+    const { GfUserAccountRegistrationDialogComponent } =
+      await import('./components/user-account-registration-dialog/user-account-registration-dialog.component');
+
     // The third type argument is the token the dialog resolves with, or nothing
     // when it is cancelled - its template closes on `authToken` and on
     // `undefined` respectively. Declared rather than inferred, so the token is
     // read as a string instead of as `any`.
+    // `InstanceType<typeof …>` rather than the bare class name: the dynamic
+    // import binds a value, not a type alias, and this generic parameter wants
+    // the component's instance type.
     const dialogRef = this.dialog.open<
-      GfUserAccountRegistrationDialogComponent,
+      InstanceType<typeof GfUserAccountRegistrationDialogComponent>,
       UserAccountRegistrationDialogParams,
       string | undefined
     >(GfUserAccountRegistrationDialogComponent, {
@@ -291,10 +317,44 @@ export class GfAppComponent implements OnInit {
 
     this.toggleTheme(isDarkTheme);
 
-    window.matchMedia('(prefers-color-scheme: dark)').addListener((event) => {
+    this.observeSystemColorScheme();
+  }
+
+  /**
+   * Follows the operating system's colour preference, for as long as the viewer
+   * expresses none of their own.
+   *
+   * Subscribed exactly once, which is the whole point of it being separate from
+   * applying the theme. This runs on every emission of the viewer's record - and
+   * now on every use of the toolbar's theme control, each of which refreshes that
+   * record - so registering the listener alongside the theme it applies added one
+   * more listener every time. They were never removed and each one re-ran the same
+   * work, so the cost grew for the lifetime of the session.
+   *
+   * `addEventListener` rather than the deprecated `addListener`, so the listener
+   * can be released with the component; `addListener` offers no removal that
+   * `DestroyRef` could call.
+   */
+  private observeSystemColorScheme() {
+    if (this.hasObservedSystemColorScheme) {
+      return;
+    }
+
+    this.hasObservedSystemColorScheme = true;
+
+    const query = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (event: MediaQueryListEvent) => {
+      // Only while the viewer has expressed no preference of their own. An
+      // explicit choice outranks the system's, exactly as it did before.
       if (!this.user?.settings.colorScheme) {
         this.toggleTheme(event.matches);
       }
+    };
+
+    query.addEventListener('change', onChange);
+
+    this.destroyRef.onDestroy(() => {
+      query.removeEventListener('change', onChange);
     });
   }
 
@@ -313,21 +373,31 @@ export class GfAppComponent implements OnInit {
     return typeof aValue === 'string' && aValue.trim().length > 0;
   }
 
-  private openHoldingDetailDialog({
+  private async openHoldingDetailDialog({
     dataSource,
     symbol
   }: {
     dataSource: DataSource;
     symbol: string;
   }) {
+    // Resolved on demand for the same reason as the registration dialog above:
+    // this dialog pulls in a chart, an activities table and a market-data editor,
+    // and it is opened only when a query parameter names a holding. Awaiting the
+    // import here keeps that graph out of every visitor's initial bundle.
+    const { GfHoldingDetailDialogComponent } =
+      await import('./components/holding-detail-dialog/holding-detail-dialog.component');
+
     this.userService
       .get()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((user) => {
         this.user = user;
 
+        // `InstanceType<typeof …>` rather than the bare class name: the dynamic
+        // import above binds a value, not a type alias, and this generic parameter
+        // wants the component's instance type.
         const dialogRef = this.dialog.open<
-          GfHoldingDetailDialogComponent,
+          InstanceType<typeof GfHoldingDetailDialogComponent>,
           HoldingDetailDialogParams,
           HoldingDetailDialogResult | undefined
         >(GfHoldingDetailDialogComponent, {

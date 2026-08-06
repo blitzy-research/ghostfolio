@@ -20,11 +20,15 @@
         }"
       >
         @if (rule?.value === true) {
-          <ion-icon name="checkmark-circle-outline" />
+          <ion-icon aria-hidden="true" name="checkmark-circle-outline" />
         } @else if (rule?.isActive === true) {
-          <ion-icon name="warning-outline" />
+          <ion-icon aria-hidden="true" name="warning-outline" />
         } @else {
-          <ion-icon class="text-muted" name="remove-circle-outline" />
+          <ion-icon
+            aria-hidden="true"
+            class="text-muted"
+            name="remove-circle-outline"
+          />
         }
       </div>
     }
@@ -54,18 +58,24 @@
       <div>
         @if (hasPermissionToUpdateUserSettings) {
           <button
+            aria-label="Actions for this rule"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
             mat-button
             [matMenuTriggerFor]="rulesMenu"
             (click)="$event.stopPropagation()"
           >
-            <ion-icon name="ellipsis-horizontal" />
+            <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
           </button>
           <mat-menu #rulesMenu="matMenu" xPosition="before">
             @if (rule?.isActive && rule?.configuration) {
               <button mat-menu-item (click)="onCustomizeRule(rule)">
                 <span class="align-items-center d-flex">
-                  <ion-icon class="mr-2" name="options-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    name="options-outline"
+                  />
                   <span><ng-container i18n>Customize</ng-container>...</span>
                 </span>
               </button>
@@ -74,12 +84,20 @@
             <button mat-menu-item (click)="onUpdateRule(rule)">
               @if (rule?.isActive) {
                 <span class="align-items-center d-flex">
-                  <ion-icon class="mr-2" name="remove-circle-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    name="remove-circle-outline"
+                  />
                   <span i18n>Deactivate</span>
                 </span>
               } @else {
                 <span class="align-items-center d-flex">
-                  <ion-icon class="mr-2" name="add-circle-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    name="add-circle-outline"
+                  />
                   <span i18n>Activate</span>
                 </span>
               }

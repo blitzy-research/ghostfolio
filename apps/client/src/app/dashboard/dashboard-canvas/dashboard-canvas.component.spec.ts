@@ -145,6 +145,20 @@ class GfTestSignInPromptComponent {}
 
 @Component({ selector: 'gf-module-catalog', template: '' })
 class GfTestModuleCatalogComponent {
+  /**
+   * Both inputs the canvas binds, declared rather than left off - and for a
+   * sharper reason than symmetry. The canvas applies `CUSTOM_ELEMENTS_SCHEMA`, and
+   * every stand-in here has a hyphenated selector, so Angular treats these
+   * elements as custom elements and accepts a binding to a property no component
+   * declares *without complaint*. A stand-in missing an input therefore proves
+   * nothing: the binding would be silently discarded and every test would still
+   * pass while the real catalog received nothing at all. Declaring them is what
+   * makes the values below observable, and what makes a renamed input fail here.
+   */
+  @Input() public placedModuleTypes: DashboardModuleType[] = [];
+
+  @Input() public unavailableModuleTypes: DashboardModuleType[] = [];
+
   @Output() public moduleAdded = new EventEmitter<DashboardModuleType>();
 }
 
@@ -165,6 +179,51 @@ class GfTestDashboardModuleHostComponent {
   @Output() public remove = new EventEmitter<void>();
 
   @Output() public resize = new EventEmitter<DashboardModuleGeometryStep>();
+}
+
+/**
+ * A stand-in for the browser's own `ResizeObserver`, which jsdom does not
+ * implement at all.
+ *
+ * The canvas feature-detects it and skips the whole path when it is absent, so
+ * without this the behaviour under test - noticing that the grid's host box has
+ * changed for a reason the engine cannot see - is not merely unasserted but
+ * unreachable. Every instance records itself so a test can reach the callback the
+ * canvas registered and fire it deliberately, which is the only way to simulate a
+ * reflow in an environment that performs no layout.
+ */
+class GfTestResizeObserver {
+  public static instances: GfTestResizeObserver[] = [];
+
+  public disconnectCount = 0;
+
+  public readonly observed: Element[] = [];
+
+  private readonly callback: ResizeObserverCallback;
+
+  public constructor(aCallback: ResizeObserverCallback) {
+    this.callback = aCallback;
+
+    GfTestResizeObserver.instances.push(this);
+  }
+
+  public disconnect() {
+    this.disconnectCount += 1;
+  }
+
+  public observe(aTarget: Element) {
+    this.observed.push(aTarget);
+  }
+
+  /** Fires the observed callback exactly as a real reflow would. */
+  public trigger() {
+    this.callback([], this as unknown as ResizeObserver);
+  }
+
+  public unobserve() {
+    // Never called by the canvas, which disconnects wholesale; present only to
+    // satisfy the interface being stood in for.
+  }
 }
 
 describe('itemValidateCallback', () => {
@@ -310,6 +369,7 @@ describe('GfDashboardCanvasComponent', () => {
   };
   let definitions: DashboardModuleDefinition[];
   let fixture: ComponentFixture<GfDashboardCanvasComponent>;
+  let originalResizeObserverDescriptor: PropertyDescriptor;
   let originalScrollIntoViewDescriptor: PropertyDescriptor;
   let registryServiceMock: { get: jest.Mock; getAll: jest.Mock };
   let revealModuleSubject: Subject<DashboardModuleType>;
@@ -536,6 +596,25 @@ describe('GfDashboardCanvasComponent', () => {
     fixture.detectChanges();
   };
 
+  /**
+   * Paints, then waits for the deferred shared-portfolio block to arrive, then
+   * paints again.
+   *
+   * The shared portfolio is the one branch of this template behind `@defer`,
+   * because it is also the one branch a signed-in viewer never reaches and the one
+   * that reaches the charting and map libraries - deferring it is what keeps all
+   * of that out of every visitor's initial bundle. The trade is that the branch
+   * resolves on a later tick than the parameter that selected it, so a test
+   * looking for its element has to wait for that resolution rather than race it.
+   */
+  const paintDeferredBlocks = async () => {
+    fixture.detectChanges();
+
+    await fixture.whenStable();
+
+    fixture.detectChanges();
+  };
+
   function queryElement<T extends HTMLElement>(aSelector: string) {
     return (fixture.nativeElement as HTMLElement).querySelector<T>(aSelector);
   }
@@ -649,6 +728,16 @@ describe('GfDashboardCanvasComponent', () => {
     );
     scrollIntoViewMock = jest.fn();
     Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+    // Same treatment for the same reason: jsdom ships no `ResizeObserver`, and the
+    // canvas skips the path entirely when it is missing.
+    GfTestResizeObserver.instances = [];
+    originalResizeObserverDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'ResizeObserver'
+    );
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver =
+      GfTestResizeObserver;
   });
 
   afterEach(() => {
@@ -662,6 +751,16 @@ describe('GfDashboardCanvasComponent', () => {
       );
     } else {
       Reflect.deleteProperty(Element.prototype, 'scrollIntoView');
+    }
+
+    if (originalResizeObserverDescriptor) {
+      Object.defineProperty(
+        globalThis,
+        'ResizeObserver',
+        originalResizeObserverDescriptor
+      );
+    } else {
+      Reflect.deleteProperty(globalThis, 'ResizeObserver');
     }
   });
 
@@ -1687,7 +1786,7 @@ describe('GfDashboardCanvasComponent', () => {
   describe('a portfolio shared by access link', () => {
     it('should render only the shared portfolio', async () => {
       await createCanvas({ queryParams: { accessId: 'abc' }, viewer: null });
-      paint();
+      await paintDeferredBlocks();
 
       expect(queryElement('gf-public-portfolio')).toBeTruthy();
 
@@ -1700,7 +1799,7 @@ describe('GfDashboardCanvasComponent', () => {
 
     it('should let a shared link win over the viewer own session', async () => {
       await createCanvas({ queryParams: { accessId: 'abc' } });
-      paint();
+      await paintDeferredBlocks();
 
       expect(component.isPublicPortfolio).toBe(true);
       expect(queryElement('gf-public-portfolio')).toBeTruthy();
@@ -2118,6 +2217,260 @@ describe('GfDashboardCanvasComponent', () => {
       );
 
       expect(component.modules).toEqual([]);
+    });
+  });
+
+  /**
+   * The grid is a bounded surface, so "there is nowhere left to put this" is a
+   * reachable outcome rather than an error. The engine's response to it is simply to
+   * decline, which from the viewer's side is indistinguishable from a click that
+   * never registered - no module, no message, no reason - so the refusal has to be
+   * reported.
+   */
+  describe('an add the grid has no room for', () => {
+    /**
+     * Makes the engine refuse the next placement, exactly as a full grid does.
+     *
+     * Driven through `getNextPossiblePosition`, because that is the single method
+     * whose `false` is the engine's way of saying a footprint fits nowhere - the
+     * same answer a genuinely full grid gives, produced without having to fill a
+     * hundred rows to get it.
+     */
+    const refuseNextPlacement = () => {
+      jest
+        .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+        .mockReturnValue(false);
+    };
+
+    it('should add nothing, and say why, when the engine refuses', async () => {
+      await createCanvas();
+      paint();
+
+      refuseNextPlacement();
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
+      paint();
+
+      // Adding nothing is correct and deliberate: the array is the authoritative one
+      // and would be persisted, so an item the engine will not position must not
+      // reach it.
+      expect(component.modules).toEqual([]);
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+
+      // What must NOT happen silently. Both channels carry it: the flag paints a
+      // notice, and the live region tells a screen-reader user the same thing.
+      expect(component.hasCapacityError).toBe(true);
+      expect(component.canvasAnnouncement).toContain('no room');
+      expect(component.canvasAnnouncement).toContain('Holdings');
+    });
+
+    it('should paint a notice naming the way out', async () => {
+      await createCanvas();
+      paint();
+
+      refuseNextPlacement();
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
+      paint();
+
+      const notice = queryElements('[role="status"]').find(
+        ({ textContent }) => {
+          return textContent.includes('no room');
+        }
+      );
+
+      // A remedy rather than only a diagnosis: the viewer can always resolve this
+      // themselves, and both routes are theirs to take.
+      expect(notice).toBeDefined();
+      expect(notice.textContent).toContain('smaller');
+      expect(notice.textContent).toContain('remove');
+    });
+
+    it('should stop claiming there is no room once something is placed', async () => {
+      await createCanvas();
+      paint();
+
+      refuseNextPlacement();
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
+      paint();
+
+      expect(component.hasCapacityError).toBe(true);
+
+      jest
+        .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+        .mockReturnValue(true);
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.MARKETS);
+      paint();
+
+      // The condition is gone, so the notice has to go with it - a notice that
+      // outlives what it describes is worse than none.
+      expect(component.modules).toHaveLength(1);
+      expect(component.hasCapacityError).toBe(false);
+      expect(queryElements('[role="status"]')).not.toContainEqual(
+        expect.objectContaining({
+          textContent: expect.stringContaining('no room')
+        })
+      );
+    });
+
+    it('should stop claiming there is no room once a module is removed', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+
+      refuseNextPlacement();
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.MARKETS);
+      paint();
+
+      expect(component.hasCapacityError).toBe(true);
+
+      // Removing frees the very space the notice was about.
+      moduleHostComponents()[0].remove.emit();
+      paint();
+
+      expect(component.hasCapacityError).toBe(false);
+    });
+
+    it('should tell the catalog which modules it has no room for', async () => {
+      await createCanvas();
+      paint();
+
+      refuseNextPlacement();
+
+      component.onOpenCatalog();
+      paint();
+
+      // Every registered module the viewer may see, none of them placed and none of
+      // them placeable, so the catalog can mark each row before it is clicked
+      // rather than leaving the viewer to discover it.
+      expect(moduleCatalogComponent().unavailableModuleTypes).toEqual(
+        definitions.map(({ moduleType }) => moduleType)
+      );
+    });
+
+    it('should never call a placed module unavailable', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+
+      refuseNextPlacement();
+
+      component.onOpenCatalog();
+      paint();
+
+      // A placed module's row reveals what is already on the canvas rather than
+      // adding anything, so it always has somewhere to go no matter how full the
+      // grid is. Reporting it as having no room would mislabel the one row that
+      // cannot fail.
+      expect(moduleCatalogComponent().unavailableModuleTypes).not.toContain(
+        DashboardModuleType.HOLDINGS
+      );
+      expect(moduleCatalogComponent().placedModuleTypes).toEqual([
+        DashboardModuleType.HOLDINGS
+      ]);
+    });
+
+    // Answered on the way open, not on every change-detection pass: the question
+    // costs one grid scan per unplaced module, which is affordable once per user
+    // action and ruinous per pass.
+    it('should re-answer availability each time the catalog opens', async () => {
+      await createCanvas();
+      paint();
+
+      const positionSpy = jest
+        .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+        .mockReturnValue(false);
+
+      component.onOpenCatalog();
+      paint();
+
+      expect(positionSpy).toHaveBeenCalledTimes(definitions.length);
+
+      positionSpy.mockClear().mockReturnValue(true);
+
+      component.onToggleCatalog();
+      component.onToggleCatalog();
+      paint();
+
+      expect(component.isCatalogOpen).toBe(true);
+      expect(positionSpy).toHaveBeenCalledTimes(definitions.length);
+      expect(moduleCatalogComponent().unavailableModuleTypes).toEqual([]);
+    });
+  });
+
+  describe('removing a module', () => {
+    const twoModuleLayout: UserDashboardLayout = {
+      modules: [
+        { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+        { cols: 3, moduleType: 'markets', rows: 4, x: 5, y: 0 }
+      ],
+      version: 1
+    };
+
+    it('should announce which module was removed', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      moduleHostComponents()[0].remove.emit();
+      paint();
+
+      expect(component.modules).toHaveLength(1);
+      expect(component.canvasAnnouncement).toContain('Holdings');
+      expect(component.canvasAnnouncement).toContain('removed');
+    });
+
+    // Emptying the canvas puts the viewer back exactly where a first visit puts
+    // them: nothing placed, and the only way forward is to place something. So it
+    // gets the same treatment - the catalog comes to them rather than leaving a
+    // bare canvas whose one affordance is a floating button.
+    it('should open the catalog when the last module goes', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      expect(component.isCatalogOpen).toBe(false);
+
+      moduleHostComponents()[0].remove.emit();
+      paint();
+
+      // Not on the way to empty - only on arrival. A viewer thinning out a busy
+      // canvas must not have a panel thrown open at them after every removal.
+      expect(component.modules).toHaveLength(1);
+      expect(component.isCatalogOpen).toBe(false);
+
+      moduleHostComponents()[0].remove.emit();
+      paint();
+
+      expect(component.modules).toEqual([]);
+      expect(component.isCatalogOpen).toBe(true);
+    });
+
+    it('should leave a removal that matches nothing alone', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      component.onRemoveModule({
+        cols: 2,
+        moduleType: DashboardModuleType.FIRE,
+        rows: 2,
+        x: 0,
+        y: 0
+      });
+      paint();
+
+      expect(component.modules).toHaveLength(2);
+      expect(component.canvasAnnouncement).toBe('');
+      expect(component.isCatalogOpen).toBe(false);
     });
   });
 
@@ -3713,16 +4066,202 @@ describe('GfDashboardCanvasComponent', () => {
     });
   });
 
+  /**
+   * The grid engine listens for `window` resize and nothing else - it registers no
+   * element observer of its own. That is enough for a full-width canvas, but this
+   * grid sits in a drawer container's content pane, and opening the catalog resizes
+   * that pane by changing its margin. The window never changes, so the engine never
+   * hears about it and keeps laying items out at the pitch of the wider box: the
+   * right-hand modules then extend underneath the drawer, and closing it does not
+   * put them back.
+   */
+  describe('the grid host resizing beneath the engine', () => {
+    const placedLayout: UserDashboardLayout = {
+      modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+      version: 1
+    };
+
+    const gridsterObserver = (aGridster: Gridster) => {
+      return GfTestResizeObserver.instances.find(({ observed }) => {
+        return observed.includes(aGridster.el);
+      });
+    };
+
+    it('should watch the grid host itself', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const gridster = gridsterComponent();
+
+      // The engine's own element, not the drawer, the content pane or the host:
+      // the box whose width decides the column pitch is the one that has to be
+      // watched.
+      expect(gridsterObserver(gridster)).toBeDefined();
+    });
+
+    it('should recalculate the layout when the host box no longer matches what the engine measured', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const gridster = gridsterComponent();
+      const onResizeSpy = jest.spyOn(gridster, 'onResize');
+
+      // What opening the drawer does, expressed in the only terms available in an
+      // environment with no layout: the size the engine last accounted for is no
+      // longer the size of its host. jsdom reports every `clientWidth` as 0, so
+      // moving `curWidth` off 0 is what makes the two disagree.
+      gridster.curHeight = 0;
+      gridster.curWidth = 1240;
+
+      gridsterObserver(gridster).trigger();
+
+      // `onResize` is the engine's own public entry point - the very one its window
+      // listener calls - so this supplies the missing trigger rather than
+      // introducing a second layout authority.
+      expect(onResizeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // The guard that makes the observer safe. `onResize` re-measures the host and
+    // writes the result back to `curWidth`/`curHeight`, and laying the items out can
+    // itself change the host's box - so an unconditional call would be observed as
+    // another change and recur without end. Recognising a reflow the engine has
+    // already accounted for is what stops the loop.
+    it('should do nothing when the host box is the size the engine already accounted for', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const gridster = gridsterComponent();
+      const onResizeSpy = jest.spyOn(gridster, 'onResize');
+
+      gridster.curHeight = gridster.el.clientHeight;
+      gridster.curWidth = gridster.el.clientWidth;
+
+      gridsterObserver(gridster).trigger();
+
+      expect(onResizeSpy).not.toHaveBeenCalled();
+    });
+
+    it('should stop watching when the canvas goes away', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const observer = gridsterObserver(gridsterComponent());
+
+      expect(observer.disconnectCount).toBe(0);
+
+      fixture.destroy();
+
+      // Left connected, the observer would keep the grid's host element and a
+      // closure over a torn-down engine alive, and would call into that engine on
+      // the next reflow.
+      expect(observer.disconnectCount).toBe(1);
+    });
+  });
+
   describe('the catalog trigger', () => {
-    it('should pad the document for its lifetime and stop padding it on destroy', async () => {
+    /**
+     * One placed module, so the catalog starts closed. A first visit with nothing
+     * placed opens it on purpose - see the empty-arrangement handling in
+     * `applyLayout` - which would mask both the trigger's resting glyph and its
+     * resting position.
+     */
+    const placedTriggerLayout: UserDashboardLayout = {
+      modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+      version: 1
+    };
+
+    // The canvas must NOT pad the document. `has-fab` pads the body so a page that
+    // flows and scrolls ends clear of a floating trigger; this shell is exactly one
+    // viewport tall and scrolls the grid inside itself, so the padding has nothing
+    // to push and instead makes the document taller than the viewport. The
+    // resulting page scroll moves the control bar off screen and, because it makes
+    // the document a scrollable ancestor, lets a module reveal displace everything
+    // the viewer was looking at. Asserted on destroy as well so a future change
+    // cannot reintroduce it and leave it behind.
+    it('should not pad the document, at any point in its lifetime', async () => {
       await createCanvas();
       paint();
 
-      expect(document.body.classList.contains('has-fab')).toBe(true);
+      expect(document.body.classList.contains('has-fab')).toBe(false);
 
       fixture.destroy();
 
       expect(document.body.classList.contains('has-fab')).toBe(false);
+    });
+
+    // The host must NOT carry `page`. That class is for a screen that flows and
+    // scrolls the document, and above the small breakpoint it insets its host by 2rem
+    // top and bottom - which on a shell exactly one viewport tall left an empty band
+    // above the control bar and pushed it 32px off the top of the screen. Everything
+    // else it supplied is either already on this component's own host or contradicted
+    // by it.
+    it('should not carry the page class, but must keep the grid-scoping one', async () => {
+      await createCanvas();
+      paint();
+
+      const host = fixture.nativeElement as HTMLElement;
+
+      expect(host.classList.contains('page')).toBe(false);
+
+      // `gf-gridster` is load-bearing: it is the scope the global grid stylesheet
+      // hangs every override off, and gridster's own unencapsulated styles are
+      // injected after the application stylesheet, so without it they win.
+      expect(host.classList.contains('gf-gridster')).toBe(true);
+    });
+
+    // A plus would be one more identical teal disc: five feature modules render their
+    // own circular add button with a plus, and all of them can be on the canvas at
+    // once. A grid glyph says what this control actually opens and agrees with its
+    // name, "Browse modules".
+    it('should not wear the same glyph as a module add button', async () => {
+      // A saved arrangement, so the catalog starts SHUT. A first visit with nothing
+      // placed opens it deliberately, which would mask the resting glyph entirely.
+      await createCanvas({ layout: of(placedTriggerLayout) });
+      paint();
+
+      // Read as a PROPERTY, not an attribute. `ion-icon` is matched by
+      // `CUSTOM_ELEMENTS_SCHEMA`, so Angular assigns `[name]` to the element rather
+      // than writing an attribute; the real custom element reflects it back, but
+      // nothing defines it here, so `getAttribute` reads null either way.
+      const glyphName = () => {
+        return (
+          queryElement('.gf-dashboard-catalog-trigger ion-icon') as unknown as {
+            name: string;
+          }
+        ).name;
+      };
+
+      expect(component.modules).toHaveLength(1);
+      expect(component.isCatalogOpen).toBe(false);
+      expect(glyphName()).toBe('grid-outline');
+
+      component.onOpenCatalog();
+      paint();
+
+      expect(glyphName()).toBe('close-outline');
+    });
+
+    it('should step clear of the catalog while the catalog is open', async () => {
+      await createCanvas({ layout: of(placedTriggerLayout) });
+      paint();
+
+      const trigger = queryElement('.gf-dashboard-catalog-trigger');
+
+      // The trigger is fixed at the trailing edge and the drawer opens at that same
+      // edge, so while the panel is open the button would otherwise sit on top of
+      // its rows - covering a different one as the list scrolls. It cannot simply be
+      // hidden instead: it is also the control that closes the panel.
+      expect(trigger.classList.contains('is-catalog-open')).toBe(false);
+
+      component.onOpenCatalog();
+      paint();
+
+      expect(trigger.classList.contains('is-catalog-open')).toBe(true);
+
+      component.onToggleCatalog();
+      paint();
+
+      expect(trigger.classList.contains('is-catalog-open')).toBe(false);
     });
 
     it('should toggle the catalog from the floating trigger', async () => {

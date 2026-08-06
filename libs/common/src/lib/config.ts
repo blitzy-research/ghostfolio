@@ -1,5 +1,9 @@
 import { AssetClass, AssetSubClass, DataSource, Type } from '@prisma/client';
-import { JobOptions, JobStatus } from 'bull';
+// `import type`, and not merely as a style: both names are used only in type
+// positions, and a value import of them puts the queue library - which exists
+// only for the server - into the browser bundle of every client that reaches this
+// module. The type-only form is erased at compile time instead.
+import type { JobOptions, JobStatus } from 'bull';
 import ms from 'ms';
 
 export const ghostfolioPrefix = 'GF';

@@ -31,6 +31,7 @@ describe('SubscriptionController', () => {
 
   let createSubscriptionViaStripe: jest.Mock;
   let loggerLog: jest.SpyInstance;
+  let loggerWarn: jest.SpyInstance;
   let redirect: jest.Mock;
   let subscriptionController: SubscriptionController;
 
@@ -42,6 +43,7 @@ describe('SubscriptionController', () => {
     // so the suite output stays readable, and asserted below rather than merely
     // suppressed, because that line is the operator's only record of the event.
     loggerLog = jest.spyOn(Logger, 'log').mockImplementation(() => undefined);
+    loggerWarn = jest.spyOn(Logger, 'warn').mockImplementation(() => undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SubscriptionController],
@@ -66,6 +68,7 @@ describe('SubscriptionController', () => {
 
   afterEach(() => {
     loggerLog.mockRestore();
+    loggerWarn.mockRestore();
   });
 
   describe('stripeCallback', () => {
@@ -137,6 +140,90 @@ describe('SubscriptionController', () => {
         `Subscription for user '${userId}' has been created via Stripe`,
         'SubscriptionController'
       );
+      expect(loggerWarn).not.toHaveBeenCalled();
+    });
+
+    /**
+     * What the log says when provisioning did *not* happen.
+     *
+     * `createSubscriptionViaStripe` swallows a provider failure and resolves
+     * without a user, so the handler cannot tell the two outcomes apart from the
+     * return value alone unless it looks. An unconditional success line therefore
+     * announced an entitlement that was never granted - with a literal
+     * `undefined` standing in for the account - and that is the single most
+     * misleading thing a log can say to whoever is investigating a billing
+     * complaint. The redirect is unaffected: the payer is returning in a browser
+     * and must land on the application either way.
+     */
+    describe('when the checkout session cannot be turned into a subscription', () => {
+      beforeEach(() => {
+        // Exactly what the service resolves to when Stripe rejects the session.
+        createSubscriptionViaStripe.mockResolvedValue(undefined);
+      });
+
+      it('claims no subscription was created', async () => {
+        await subscriptionController.stripeCallback(
+          createRequest(),
+          createResponse()
+        );
+
+        expect(loggerLog).not.toHaveBeenCalled();
+      });
+
+      it('interpolates no undefined identity into the log', async () => {
+        await subscriptionController.stripeCallback(
+          createRequest(),
+          createResponse()
+        );
+
+        // Asserted across every logger channel rather than only the one expected
+        // to fire, so the literal cannot reappear by being moved.
+        for (const logger of [loggerLog, loggerWarn]) {
+          for (const [message] of logger.mock.calls as [string][]) {
+            expect(message).not.toContain('undefined');
+          }
+        }
+      });
+
+      it('records the failure instead of staying silent', async () => {
+        await subscriptionController.stripeCallback(
+          createRequest(),
+          createResponse()
+        );
+
+        expect(loggerWarn).toHaveBeenCalledTimes(1);
+        expect(loggerWarn).toHaveBeenCalledWith(
+          'A Stripe checkout session could not be turned into a subscription',
+          'SubscriptionController'
+        );
+      });
+
+      it('keeps the checkout session identifier out of the log', async () => {
+        await subscriptionController.stripeCallback(
+          createRequest(),
+          createResponse()
+        );
+
+        const [message] = loggerWarn.mock.calls[0] as [string];
+
+        // It identifies a payment session, so it does not belong in an operations
+        // log; the provider error the service already logged carries the context.
+        expect(message).not.toContain(checkoutSessionId);
+      });
+
+      it('still returns the payer to the locale root', async () => {
+        await subscriptionController.stripeCallback(
+          createRequest(),
+          createResponse()
+        );
+
+        // Stranding somebody who has just paid on a bare API response would be a
+        // far worse outcome than a missing entitlement they can be granted later.
+        expect(redirect).toHaveBeenCalledTimes(1);
+        expect(redirect).toHaveBeenCalledWith(
+          `${rootUrl}/${DEFAULT_LANGUAGE_CODE}/`
+        );
+      });
     });
   });
 });

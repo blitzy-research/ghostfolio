@@ -58,8 +58,9 @@
     }
   }
 
-  // Without the info message the header renders nothing, so it is given no
-  // height and collapses, leaving the full viewport to the main content.
+  // Without the info message there is no header element at all - it is omitted
+  // rather than emptied, so that no empty banner landmark is published - leaving
+  // the full viewport to the main content.
   //
   // `block-size` rather than `min-height`: the routed canvas sizes its control
   // bar, drawer host and root-route states purely from flex growth, and a flex

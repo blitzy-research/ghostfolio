@@ -1,28 +1,42 @@
 <div class="overflow-x-auto">
   <table class="gf-table w-100" mat-table [dataSource]="dataSource">
     <ng-container matColumnDef="alias">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Alias</th>
+      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
+        Alias
+      </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
         {{ element.alias }}
       </td>
     </ng-container>
 
     <ng-container matColumnDef="grantee">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Grantee</th>
+      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
+        Grantee
+      </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
         {{ element.grantee }}
       </td>
     </ng-container>
 
     <ng-container matColumnDef="type">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Permission</th>
+      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
+        Permission
+      </th>
       <td *matCellDef="let element" class="px-1 text-nowrap" mat-cell>
         <div class="align-items-center d-flex">
           @if (element.permissions.includes('READ')) {
-            <ion-icon class="mr-1" name="lock-open-outline" />
+            <ion-icon
+              aria-hidden="true"
+              class="mr-1"
+              name="lock-open-outline"
+            />
             <ng-container i18n>View</ng-container>
           } @else if (element.permissions.includes('READ_RESTRICTED')) {
-            <ion-icon class="mr-1" name="lock-closed-outline" />
+            <ion-icon
+              aria-hidden="true"
+              class="mr-1"
+              name="lock-closed-outline"
+            />
             <ng-container i18n>Restricted view</ng-container>
           }
         </div>
@@ -30,11 +44,13 @@
     </ng-container>
 
     <ng-container matColumnDef="details">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Details</th>
+      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
+        Details
+      </th>
       <td *matCellDef="let element" class="px-1 text-nowrap" mat-cell>
         @if (element.type === 'PUBLIC') {
           <div class="align-items-center d-flex">
-            <ion-icon class="mr-1" name="link-outline" />
+            <ion-icon aria-hidden="true" class="mr-1" name="link-outline" />
             <a target="_blank" [href]="getPublicUrl(element.id)">{{
               getPublicUrl(element.id)
             }}</a>
@@ -53,16 +69,25 @@
     </ng-container>
 
     <ng-container matColumnDef="actions" stickyEnd>
-      <th *matHeaderCellDef class="px-1 text-center" mat-header-cell></th>
+      <th
+        *matHeaderCellDef
+        class="px-1 text-center"
+        mat-header-cell
+        scope="col"
+      >
+        <span class="sr-only" i18n>Actions</span>
+      </th>
 
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         <button
+          aria-label="Actions for this granted access"
           class="mx-1 no-min-width px-2"
+          i18n-aria-label
           mat-button
           [matMenuTriggerFor]="accessActionsMenu"
           (click)="$event.stopPropagation()"
         >
-          <ion-icon name="ellipsis-horizontal" />
+          <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
         </button>
         <mat-menu
           #accessActionsMenu="matMenu"
@@ -72,7 +97,11 @@
           @if (user()?.settings?.isExperimentalFeatures) {
             <button mat-menu-item (click)="onUpdateAccess(element.id)">
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="create-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="create-outline"
+                />
                 <span><ng-container i18n>Edit</ng-container>...</span>
               </span>
             </button>
@@ -80,7 +109,7 @@
           @if (element.type === 'PUBLIC') {
             <button mat-menu-item (click)="onCopyUrlToClipboard(element.id)">
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="copy-outline" />
+                <ion-icon aria-hidden="true" class="mr-2" name="copy-outline" />
                 <span i18n>Copy link to clipboard</span>
               </span>
             </button>
@@ -93,7 +122,11 @@
           }
           <button mat-menu-item (click)="onDeleteAccess(element.id)">
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="remove-circle-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="mr-2"
+                name="remove-circle-outline"
+              />
               <span i18n>Revoke</span>
             </span>
           </button>

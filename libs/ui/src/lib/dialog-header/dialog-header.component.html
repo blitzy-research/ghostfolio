@@ -5,8 +5,14 @@
     >{{ title }}</span
   >
   @if (deviceType !== 'mobile') {
-    <button class="no-min-width px-0" mat-button (click)="onClickCloseButton()">
-      <ion-icon name="close" size="large" />
+    <button
+      aria-label="Close the dialog"
+      class="no-min-width px-0"
+      i18n-aria-label
+      mat-button
+      (click)="onClickCloseButton()"
+    >
+      <ion-icon aria-hidden="true" name="close" size="large" />
     </button>
   }
 </div>

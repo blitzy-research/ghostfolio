@@ -18,7 +18,15 @@
   [attr.aria-busy]="!resolvedComponent && !hasLoadError"
   [attr.aria-label]="definition?.name"
 >
-  <mat-card-header class="align-items-center px-3 py-2">
+  <!--
+    The narrower inline padding is measured, not a preference. In a four-column
+    module at a 375px viewport the header has 112px to spend; the handle takes 32
+    and the actions trigger 40, and at the wider step the title was left flexing
+    to 1.7px - the module rendered with no readable name at all. Reclaiming the
+    two inline steps here, and the handle's trailing margin below, hands those
+    pixels to the title, which now also refuses to shrink past a floor.
+  -->
+  <mat-card-header class="align-items-center px-2 py-2">
     <!--
       The class below and the one on the body wrapper are matched by string
       against the grid's drag configuration, so each is spelled exactly once in
@@ -41,7 +49,7 @@
     <button
       aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
       aria-label="Move or resize module"
-      class="gf-dashboard-module-drag-handle mr-2 p-2"
+      class="gf-dashboard-module-drag-handle p-2"
       i18n-aria-label
       i18n-title
       title="Drag to move module"
@@ -53,18 +61,27 @@
 
     <!--
       Keep the title nested: direct MatCardTitle projection reorders the header,
-      and overflow clipping is required for flex truncation.
+      and overflow clipping is required for flex truncation. The wrapper carries a
+      class rather than utilities because it needs a shrink floor as well as the
+      clipping - a clipped flex item contributes a minimum size of ZERO, which is
+      exactly how the title collapsed to nothing in a narrow module.
     -->
-    <div class="mr-2 overflow-hidden">
+    <div class="module-title">
       <mat-card-title class="mb-0 text-truncate">{{
         definition?.name
       }}</mat-card-title>
     </div>
 
-    <span class="gf-spacer"></span>
-
+    <!--
+      No spacer element sits between the title and this trigger any more. A spacer
+      that grows shares the free space with the title, which grows too, so half of
+      every module's spare header width was being spent on nothing while long
+      names ellipsized early. The trigger pushes itself to the trailing edge
+      instead, which leaves the title everything that is left over.
+    -->
     <button
       aria-label="Module actions"
+      class="module-actions"
       i18n-aria-label
       mat-icon-button
       [matMenuTriggerFor]="moduleActionsMenu"
@@ -82,22 +99,94 @@
     </mat-menu>
   </mat-card-header>
 
-  <div class="gridster-item-content">
-    @if (resolvedComponent) {
-      <ng-container [ngComponentOutlet]="resolvedComponent" />
-    } @else if (hasLoadError) {
-      <div class="p-3 secondary-text text-center" i18n role="alert">
-        Oops! Something went wrong.
-      </div>
-    } @else {
-      <ngx-skeleton-loader
-        animation="pulse"
-        class="h-100 p-3"
-        [theme]="{
-          height: '100%',
-          width: '100%'
-        }"
-      />
+  <!--
+    The wrapper exists so the two scroll hints can be positioned against the
+    module's body without being dragged around by the body's own scrolling: an
+    absolutely positioned child of a scroll container is laid out against that
+    container's scrolled content, so a hint placed inside the scroller would slide
+    out of view the moment it became relevant. It changes nothing about dragging -
+    the grid decides what starts a drag by walking UP from the pressed element
+    until it meets either the drag-handle class or the ignore-content class, so an
+    extra ancestor above the ignore-content element is invisible to that walk.
+  -->
+  <div class="gf-dashboard-module-body">
+    <!--
+      The gutter belongs to this region rather than to what it holds. Every module
+      body measured zero padding on all four sides, so where a module's first
+      element brought none of its own the content sat 1-2px from the card edge and
+      the top line touched the header rule; where it did bring its own the inset
+      was whatever that module happened to use, which is why the same dashboard
+      showed first-content offsets ranging from 1px to 33px. Padding the region
+      once gives every module the same inset regardless of what it renders - and
+      is why neither branch below adds an inset of its own any more.
+    -->
+    <div #moduleContent class="gridster-item-content p-3">
+      @if (resolvedComponent) {
+        <ng-container [ngComponentOutlet]="resolvedComponent" />
+      } @else if (hasLoadError) {
+        <div class="secondary-text text-center" i18n role="alert">
+          Oops! Something went wrong.
+        </div>
+      } @else {
+        <ngx-skeleton-loader
+          animation="pulse"
+          class="h-100"
+          [theme]="{
+            height: '100%',
+            width: '100%'
+          }"
+        />
+      }
+    </div>
+
+    <!--
+      Says out loud that a module continues past its edge. Every module body
+      already scrolled - measured reaching 100% of its overflow, 1,765px in the
+      tallest - but nothing on screen admitted it: this platform paints overlay
+      scrollbars, so a pixel census of the right edge of an overflowing module
+      found only the card fill and the card border, identical to a module with
+      nothing hidden at all. The only cue anywhere was an accidental one, a row
+      sliced by the fold, and where a row happened to end flush - Market Data,
+      with its paginator 1,359px below - the module looked complete.
+
+      Deliberately not left to the browser's own scrollbar. The hints are ordinary
+      painted elements, so they survive overlay scrollbars, `--hide-scrollbars`
+      and any platform that hides scrollbars until a scroll is already in
+      progress - which is exactly the class of environment where the defect was
+      invisible in the first place.
+
+      Rendered only when there really is something in that direction, so a module
+      that fits carries no marking at all and the marking itself means something.
+      `aria-hidden` because they duplicate no information a screen reader lacks:
+      the whole subtree is in the accessibility tree whether or not it is scrolled
+      into view, and the region is reachable and scrollable by keyboard.
+    -->
+    @if (hasOverflowAbove) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-above"
+      ></div>
+    }
+
+    @if (hasOverflowBelow) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-below"
+      ></div>
+    }
+
+    @if (hasOverflowStart) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-start"
+      ></div>
+    }
+
+    @if (hasOverflowEnd) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-end"
+      ></div>
     }
   </div>
 </mat-card>

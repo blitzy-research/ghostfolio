@@ -28,7 +28,18 @@
 </div>
 
 @if (modules?.length > 0) {
-  <div class="flex-grow-1 overflow-auto px-3 py-2 result-container" role="list">
+  <!--
+    `tabindex="-1"` because a browser makes a scrolling box keyboard-focusable of
+    its own accord unless the author says otherwise, which put this container in
+    the tab order ahead of the rows as an unnamed control whose announced name was
+    the run-together labels of everything inside it. The rows are the stops here,
+    and exactly one of them is in the natural order at a time.
+  -->
+  <div
+    class="flex-grow-1 overflow-auto px-3 py-2 result-container"
+    role="list"
+    tabindex="-1"
+  >
     <!--
       Tracked by module type because that discriminator is unique across the
       registry and stable across a filter change, which keeps each row's element
@@ -39,9 +50,13 @@
       to declare, so repeating any of them here would add the module twice and
       nest one list item inside another.
     -->
-    @for (module of modules; track module.moduleType) {
+    @for (module of modules; track module.moduleType; let index = $index) {
       <gf-module-catalog-item
         [definition]="module"
+        [isPlaced]="isPlaced(module.moduleType)"
+        [isTabbable]="index === tabbableIndex"
+        [isUnavailable]="isUnavailable(module.moduleType)"
+        (focused)="onModuleCatalogItemFocused(index)"
         (moduleAdded)="onAddModule($event)"
       />
     }

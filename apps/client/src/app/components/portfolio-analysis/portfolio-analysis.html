@@ -4,12 +4,14 @@
       <div class="d-flex justify-content-end">
         <button
           #actionsMenuButton
+          aria-label="Actions for the portfolio analysis"
           class="mx-1 no-min-width px-2"
+          i18n-aria-label
           mat-stroked-button
           [matMenuTriggerFor]="actionsMenu"
           (click)="$event.stopPropagation()"
         >
-          <ion-icon name="ellipsis-vertical" />
+          <ion-icon aria-hidden="true" name="ellipsis-vertical" />
         </button>
         <mat-menu
           #actionsMenu="matMenu"
@@ -29,7 +31,11 @@
                   @if (isLoadingPortfolioPrompt) {
                     <mat-spinner class="mr-2" color="accent" [diameter]="16" />
                   } @else {
-                    <ion-icon class="mr-2" name="copy-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-2"
+                      name="copy-outline"
+                    />
                   }
                 }
                 <ng-container i18n
@@ -49,7 +55,11 @@
                   @if (isLoadingAnalysisPrompt) {
                     <mat-spinner class="mr-2" color="accent" [diameter]="16" />
                   } @else {
-                    <ion-icon class="mr-2" name="copy-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-2"
+                      name="copy-outline"
+                    />
                   }
                 }
                 <ng-container i18n
