@@ -3,14 +3,12 @@ import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import {
   DashboardModuleLayoutItem,
   User,
   UserDashboardLayout
 } from '@ghostfolio/common/interfaces';
 import { hasPermission } from '@ghostfolio/common/permissions';
-import { NotificationService } from '@ghostfolio/ui/notifications';
 
 import { HttpErrorResponse } from '@angular/common/http';
 import {
@@ -326,6 +324,13 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * margin, so the grid's host narrows by the drawer's width with no window
    * resize to hear. Left unobserved, the engine keeps laying out at the wide
    * pitch and the right-hand modules extend underneath the drawer.
+   *
+   * Bound to one particular engine instance and released with it, in
+   * {@link releaseGridster}. It has to be, because it holds that instance's host
+   * element and a closure over the instance itself: this canvas outlives its grid,
+   * so an observer released only at the canvas's own teardown would keep a
+   * detached element and a dead engine alive for as long as the viewer stayed on a
+   * state that draws no grid.
    */
   private gridsterResizeObserver: ResizeObserver | null = null;
 
@@ -456,7 +461,6 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     // one feature component that happened to subscribe to it directly.
     private layoutService: LayoutService,
     private moduleRegistryService: GfModuleRegistryService,
-    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
@@ -465,6 +469,7 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     this.options = createDashboardCanvasConfig({
       onEmptyCellDrop: (event, item) => this.handleEmptyCellDrop(event, item),
+      onGridsterDestroy: (gridster) => this.releaseGridster(gridster),
       onGridsterInit: (gridster) => {
         this.gridster = gridster;
 
@@ -573,12 +578,15 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   public ngOnDestroy() {
-    // The observer outlives this component's view unless it is severed here: it
-    // holds the grid's host element and a closure over the engine, so leaving it
-    // connected would keep both alive and would call into a torn-down engine on
-    // the next reflow.
+    // The BACKSTOP, not the ordinary path. The engine's own teardown hook releases
+    // the observer whenever the grid goes away - which is usually while this
+    // component carries on - and this covers the one case that hook cannot: the
+    // whole canvas being destroyed. Left connected, the observer would keep the
+    // grid's host element and a closure over the engine alive and would call into a
+    // torn-down engine on the next reflow.
     this.gridsterResizeObserver?.disconnect();
     this.gridsterResizeObserver = null;
+    this.gridster = null;
 
     // A removal in this component's final moments leaves a task queued that would
     // reach into a view that no longer exists.
@@ -720,63 +728,6 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.setCatalogOpen(aIsOpened);
   }
 
-  /**
-   * Abandons a saved arrangement that cannot be read, and starts an empty one.
-   *
-   * The escape from the failed-read state, and the reason it has to exist: a
-   * stored document this build cannot interpret makes every read fail
-   * deterministically, so asking again can only ever fail again. Without this the
-   * only affordances left are a retry that cannot succeed and signing out, which
-   * returns to the same row - a viewer with an unreadable arrangement had no way
-   * back to a usable dashboard from inside the application at all.
-   *
-   * Destructive, so it is confirmed first, through the same warning dialog the
-   * application already uses for closing an account and for removing a sign-in
-   * method. The wording names the consequence rather than the mechanism, because
-   * what the viewer loses is the arrangement, not a row.
-   *
-   * The write is reported through {@link notifyLayoutChange} - the single handler
-   * all four grid callbacks feed - rather than by calling the layout service or
-   * the data façade directly. So this adds a TRIGGER into the existing funnel and
-   * not a second write origin: the debounce, the projection, the identity check
-   * and the one and only `patchUserDashboardLayout` call site are all unchanged,
-   * and no module can reach any of it. Clearing `lastReportedLayout` first is what
-   * makes the emptied arrangement count as a change; without it the fingerprint of
-   * an empty canvas could match what was last reported and the write would be
-   * skipped.
-   *
-   * The failed-read flag is lowered before the report, not after, because
-   * `notifyLayoutChange` refuses outright while it is up - that refusal is what
-   * protects an unread arrangement from being overwritten by an accidental edit,
-   * and this is the one operation that is meant to overwrite it deliberately.
-   */
-  public onDiscardLayout() {
-    this.notificationService.confirm({
-      confirmFn: () => {
-        this.modules.length = 0;
-        this.canonicalModules = [];
-        this.lastReportedLayout = null;
-
-        this.hasCapacityError = false;
-        this.hasLayoutError = false;
-        this.isInitialized = true;
-
-        // Same rule as everywhere else an arrangement ends up empty: the catalog
-        // is the way forward, so it comes to the viewer rather than leaving them
-        // on a blank canvas with one floating button.
-        this.isCatalogOpen = true;
-
-        this.canvasAnnouncement = $localize`The saved dashboard was discarded. Add a module to start a new one.`;
-
-        this.changeDetectorRef.markForCheck();
-
-        this.notifyLayoutChange();
-      },
-      confirmType: ConfirmationDialogType.Warn,
-      title: $localize`Do you really want to discard your saved dashboard and start over?`
-    });
-  }
-
   public onOpenCatalog() {
     this.setCatalogOpen(true);
   }
@@ -805,8 +756,12 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   /**
    * Sends the arrangement whose write failed again.
    *
-   * Delegated in full: the layout service still owns the snapshot, the debounce
-   * and the request, so this adds no second write origin.
+   * Delegated in full, and it re-enters the very stream the grid's own callbacks
+   * feed: the layout service still owns the snapshot, the debounce, the projection
+   * and the single request, so this adds no second write origin and no second
+   * request builder. It carries no arrangement of its own - the one the grid
+   * produced is still held, unwritten, which is the whole reason a retry is
+   * offerable at all.
    */
   public onRetrySave() {
     this.dashboardLayoutService.retryFailedSave();
@@ -1023,6 +978,49 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
+   * Decides whether the grid's own reveal applies to the cells about to be drawn.
+   *
+   * The configuration ships `scrollToNewItems: true`, because a module placed
+   * below the fold has to be brought into view rather than appear to have been
+   * swallowed. The engine applies it from the first size computation of *every*
+   * item though, which is the same moment `itemInitCallback` fires, so it cannot
+   * itself tell a module the viewer just placed from one being restored - and a
+   * returning viewer's canvas scrolling itself to the bottom-most saved module as
+   * it loads is not a reveal, it is a canvas that has lost its place.
+   *
+   * This component is the only layer that knows which it is, so it is the layer
+   * that decides: withheld while it draws cells nobody asked for - hydrating a
+   * saved arrangement, re-screening what the viewer may see - and released for the
+   * item the viewer placed. Every path that fills the arrangement array passes
+   * through one of those three, so there is no fourth case to get wrong.
+   *
+   * Re-issued as a new object for the same reason {@link
+   * applyDropPreviewFootprint} does it: the engine derives the options it reads
+   * through a `computed` over its signal input, so identity is what invalidates
+   * that derivation, and spreading the current object forward preserves the
+   * runtime bookkeeping the engine has written onto it.
+   *
+   * Presentation only. No item is created, moved, resized or removed, so no
+   * persistence callback fires and nothing is written.
+   *
+   * ⚠ Called BEFORE the cells in question are drawn, never from inside a callback
+   * the engine raises while drawing one: the engine reads `$options` on entry to
+   * its own size computation, and re-issuing a parent-bound input during that
+   * pass is what an `ExpressionChangedAfterItHasBeenChecked` is made of.
+   *
+   * @param aIsEnabled whether the next first paint should scroll itself into view.
+   */
+  private applyNewItemReveal(aIsEnabled: boolean) {
+    if (this.options.scrollToNewItems === aIsEnabled) {
+      return;
+    }
+
+    this.options = { ...this.options, scrollToNewItems: aIsEnabled };
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
    * Commits a requested geometry through the grid engine, or reports that it
    * could not be committed.
    *
@@ -1150,6 +1148,12 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     const items = this.createLayoutItems(this.canonicalModules);
 
+    // Restoring an arrangement is not placing a module, so the grid's own reveal
+    // is withheld for the cells below - all of which report the same first paint a
+    // placement does. Released again by `placeModule`, for the one cell the viewer
+    // actually asks for.
+    this.applyNewItemReveal(false);
+
     this.modules.length = 0;
     this.modules.push(...items);
 
@@ -1222,6 +1226,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
         );
       }
     );
+
+    // A module admitted because a permission arrived was not placed by the viewer
+    // either, so the grid's own reveal is withheld here too - for the same reason
+    // hydration withholds it.
+    this.applyNewItemReveal(false);
 
     // Emptied and refilled rather than replaced, for the same reason
     // `applyLayout` does it: the array's identity is part of the contract with
@@ -1921,13 +1930,16 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
-   * The one place a layout write is scheduled from. The grid's change, resize, init
-   * and remove callbacks all arrive here, and so do the canvas's own add and remove
-   * paths; nothing outside this component can reach it.
+   * The one place a layout write is scheduled from, and nothing outside this
+   * component can reach it.
    *
    * Reached from exactly one place: the `onLayoutChange` handler the grid
-   * configuration is built with, which all four of the engine's change callbacks
-   * forward to. No other method in this component calls it.
+   * configuration is built with, which all four of the engine's change callbacks -
+   * change, resize, init and remove - forward to. No other method in this component
+   * calls it, which is what makes those four callbacks the entire set of write
+   * origins rather than merely the usual ones. The canvas's own add and remove
+   * paths reach it the same way as everything else: they mutate the array, the
+   * engine settles the cells and reports it.
    *
    * Suppressed unless the arrangement is actually on screen. Destroying the
    * canvas - signing out, or following a shared link - destroys every grid item,
@@ -2090,8 +2102,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     }
 
     // Replaced rather than added to, so a re-initialized grid - a viewer change
-    // tears the canvas down and rebuilds it - never leaves an observer watching
-    // the previous host.
+    // tears the grid down and rebuilds it - never leaves an observer watching the
+    // previous host. {@link releaseGridster} already severs it when the grid it
+    // watches is destroyed; this covers the rebuild, where the incoming grid
+    // initializes BEFORE the outgoing one is destroyed and the outgoing
+    // destruction is therefore declined by that method's identity guard.
     this.gridsterResizeObserver?.disconnect();
 
     this.gridsterResizeObserver = new ResizeObserver(() => {
@@ -2185,6 +2200,12 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       ? $localize`${aDefinition.name}:moduleName: did not fit where it was dropped and was added at column ${item.x + 1}:column:, row ${item.y + 1}:row:`
       : $localize`${aDefinition.name}:moduleName: added to the dashboard at column ${item.x + 1}:column:, row ${item.y + 1}:row:`;
 
+    // Released before the cell is drawn, because the engine reads the option on
+    // entry to the size computation that draws it. This is the one case the grid's
+    // own reveal is meant for: a module the viewer asked for, which may well land
+    // below the fold.
+    this.applyNewItemReveal(true);
+
     this.modules.push(item);
 
     // Marked for reveal before the array is even seen by the template: the cell
@@ -2199,6 +2220,46 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.pendingRevealItem = item;
 
     this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Lets go of a grid engine that has been torn down.
+   *
+   * This canvas OUTLIVES its grid. Four of its states draw no grid at all - a
+   * shared portfolio, a signed-out viewer, a failed viewer read and a failed
+   * layout read - so entering any of them destroys the `gridster` child while the
+   * canvas carries on. Everything the canvas had taken from that instance has to
+   * be given back at that moment rather than at the canvas's own teardown:
+   *
+   * - the element observer, which is registered against the destroyed instance's
+   *   host and would otherwise stay connected to a detached element, holding it
+   *   and a closure over a dead engine, and would call `onResize` on that engine
+   *   the next time the element was measured;
+   * - the instance reference itself, because every one of its uses answers a
+   *   question about the grid CURRENTLY on screen - is there room for this module,
+   *   which cell does this item occupy - and a destroyed engine answers all of
+   *   them from a layout nobody can see.
+   *
+   * Guarded on identity rather than clearing outright, and that is what makes it
+   * safe: a rebuild initialises the incoming grid BEFORE destroying the outgoing
+   * one, so an unconditional clear would discard the live instance and leave the
+   * canvas with no engine while a grid was on screen.
+   *
+   * Every reader of {@link gridster} already treats its absence as "no grid yet",
+   * which is the same answer as "no grid any more", so nothing downstream needs a
+   * new branch.
+   *
+   * @param aGridster the instance the engine reports as destroyed.
+   */
+  private releaseGridster(aGridster: Gridster) {
+    if (this.gridster !== aGridster) {
+      return;
+    }
+
+    this.gridsterResizeObserver?.disconnect();
+    this.gridsterResizeObserver = null;
+
+    this.gridster = null;
   }
 
   /**

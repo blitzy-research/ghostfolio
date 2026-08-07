@@ -2,6 +2,7 @@ import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 
 import { InternalServerErrorException, Logger } from '@nestjs/common';
+import { inspect } from 'node:util';
 
 import { UserDashboardLayoutService } from './user-dashboard-layout.service';
 
@@ -11,12 +12,26 @@ describe('UserDashboardLayoutService', () => {
   const userId = '8b1f1b3a-6f2a-4a52-9c0b-6d5f2f7c3a11';
 
   let findUnique: jest.Mock;
+  let loggerError: jest.SpyInstance;
+  let loggerWarn: jest.SpyInstance;
   let prismaServiceMock: {
     $transaction: jest.Mock;
     userDashboardLayout: Record<string, jest.Mock>;
   };
   let upsert: jest.Mock;
   let userDashboardLayoutService: UserDashboardLayoutService;
+
+  /** Everything the service emitted through the given logger level, as one string. */
+  const emitted = (aLoggerLevel: jest.SpyInstance) =>
+    (aLoggerLevel.mock.calls as unknown[][])
+      .map((call) =>
+        call
+          .map((argument) =>
+            typeof argument === 'string' ? argument : inspect(argument)
+          )
+          .join(' ')
+      )
+      .join('\n');
 
   // Every delegate method the service could conceivably reach is present as a
   // spy, so `calledDelegateMethods` proves not only that the expected one ran
@@ -27,12 +42,16 @@ describe('UserDashboardLayoutService', () => {
       .map(([methodName]) => methodName);
 
   beforeEach(() => {
-    // Silenced rather than left to print. A refused document is reported at
-    // `error` and a dropped entry at `warn`, both deliberately, and several cases
-    // below exercise exactly those paths - so without this the suite's output is
-    // dominated by lines that are the expected behaviour rather than a problem.
-    jest.spyOn(Logger, 'error').mockImplementation(() => undefined);
-    jest.spyOn(Logger, 'warn').mockImplementation(() => undefined);
+    // Silenced rather than left to print, and captured rather than merely
+    // silenced. A refused document is reported at `error` and a dropped entry at
+    // `warn`, both deliberately, and several cases below exercise exactly those
+    // paths - so without this the suite's output is dominated by lines that are
+    // the expected behaviour rather than a problem. Holding the spies is what
+    // lets the assertions below state what those lines may and may not carry.
+    loggerError = jest
+      .spyOn(Logger, 'error')
+      .mockImplementation(() => undefined);
+    loggerWarn = jest.spyOn(Logger, 'warn').mockImplementation(() => undefined);
 
     findUnique = jest.fn();
     upsert = jest.fn();
@@ -276,22 +295,47 @@ describe('UserDashboardLayoutService', () => {
         { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
         { cols: 6, moduleType: 'watchlist', rows: 3, x: 4, y: 0 }
       ]);
+
+      // How much was unreadable is a measure rather than a value, so it is safe to
+      // report and is the one thing an operator can act on. What those entries
+      // held, and whose row they came out of, is neither reported nor implied.
+      expect(loggerWarn).toHaveBeenCalledTimes(1);
+      expect(loggerWarn).toHaveBeenCalledWith(
+        'GF-USER-DASHBOARD-LAYOUT-ITEMS-DROPPED (count 5)',
+        'UserDashboardLayoutService'
+      );
+
+      const reported = emitted(loggerWarn);
+
+      expect(reported).not.toContain(userId);
+      expect(reported).not.toContain('markets');
+      expect(reported).not.toContain('not-an-object');
     });
 
     it.each([
-      { description: 'is not an object at all', layoutData: 'not-a-document' },
-      { description: 'is a JSON array', layoutData: [] },
+      {
+        description: 'is not an object at all',
+        layoutData: 'not-a-document',
+        reason: 'INVALID_ENVELOPE'
+      },
+      {
+        description: 'is a JSON array',
+        layoutData: [],
+        reason: 'INVALID_ENVELOPE'
+      },
       {
         description: 'holds no modules array',
-        layoutData: { modules: 'not-an-array', version: 1 }
+        layoutData: { modules: 'not-an-array', version: 1 },
+        reason: 'MISSING_MODULES_ARRAY'
       },
       {
         description: 'declares a version this build does not know',
-        layoutData: { modules: [], version: 2 }
+        layoutData: { modules: [], version: 2 },
+        reason: 'UNSUPPORTED_VERSION'
       }
     ])(
-      'refuses a stored document that $description rather than reporting it as an absent layout',
-      async ({ layoutData }) => {
+      'refuses a stored document that $description rather than reporting it as an absent layout, reporting $reason',
+      async ({ layoutData, reason }) => {
         // Refusing is what keeps the document safe. The client maps a failed read
         // to its own error state, which offers a retry and permits no write at
         // all, so the stored arrangement survives for an operator to look at.
@@ -303,8 +347,52 @@ describe('UserDashboardLayoutService', () => {
         await expect(
           userDashboardLayoutService.getLayout(userId)
         ).rejects.toThrow(InternalServerErrorException);
+
+        // A stable identifier and the reason category, so an operator can tell the
+        // three ways a document can be unreadable apart and search for either.
+        expect(loggerError).toHaveBeenCalledTimes(1);
+        expect(loggerError).toHaveBeenCalledWith(
+          `GF-USER-DASHBOARD-LAYOUT-UNREADABLE (reason ${reason})`,
+          'UserDashboardLayoutService'
+        );
+
+        // And nothing else. The account is the authenticated caller, which the
+        // request log already establishes, and the document came out of a column
+        // the viewer's own client wrote - so neither belongs in a line that
+        // outlives the request and is readable by everyone who can read the log.
+        expect(emitted(loggerError)).not.toContain(userId);
       }
     );
+
+    it('reports an unsupported version without disclosing the value it read', async () => {
+      // The value is `unknown` because it comes straight out of a JSON column, so
+      // it can be an object, an array or a string the viewer's client put there.
+      // Serialising it to explain the refusal is what would copy stored viewer
+      // data into the log; the reason category is what the operator acts on.
+      findUnique.mockResolvedValue({
+        layoutData: {
+          modules: [],
+          version: { future: 'shape', secret: 'do-not-log-me' }
+        },
+        userId
+      });
+
+      await expect(
+        userDashboardLayoutService.getLayout(userId)
+      ).rejects.toThrow(InternalServerErrorException);
+
+      expect(loggerError).toHaveBeenCalledWith(
+        'GF-USER-DASHBOARD-LAYOUT-UNREADABLE (reason UNSUPPORTED_VERSION)',
+        'UserDashboardLayoutService'
+      );
+
+      const reported = emitted(loggerError);
+
+      expect(reported).not.toContain('do-not-log-me');
+      expect(reported).not.toContain('future');
+      expect(reported).not.toContain('shape');
+      expect(reported).not.toContain(userId);
+    });
 
     it('propagates a read failure instead of reporting it as an absent layout', async () => {
       const readFailure = new Error('connection terminated unexpectedly');

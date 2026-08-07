@@ -35,6 +35,28 @@ export interface DashboardCanvasConfigHandlers {
   onEmptyCellDrop: (event: DragEvent, item: GridsterItemConfig) => void;
 
   /**
+   * Reports that a `Gridster` instance has been torn down.
+   *
+   * The counterpart of {@link onGridsterInit}, and it exists because the canvas
+   * OUTLIVES the grid. Four of the canvas's states draw no grid at all - a
+   * shared portfolio, a signed-out viewer, a failed viewer read and a failed
+   * layout read - so entering any of them destroys the `gridster` child while
+   * the canvas itself carries on. Without this hook the canvas would go on
+   * holding that destroyed instance, and the element observer it registered
+   * against the instance's host would stay connected to a detached element.
+   *
+   * The instance is forwarded so the canvas can compare it against the one it
+   * holds: a rebuild destroys the outgoing grid AFTER initialising the incoming
+   * one, so clearing unconditionally would discard the live instance.
+   *
+   * Carries no write and is NOT a persistence trigger. The engine reports each
+   * destroyed cell separately through `itemRemovedCallback`, which is one of the
+   * four triggers, and the canvas refuses those while it is being torn down for
+   * exactly this reason.
+   */
+  onGridsterDestroy: (gridster: Gridster) => void;
+
+  /**
    * Receives the live `Gridster` component instance once the grid has
    * initialised.
    *
@@ -54,11 +76,12 @@ export interface DashboardCanvasConfigHandlers {
    * decides which one it was waiting for - the engine cannot tell a module the
    * viewer just added from one that was restored.
    *
-   * This exists because the library's own `scrollToNewItems` cannot make that
-   * distinction either: it fires from the same place, on the first size
-   * computation of *every* item, so switching it on would scroll a returning
-   * viewer's canvas on load. The option is therefore left off and the reveal is
-   * driven from here instead.
+   * The library's own `scrollToNewItems` is switched on below and performs the
+   * same reveal, but it cannot make that distinction: it is applied from this very
+   * place, on the first size computation of *every* item. The canvas therefore
+   * withholds that option while it draws cells nobody asked for and releases it
+   * for the one the viewer placed, and this callback is what lets it reveal
+   * exactly that cell irrespective of how the scroll is performed.
    */
   onItemInit: (item: GridsterItemConfig) => void;
 
@@ -137,30 +160,26 @@ export const DEFAULT_DROP_PREVIEW_ROWS = 4;
  * `checkGridCollision`, so this predicate is free to be about one thing only:
  * the footprint the module itself declared.
  *
- * The comparison is deliberately strict: it reads `item.minItemCols` and
- * `item.minItemRows` directly and substitutes nothing for them. Both members are
- * optional on `GridsterItemConfig`, so an item that carries no minimum is
- * rejected outright - `4 >= undefined` is `false` - and that is the intended
- * answer rather than a gap. A candidate with no declared minimum is a candidate
- * whose registry contract is unknown, and admitting it on the grid's own floor
- * would let a module whose registry entry asks for more than 2x2 slip in below
- * what it declared. The canvas therefore copies the registry minimums onto every
- * item it mints, on all three paths that mint one - hydrating a saved
- * arrangement, catalog click-to-add and the item appended on drop - so a genuine
- * module always presents its own contract here.
+ * A module's own declared minimum is what it is measured against, and the
+ * grid-wide floor is what stands in when an item declares none. Both members are
+ * optional on `GridsterItemConfig`, and the substitution is not a loosening: it
+ * is exactly what the engine does one line later in `checkGridCollision`, which
+ * reads `item.minItemCols === undefined ? $options.minItemCols : …`. Every item
+ * the canvas mints carries the registry minimums on all three paths that mint one
+ * - hydrating a saved arrangement, catalog click-to-add and the item appended on
+ * drop - so a genuine module always presents its own contract here and a stricter
+ * declaration is always the one applied.
  *
- * The one candidate that cannot present a contract is the library's, and it is
- * kept away from this predicate rather than accommodated by it. Inside
- * `getValidItemFromEvent` the library mints a drag-over candidate as exactly
+ * The one candidate that cannot present a contract is the library's own, and the
+ * fallback is what lets it through. Inside `getValidItemFromEvent` the library
+ * mints a drag-over candidate as exactly
  * `{ x, y, cols: defaultItemCols, rows: defaultItemRows }`, carrying no per-item
- * minimums because they are the application's to attach, and then screens it
- * with `checkCollision` - which consults this predicate first. That is why
- * `createDashboardCanvasConfig` sets `enableOccupiedCellDrop: true`: the library
- * guards that screen with `!$options.enableOccupiedCellDrop`, so enabling it
- * skips the screen entirely, `emptyCellDropCallback` stays reachable, and the
- * item the canvas appends in response - which does carry its minimums - is then
- * validated by this predicate through `addItem` in the ordinary way. See the
- * note on that option for why nothing is lost by skipping the screen.
+ * minimums because they are the application's to attach, and screens it with
+ * `checkCollision` - which consults this predicate first. Rejecting it would tell
+ * the browser `dropEffect = 'none'` and drag-to-add would be silently dead in
+ * every browser, with `enableEmptyCellDrop` switched on and unreachable. Holding
+ * that candidate to the grid floor instead admits the preview and nothing more:
+ * the module that follows it is screened at its own size, with its own minimums.
  *
  * ⚠ Clearing that candidate is NOT what admits a module. It is the library's
  * preview, sized from `defaultItemCols` / `defaultItemRows`, and the item the
@@ -183,11 +202,15 @@ export const DEFAULT_DROP_PREVIEW_ROWS = 4;
  *
  * itemValidateCallback({ ...item, cols: 2 }); // true, exactly at the floor
  * itemValidateCallback({ ...item, cols: 1 }); // false, one column too narrow
- * itemValidateCallback({ cols: 4, rows: 4, x: 0, y: 0 }); // false, declares no
- * // minimum at all, so there is no contract to hold it to
+ * itemValidateCallback({ cols: 4, minItemCols: 6, minItemRows: 2, rows: 4, x: 0, y: 0 });
+ * // false, two columns below the minimum its own module declared
+ * itemValidateCallback({ cols: 4, rows: 4, x: 0, y: 0 }); // true, declares no
+ * // minimum, so the grid-wide 2x2 floor is what it is held to
+ * itemValidateCallback({ cols: 1, rows: 4, x: 0, y: 0 }); // false, below that floor
  */
 export const itemValidateCallback = (item: GridsterItemConfig): boolean =>
-  item.cols >= item.minItemCols && item.rows >= item.minItemRows;
+  item.cols >= (item.minItemCols ?? MINIMUM_ITEM_COLS) &&
+  item.rows >= (item.minItemRows ?? MINIMUM_ITEM_ROWS);
 
 /**
  * Builds the `GridsterConfig` for the dashboard canvas — the one declaration site
@@ -216,6 +239,13 @@ export function createDashboardCanvasConfig(
     // catalog drag and the value shipped here can never disagree.
     defaultItemCols: DEFAULT_DROP_PREVIEW_COLS,
     defaultItemRows: DEFAULT_DROP_PREVIEW_ROWS,
+    // The engine's own teardown hook, invoked from its `ngOnDestroy` with the
+    // instance being destroyed. It is what lets the canvas release the instance -
+    // and the element observer registered against its host - at the moment the
+    // grid goes away rather than only when the whole canvas does. See
+    // `onGridsterDestroy`.
+    destroyCallback: (gridster: Gridster) =>
+      handlers.onGridsterDestroy(gridster),
     displayGrid: DisplayGrid.OnDragAndResize,
     draggable: {
       // Frozen contract with `gf-dashboard-module-host`, whose handle element
@@ -235,25 +265,14 @@ export function createDashboardCanvasConfig(
     // Required for the catalog's native HTML5 drag-to-add path. Angular CDK
     // drag and drop would never reach it, because gridster listens for the
     // browser's own `dragover` and `drop` events.
-    enableEmptyCellDrop: true,
-    // Enabled so that the strict `itemValidateCallback` above stays strict.
-    // `getValidItemFromEvent` screens its own drag-over candidate with
-    // `if (!$options.enableOccupiedCellDrop && checkCollision(item))`, and that
-    // candidate carries no per-item minimums, so the screen would reject it, the
-    // browser would be told `dropEffect = 'none'`, and drag-to-add would be
-    // unreachable in every browser. Enabling the option removes the screen from
-    // the drop path instead of removing the strictness from the predicate.
     //
-    // Nothing is lost by removing it, because it was never the authority. The
-    // canvas responds to the drop by appending an item that does carry its
-    // registry minimums, and `addItem` then puts that item through the full
-    // `checkCollision` - this predicate, plus `checkGridCollision` for the grid
-    // floor, the column bounds and `minItemArea`, plus `findItemWithItem` for
-    // overlap - and auto-positions it if the cell released over is already taken.
-    // So a drop onto an occupied cell now places the module in the nearest free
-    // slot rather than being silently discarded, and a placement can still never
-    // land below the minimum its module declared.
-    enableOccupiedCellDrop: true,
+    // Reaching it also depends on {@link itemValidateCallback} answering the
+    // library's own drag-over candidate, which carries no per-item minimums:
+    // `getValidItemFromEvent` screens that candidate with `checkCollision`, and a
+    // predicate that refused it would tell the browser `dropEffect = 'none'` and
+    // leave this option switched on but unreachable. See the note on the fallback
+    // there.
+    enableEmptyCellDrop: true,
     // A constant pixel row height, so a two-row module is a predictable size
     // rather than a fraction of the viewport.
     fixedRowHeight: 80,
@@ -323,16 +342,19 @@ export function createDashboardCanvasConfig(
         w: false
       }
     },
-    // Left OFF, and the canvas reveals a newly placed module itself through
-    // `onItemInit` instead. The library applies this option from the first size
-    // computation of every item - the same place `itemInitCallback` fires - so it
-    // cannot tell a module the viewer just added from one being restored, and
-    // switching it on would scroll a returning viewer's canvas as it loads. The
-    // intent it expresses, that a module added below the fold is brought into
-    // view rather than appearing to have been swallowed, is preserved exactly;
-    // only the decision of *which* module that applies to moves to the canvas,
-    // which is the only layer that knows.
-    scrollToNewItems: false,
+    // A module placed below the fold is brought into view rather than appearing
+    // to have been swallowed.
+    //
+    // The engine applies this from the first size computation of every item - the
+    // same place `itemInitCallback` fires - so it cannot itself tell a module the
+    // viewer just added from one being restored. Which cells count as new is
+    // therefore decided by the canvas, the only layer that knows: it withholds
+    // this option while it is drawing cells nobody asked for (hydrating a saved
+    // arrangement, re-screening permissions) and releases it for the item the
+    // viewer placed. That decision lives there rather than here because this file
+    // declares grid policy and holds no state; see `applyNewItemReveal` in
+    // `dashboard-canvas.component.ts`.
+    scrollToNewItems: true,
     // Dragging one module onto another exchanges their places, which keeps a
     // rearrangement local to the two modules involved.
     swap: true,

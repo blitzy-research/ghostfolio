@@ -465,8 +465,12 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
   }
 
   /**
-   * Matching is fuzzy over the display name only, because that is the one thing on
-   * the row a viewer can see to search by.
+   * Matching is fuzzy over exactly what the row shows: its display name, and the
+   * qualifier that follows the name on the rows that carry one. Searching a value
+   * the viewer cannot see would return rows for no visible reason, and omitting the
+   * qualifier would leave the word that distinguishes two same-named modules
+   * unsearchable - typing `Admin` would not reach the admin settings row even
+   * though the row reads `Settings · Admin Control`.
    *
    * The index is rebuilt per search rather than kept, so a permission change takes
    * effect with no cache to invalidate; the list is a few dozen entries at most.
@@ -481,7 +485,7 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     }
 
     const fuse = new Fuse(this.eligibleModules, {
-      keys: ['name'],
+      keys: ['name', 'context'],
       threshold: 0.3
     });
 

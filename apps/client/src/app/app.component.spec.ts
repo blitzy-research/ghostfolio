@@ -1,4 +1,5 @@
 import { permissions } from '@ghostfolio/common/permissions';
+import type { AlertParams } from '@ghostfolio/ui/notifications';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 
@@ -7,11 +8,20 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router, RouterOutlet } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
-import { BehaviorSubject, EMPTY, Observable, of } from 'rxjs';
+import {
+  BehaviorSubject,
+  EMPTY,
+  Observable,
+  of,
+  Subject,
+  throwError
+} from 'rxjs';
 
 import { GfAppComponent } from './app.component';
 import { GfHoldingDetailDialogComponent } from './components/holding-detail-dialog/holding-detail-dialog.component';
 import { GfUserAccountRegistrationDialogComponent } from './components/user-account-registration-dialog/user-account-registration-dialog.component';
+import { LazyDialogService } from './core/lazy-dialog.service';
+import { GfDashboardLayoutService } from './dashboard/services/dashboard-layout.service';
 import { ImpersonationStorageService } from './services/impersonation-storage.service';
 import { TokenStorageService } from './services/token-storage.service';
 import { UserService } from './services/user/user.service';
@@ -45,6 +55,28 @@ import { UserService } from './services/user/user.service';
  * component's own suite owns.
  */
 describe('GfAppComponent', () => {
+  /**
+   * The fragment jsdom uses to report an attempted document navigation.
+   *
+   * Both departures this shell performs - reloading after a failed forced read,
+   * and leaving for the locale root on sign-out - go through `Location`, which
+   * jsdom implements as `[LegacyUnforgeable]`: it can be neither redefined nor
+   * spied, so `Object.defineProperty(window, 'location', …)` throws and
+   * `jest.spyOn(window.location, 'reload')` throws. The report jsdom emits on its
+   * virtual console is the one observable signal, and it arrives here as a
+   * `console.error`. Matched on rather than compared, because the report is a
+   * stack rather than a bare message.
+   *
+   * jsdom performs no navigation at all when the target resolves to the URL the
+   * document is already on, so an *empty* attempt list is itself an exact
+   * assertion about the address that was assigned.
+   */
+  const JSDOM_NAVIGATION_REPORT = 'Not implemented: navigation';
+
+  /** The diagnostic the shell writes when the forced read of a new account fails. */
+  const FORCED_READ_DIAGNOSTIC =
+    'Failed to read the newly created user account';
+
   let dialogAfterClosed: Observable<unknown>;
   let dialogOpen: jest.Mock;
 
@@ -66,7 +98,19 @@ describe('GfAppComponent', () => {
     };
   }[];
   let fixture: ComponentFixture<GfAppComponent>;
-  let notificationServiceMock: { alert: jest.Mock };
+  /**
+   * The layout service, stubbed rather than real, because the shell's two uses of
+   * it are both about ORDER: announcing an identity transition before a token is
+   * replaced, and holding a departure open until a queued arrangement has been
+   * written. Neither is observable from the real service without also standing in
+   * for the data facade it writes through.
+   */
+  let dashboardLayoutServiceMock: {
+    beginIdentityTransition: jest.Mock;
+    releasePendingSave: jest.Mock<Observable<void>, []>;
+  };
+
+  let notificationServiceMock: { alert: jest.Mock<void, [AlertParams]> };
   let queryParams: BehaviorSubject<Record<string, unknown>>;
   let routerMock: { navigate: jest.Mock };
 
@@ -79,14 +123,41 @@ describe('GfAppComponent', () => {
     };
   }[];
   let stateChanged: BehaviorSubject<{ user: unknown }>;
+  let signOut: jest.Mock;
   let tokenStorageServiceMock: { saveToken: jest.Mock };
   let userServiceGet: jest.Mock;
+  let userServiceSignOut: jest.Mock;
 
   /** Records ordering between effects that would otherwise be unordered. */
   let callOrder: string[];
 
+  let consoleErrorSpy: jest.SpyInstance;
+
+  /** Every document navigation jsdom reported, and nothing else. */
+  let navigationAttempts: string[];
+
+  /** Every diagnostic the shell itself wrote, captured rather than printed. */
+  let shellDiagnostics: unknown[][];
+
   let colorSchemeListeners: ((event: { matches: boolean }) => void)[];
+  let originalDocumentLanguage: string;
   let originalMatchMedia: typeof window.matchMedia;
+
+  /**
+   * The shared lazy-dialog loader, stubbed so that a chunk load can be made slow or
+   * made to fail on demand.
+   *
+   * By default it simply performs the loader it is handed, which is what the real
+   * service does on the happy path - so every existing expectation about which
+   * component was opened still holds against the real class. Deduplication and the
+   * visible failure report are the service's own contract and are asserted in its
+   * own suite; what is asserted here is what the SHELL does with a slow or failed
+   * load.
+   */
+  let lazyDialogServiceMock: {
+    isLoading: jest.Mock<boolean, [string]>;
+    load: jest.Mock<Promise<unknown>, [string, () => Promise<unknown>]>;
+  };
 
   const createViewer = (viewer: Record<string, unknown> = {}) => {
     return {
@@ -120,7 +191,27 @@ describe('GfAppComponent', () => {
       }
     );
 
-    notificationServiceMock = { alert: jest.fn() };
+    lazyDialogServiceMock = {
+      isLoading: jest.fn<boolean, [string]>(() => false),
+      load: jest.fn((_aKey: string, aLoad: () => Promise<unknown>) => aLoad())
+    };
+
+    dashboardLayoutServiceMock = {
+      // Recorded in the ordering list, because the announcement has to come BEFORE
+      // the token is replaced: it withdraws layout write authorisation for the
+      // interval in which the new credential is in storage and the viewer it
+      // belongs to is not yet resolved. A call count alone cannot express that.
+      beginIdentityTransition: jest.fn(() => {
+        callOrder.push('beginIdentityTransition');
+      }),
+      releasePendingSave: jest.fn<Observable<void>, []>(() => {
+        callOrder.push('releasePendingSave');
+
+        return of(undefined);
+      })
+    };
+
+    notificationServiceMock = { alert: jest.fn<void, [AlertParams]>() };
     queryParams = new BehaviorSubject<Record<string, unknown>>({});
     navigations = [];
     routerMock = {
@@ -141,6 +232,10 @@ describe('GfAppComponent', () => {
     };
     stateChanged = new BehaviorSubject<{ user: unknown }>({ user: viewer });
 
+    signOut = jest.fn(() => {
+      callOrder.push('signOut');
+    });
+
     tokenStorageServiceMock = {
       saveToken: jest.fn(() => {
         callOrder.push('saveToken');
@@ -152,6 +247,11 @@ describe('GfAppComponent', () => {
 
       return of(createViewer());
     });
+
+    // The same spy the provider is wired with, under the second name the suites use
+    // for it. Two doubles would mean the assertions in one group watched a function
+    // the component never called.
+    userServiceSignOut = signOut;
 
     await TestBed.configureTestingModule({
       imports: [GfAppComponent],
@@ -173,6 +273,11 @@ describe('GfAppComponent', () => {
           useValue: { getDeviceInfo: () => ({ deviceType }) }
         },
         {
+          provide: GfDashboardLayoutService,
+          useValue: dashboardLayoutServiceMock
+        },
+        { provide: LazyDialogService, useValue: lazyDialogServiceMock },
+        {
           provide: ImpersonationStorageService,
           useValue: { onChangeHasImpersonation: () => of(null) }
         },
@@ -184,7 +289,7 @@ describe('GfAppComponent', () => {
           provide: UserService,
           useValue: {
             get: userServiceGet,
-            signOut: jest.fn(),
+            signOut,
             stateChanged
           }
         }
@@ -233,8 +338,78 @@ describe('GfAppComponent', () => {
     });
   };
 
+  /**
+   * Makes every chunk load wait, and hands back the means to answer each one.
+   *
+   * A dialog's chunk is a network request, so the interesting states are the ones
+   * that take time: a second activation arriving while the first is still resolving,
+   * and a request superseded by a newer one. Neither is observable with a load that
+   * settles immediately.
+   */
+  const deferChunkLoads = () => {
+    const answers: ((component: unknown) => void)[] = [];
+
+    lazyDialogServiceMock.load.mockImplementation(() => {
+      return new Promise<unknown>((resolve) => {
+        answers.push(resolve);
+      });
+    });
+
+    return answers;
+  };
+
   beforeEach(() => {
     colorSchemeListeners = [];
+    navigationAttempts = [];
+    shellDiagnostics = [];
+    originalDocumentLanguage = document.documentElement.lang;
+
+    // Bound before the spy replaces it, so a report this harness does not
+    // recognise still reaches the real console instead of being swallowed. The
+    // assertion is on the expression rather than the binding, so the value being
+    // stored is typed too and not merely the name it is stored under.
+    const reportError = console.error.bind(console) as (
+      ...args: unknown[]
+    ) => void;
+
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        const [detail] = args;
+
+        // Recognised by its shape rather than with `instanceof`. jsdom raises its
+        // navigation report from its own realm, so `detail instanceof Error` is
+        // false for the very object that arrives even though an error is
+        // precisely what it is - measured, not assumed, and narrowing that way
+        // silently stops matching.
+        const report =
+          Object.prototype.toString.call(detail) === '[object Error]'
+            ? (detail as Error).message
+            : typeof detail === 'string'
+              ? detail
+              : '';
+
+        if (report.includes(JSDOM_NAVIGATION_REPORT)) {
+          callOrder.push('navigate');
+          navigationAttempts.push(report);
+
+          return;
+        }
+
+        // The shell's own diagnostic is captured rather than forwarded, so the
+        // expected failure does not print, and - more importantly - so what it
+        // said is assertable. Captured symmetrically with the navigation reports:
+        // the reload and the diagnostic are two halves of one recovery, and
+        // asserting one without the other would leave a silent reload or a silent
+        // failure passing.
+        if (report.includes(FORCED_READ_DIAGNOSTIC)) {
+          shellDiagnostics.push(args);
+
+          return;
+        }
+
+        reportError(...args);
+      });
 
     // jsdom implements no `matchMedia`, and the shell reads the operating system's
     // colour-scheme preference through it on construction. The stub reports the
@@ -268,7 +443,13 @@ describe('GfAppComponent', () => {
   afterEach(() => {
     window.matchMedia = originalMatchMedia;
 
+    // Restored because the sign-out destination is composed from it, so a test
+    // that sets it would otherwise decide where a later test departs to.
+    document.documentElement.lang = originalDocumentLanguage;
+
     document.body.classList.remove('theme-dark', 'theme-light');
+
+    consoleErrorSpy.mockRestore();
 
     jest.restoreAllMocks();
   });
@@ -404,6 +585,73 @@ describe('GfAppComponent', () => {
         height: '98vh',
         width: '100vw'
       });
+    });
+
+    /**
+     * A chunk that never arrives must not take the holding with it.
+     *
+     * The address is recorded BEFORE the chunk is asked for - it has to be, or two
+     * emissions of the same parameters would both start a load - so a failed load
+     * that left it standing made the application permanently unable to open that
+     * holding again: every later request matched the recorded address and was
+     * guarded away, with no dialog ever having opened.
+     */
+    it('lets the same holding be asked for again after a failed load', async () => {
+      await createComponent();
+
+      lazyDialogServiceMock.load.mockResolvedValueOnce(null);
+
+      queryParams.next(holdingParams);
+
+      await settle();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+
+      // Asked for again, exactly as a viewer would by selecting the same holding a
+      // second time. The guard is gone with the failure, so the load is attempted
+      // again and the dialog opens.
+      queryParams.next({});
+      queryParams.next(holdingParams);
+
+      await settle();
+
+      expect(lazyDialogServiceMock.load).toHaveBeenCalledTimes(2);
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(openedDialog().component).toBe(GfHoldingDetailDialogComponent);
+    });
+
+    it('abandons a request the viewer has already replaced', async () => {
+      await createComponent();
+
+      const answers = deferChunkLoads();
+
+      queryParams.next(holdingParams);
+
+      await settle();
+
+      // A different holding, while the first chunk is still resolving.
+      queryParams.next({
+        dataSource: 'YAHOO',
+        holdingDetailDialog: true,
+        symbol: 'MSFT'
+      });
+
+      await settle();
+
+      expect(answers).toHaveLength(2);
+
+      // Both chunks arrive, oldest last - which is the order that used to leave two
+      // dialogs stacked with the abandoned asset on top.
+      answers[1](GfHoldingDetailDialogComponent);
+
+      await settle();
+
+      answers[0](GfHoldingDetailDialogComponent);
+
+      await settle();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(openedDialog().config.data).toMatchObject({ symbol: 'MSFT' });
     });
 
     it('clears exactly its own parameters when the dialog closes', async () => {
@@ -548,7 +796,178 @@ describe('GfAppComponent', () => {
         'an-issued-token',
         true
       );
-      expect(callOrder).toEqual(['saveToken', 'get(true)']);
+      // The transition is announced BEFORE the token is replaced, which is what
+      // withdraws layout write authorisation for the interval in which the new
+      // credential is in storage and the viewer it belongs to is not yet resolved.
+      expect(callOrder).toEqual([
+        'beginIdentityTransition',
+        'saveToken',
+        'get(true)'
+      ]);
+    });
+
+    // The identity transition is what tells the canvas to stop producing writes for
+    // the viewer who is being replaced. Announcing it AFTER the token has been
+    // swapped leaves a window in which an arrangement produced by the previous
+    // viewer is dispatched with the new viewer's credential, which writes one
+    // person's layout onto another's account. Ordering, therefore, not presence.
+    it('announces the identity transition before it replaces the token', async () => {
+      const component = await createComponent();
+
+      dialogAfterClosed = of('an-issued-token');
+
+      await component.onCreateAccount();
+
+      expect(
+        dashboardLayoutServiceMock.beginIdentityTransition
+      ).toHaveBeenCalledTimes(1);
+
+      expect(callOrder.indexOf('beginIdentityTransition')).toBe(0);
+      expect(callOrder.indexOf('beginIdentityTransition')).toBeLessThan(
+        callOrder.indexOf('saveToken')
+      );
+      expect(callOrder.indexOf('saveToken')).toBeLessThan(
+        callOrder.indexOf('get(true)')
+      );
+
+      // Nothing here leaves the document: the shell is already on the one route the
+      // application has, so adopting an account re-reads the viewer instead.
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+
+    it('leaves the document alone when the forced read succeeds', async () => {
+      const component = await createComponent();
+
+      dialogAfterClosed = of('an-issued-token');
+
+      await component.onCreateAccount();
+
+      // The reload is the failure path and only the failure path. A reload here
+      // would throw away the account the viewer has just created a session for.
+      expect(shellDiagnostics).toEqual([]);
+    });
+
+    /**
+     * The registration dialog's chunk, when it is slow or when it fails.
+     *
+     * Collapsing the route table moved this load out of the router, which used to
+     * handle both cases, and into a control the visitor can press twice.
+     */
+    it('opens one dialog however many times the control is pressed while loading', async () => {
+      const component = await createComponent();
+
+      const answers = deferChunkLoads();
+
+      const first = component.onCreateAccount();
+      const second = component.onCreateAccount();
+
+      // The second press is refused outright rather than queued: the control is
+      // disabled while a load is outstanding, and a second load would open a second
+      // copy of the same dialog on top of the first.
+      expect(lazyDialogServiceMock.load).toHaveBeenCalledTimes(1);
+      expect(component.isCreatingAccount).toBe(true);
+
+      answers[0](GfUserAccountRegistrationDialogComponent);
+
+      await first;
+      await second;
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(component.isCreatingAccount).toBe(false);
+    });
+
+    it('opens nothing and releases the control when the chunk cannot be loaded', async () => {
+      const component = await createComponent();
+
+      lazyDialogServiceMock.load.mockResolvedValueOnce(null);
+
+      await component.onCreateAccount();
+
+      // The loader has already reported the failure and told the visitor; the shell's
+      // remaining obligation is to open nothing and to leave the control usable, so
+      // that pressing it again genuinely tries again.
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(component.isCreatingAccount).toBe(false);
+      expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+
+      await component.onCreateAccount();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a viewer that cannot be read as an event and a status, and nothing the response carried', async () => {
+      const component = await createComponent();
+
+      dialogAfterClosed = of('an-issued-token');
+
+      // Shaped like the `HttpErrorResponse` this path really produces. It is the
+      // continuation of creating an account, so the failing request is
+      // credential-adjacent: its URL, its message and its body are exactly what must
+      // not reach a console that every script on the page can read and that
+      // session-replay tooling captures verbatim.
+      // Replaced with an implementation rather than a return value, so the recorded
+      // ordering below still states that the read was attempted at all.
+      userServiceGet.mockImplementation((force?: boolean) => {
+        callOrder.push(force ? 'get(true)' : 'get()');
+
+        return throwError(() => ({
+          error: { detail: 'a-secret-detail' },
+          message:
+            'Http failure response for https://ghostfol.io/api/v1/user: 503 Service Unavailable',
+          status: 503,
+          url: 'https://ghostfol.io/api/v1/user?token=an-issued-token'
+        }));
+      });
+
+      // jsdom implements `window.location` and its members as `[LegacyUnforgeable]`,
+      // so `reload` cannot be spied on; it reports its refusal on this very channel
+      // instead, which is why the shell's own report is identified by its prefix
+      // rather than by being the only thing here.
+      const reports: unknown[][] = [];
+
+      // Named apart from the suite-wide harness it stands in front of, because this
+      // one deliberately captures EVERYTHING rather than forwarding what it does not
+      // recognise - that is the point of the assertion below - and two bindings of
+      // one name across two scopes is how a later edit ends up restoring the wrong
+      // spy.
+      const capturingErrorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation((...args: unknown[]) => {
+          reports.push(args);
+        });
+
+      try {
+        await component.onCreateAccount();
+      } finally {
+        capturingErrorSpy.mockRestore();
+      }
+
+      const shellReports = reports.filter(([first]) => {
+        return typeof first === 'string' && first.startsWith('GF-APP-');
+      });
+
+      // One argument, and it is a string: a second argument would be the raw error
+      // object, which is the whole of what this asserts against. The status is kept
+      // because it is what makes the report actionable; nothing else is.
+      expect(shellReports).toEqual([
+        ['GF-APP-USER-CREATE-READ-FAILED (status 503)']
+      ]);
+
+      const emitted = JSON.stringify(reports);
+
+      expect(emitted).not.toContain('an-issued-token');
+      expect(emitted).not.toContain('a-secret-detail');
+      expect(emitted).not.toContain('Http failure response');
+
+      // The token was still adopted and the read still attempted, so the reload is
+      // what recovers the flow rather than the report. The whole order is asserted,
+      // including the transition that precedes the token, because a failed read must
+      // not have skipped any of the steps that lead to it.
+      expect(callOrder).toEqual([
+        'beginIdentityTransition',
+        'saveToken',
+        'get(true)'
+      ]);
     });
 
     it('does nothing when the dialog closes without a token', async () => {
@@ -559,6 +978,13 @@ describe('GfAppComponent', () => {
       await component.onCreateAccount();
 
       expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+
+      // A cancelled registration is not an identity change. Announcing one would
+      // make the canvas discard an arrangement the viewer never stopped owning.
+      expect(
+        dashboardLayoutServiceMock.beginIdentityTransition
+      ).not.toHaveBeenCalled();
+      expect(navigationAttempts).toHaveLength(0);
       expect(callOrder).toEqual([]);
     });
 
@@ -576,6 +1002,188 @@ describe('GfAppComponent', () => {
 
       expect(component.canCreateAccount).toBe(false);
       expect(component.hasInfoMessage).toBe(false);
+    });
+  });
+
+  /**
+   * The shell's own departure, which is a different code path from the toolbar's.
+   *
+   * Both offer signing out and both perform the same three steps, but they are two
+   * methods on two components: a suite covering one says nothing about the other,
+   * and the shell's was the one with no coverage at all. The ordering is what is
+   * being protected. A document-level navigation replaces the document rather than
+   * routing within it, so nothing downstream of it ever runs and an arrangement
+   * still inside its 500 ms debounce would be dropped in silence; and `signOut()`
+   * clears the very token the flush is authorised with, so flushing after it would
+   * issue a request that cannot succeed.
+   */
+  describe('signing out', () => {
+    // The jsdom navigation harness lives in the suite-wide `beforeEach`, which both
+    // departures this shell performs are observed through. A second spy on
+    // `console.error` here would sit on top of that one and swallow the reports it
+    // is meant to forward, so the shared harness is used rather than duplicated -
+    // and `document.documentElement.lang` is already restored by the shared
+    // `afterEach`, because the sign-out destination is composed from it.
+    beforeEach(() => {
+      document.documentElement.lang = 'en';
+    });
+
+    it('flushes the pending arrangement, then signs out, then leaves the document', async () => {
+      document.documentElement.lang = 'de';
+
+      const component = await createComponent();
+
+      component.onSignOut();
+
+      expect(
+        dashboardLayoutServiceMock.releasePendingSave
+      ).toHaveBeenCalledTimes(1);
+      expect(userServiceSignOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(1);
+
+      expect(callOrder).toEqual(['releasePendingSave', 'signOut', 'navigate']);
+    });
+
+    it('forces the pending arrangement out before anything else happens', async () => {
+      document.documentElement.lang = 'de';
+
+      const component = await createComponent();
+
+      component.onSignOut();
+
+      // Ordering, not merely presence. After the identity is discarded the write
+      // would be issued for nobody, and after the document is left it would never
+      // be issued at all.
+      expect(callOrder.indexOf('releasePendingSave')).toBeLessThan(
+        callOrder.indexOf('signOut')
+      );
+      expect(callOrder.indexOf('releasePendingSave')).toBeLessThan(
+        callOrder.indexOf('navigate')
+      );
+    });
+
+    it('flushes even when the departure itself goes nowhere', async () => {
+      // The locale is what the destination is composed from, and an absent one
+      // resolves to the address the document is already on - which jsdom performs
+      // no navigation for. The flush must not be conditional on that: the
+      // arrangement is pending either way.
+      document.documentElement.lang = '';
+
+      const component = await createComponent();
+
+      component.onSignOut();
+
+      expect(
+        dashboardLayoutServiceMock.releasePendingSave
+      ).toHaveBeenCalledTimes(1);
+      expect(userServiceSignOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(0);
+      expect(window.location.href).toBe('http://localhost/');
+    });
+
+    it('leaves the document rather than routing within it', async () => {
+      document.documentElement.lang = 'de';
+
+      const component = await createComponent();
+
+      component.onSignOut();
+
+      // A full load discards every in-memory cache belonging to the identity that
+      // has just left; routing within the application would not. The shell also
+      // still owns exactly one route, so there is nowhere to route to.
+      expect(navigationAttempts).toHaveLength(1);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+
+    it('announces no identity transition, because nobody is taking over', async () => {
+      document.documentElement.lang = 'de';
+
+      const component = await createComponent();
+
+      component.onSignOut();
+
+      // A transition is announced when one identity replaces another, which is
+      // what re-arms the canvas. Signing out ends the session instead, and
+      // announcing a transition here would ask a canvas that is about to be
+      // discarded to hydrate.
+      expect(
+        dashboardLayoutServiceMock.beginIdentityTransition
+      ).not.toHaveBeenCalled();
+    });
+
+    it('flushes the pending arrangement before discarding the session', async () => {
+      const component = await createComponent({ viewer: createViewer() });
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      // Ordering, not merely presence. After the credentials are cleared the write
+      // would be issued for nobody, and after the document is left it would never
+      // be issued at all.
+      expect(callOrder).toEqual(['releasePendingSave', 'signOut', 'navigate']);
+      expect(navigationAttempts).toHaveLength(1);
+    });
+
+    it('waits for the flush to settle', async () => {
+      const flush = new Subject<void>();
+
+      const component = await createComponent({ viewer: createViewer() });
+
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        flush.asObservable()
+      );
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      // Still signed in: the write has not answered, so nothing has been cleared
+      // and no address has been assigned.
+      expect(signOut).not.toHaveBeenCalled();
+      expect(navigationAttempts).toHaveLength(0);
+
+      flush.complete();
+
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(1);
+    });
+
+    it('tells the viewer when the arrangement could not be stored', async () => {
+      const component = await createComponent({ viewer: createViewer() });
+
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      // Told rather than left to guess, and nothing else has happened yet: the
+      // departure waits on the acknowledgement.
+      expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+      expect(signOut).not.toHaveBeenCalled();
+      expect(navigationAttempts).toHaveLength(0);
+    });
+
+    it('still lets the viewer leave once they acknowledge the failure', async () => {
+      const component = await createComponent({ viewer: createViewer() });
+
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      notificationServiceMock.alert.mock.calls[0][0].discardFn();
+
+      // A viewer who asks to leave must always be able to; an arrangement that can
+      // never be stored would otherwise hold them in the session indefinitely.
+      expect(signOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(1);
     });
   });
 

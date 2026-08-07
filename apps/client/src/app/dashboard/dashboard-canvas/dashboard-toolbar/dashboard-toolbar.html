@@ -1,23 +1,22 @@
 <!--
-  COMPONENT CONTRACT - this template requires `accountLabel`,
-  `darkAppearanceLabel`, `deviceType`, `hasFilters`, `hasImpersonationId`,
-  `hasPermissionForSubscription`, `hasPermissionToAccessAdminControl`,
-  `hasPermissionToAccessAssistant`, `hasPermissionToChangeDateRange`,
-  `hasPermissionToChangeFilters`, `hasPromotion`, `impersonationId`,
-  `impersonationStatusLabel`, `isDarkTheme`, `isMenuOpen`,
-  `lightAppearanceLabel`, `pricingUrl`, `user` and `assistantElement`,
+  COMPONENT CONTRACT - this template requires `accountLabel`, `deviceType`,
+  `hasFilters`, `hasImpersonationId`, `hasPermissionForSubscription`,
+  `hasPermissionToAccessAdminControl`, `hasPermissionToAccessAssistant`,
+  `hasPermissionToChangeDateRange`, `hasPermissionToChangeFilters`,
+  `hasPromotion`, `impersonationId`, `impersonationStatusLabel`, `isMenuOpen`,
+  `pricingUrl`, `user` and `assistantElement`,
   plus the handlers `closeAssistant()`,
   `impersonateAccount()`, `onDateRangeChange()`, `onFiltersChanged()`,
   `onLogoClick()`, `onMenuClosed()`, `onMenuOpened()`, `onOpenAssistant()`,
-  `onSelectModule()`, `onSignOut()` and `onToggleTheme()`. Every one of them is
+  `onSelectModule()` and `onSignOut()`. Every one of them is
   defined on the class - this list is verifiable rather than aspirational,
   because `strictTemplates` is off in this project and a binding to a member
   that does not exist compiles, lints and ships in silence.
   It imports GfAssistantComponent,
   GfLogoComponent, GfPremiumIndicatorComponent, IonIcon, MatBadgeModule,
   MatButtonModule, MatMenuModule and MatToolbarModule alongside
-  CUSTOM_ELEMENTS_SCHEMA, and registers the menu, identity, assistant and
-  light/dark appearance glyphs this template renders.
+  CUSTOM_ELEMENTS_SCHEMA, and registers the menu, identity and assistant glyphs
+  this template renders.
 
   This is a control surface, not a way of getting somewhere. The application
   resolves to one canvas, so each capability rescued from the deleted page
@@ -163,43 +162,6 @@
           </a>
         </li>
       }
-      <li class="list-inline-item">
-        <!--
-          Switches the appearance between light and dark.
-
-          It writes the viewer's own `colorScheme` setting, which is the same
-          setting the account-settings appearance control writes, so the two can
-          never disagree and the choice outlives the session. Applying it remains
-          the shell's job.
-
-          The name states the ACTION rather than the current state - "Switch to
-          dark appearance" rather than "Dark" - because a control named after its
-          state leaves a screen-reader user unable to tell whether it reports
-          where they are or where the press will take them. The glyph is hidden
-          from assistive technology for the same reason the other toolbar glyphs
-          are: the button is already named, so announcing the icon would repeat it.
-
-          It carries no permission gate on purpose. Changing one's own appearance
-          needs no entitlement, and the whole bar already renders only for a
-          resolved viewer, which is the only precondition persisting it has.
-        -->
-        <button
-          class="no-min-width px-1"
-          mat-button
-          type="button"
-          [attr.aria-label]="
-            isDarkTheme ? lightAppearanceLabel : darkAppearanceLabel
-          "
-          [title]="isDarkTheme ? lightAppearanceLabel : darkAppearanceLabel"
-          (click)="onToggleTheme()"
-        >
-          <ion-icon
-            aria-hidden="true"
-            size="large"
-            [name]="isDarkTheme ? 'sunny-outline' : 'moon-outline'"
-          />
-        </button>
-      </li>
       @if (hasImpersonationId) {
         <!--
           A persistent marker that the viewer is looking at somebody else's

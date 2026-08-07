@@ -169,6 +169,17 @@
     }
   }
 
+  // The qualifier that distinguishes two modules sharing one name. Secondary
+  // foreground and the body-small role, because it is subordinate to the name it
+  // follows rather than a state label about the row - so it deliberately does not
+  // take the uppercase treatment the trailing markers below do.
+  .context-qualifier {
+    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    font-size: var(--mat-sys-body-small-size, 0.75rem);
+    font-weight: var(--mat-sys-body-small-weight, 400);
+    letter-spacing: var(--mat-sys-body-small-tracking, 0.025rem);
+  }
+
   // One rule for both trailing markers: they are the same kind of thing said
   // about the row - a short, secondary, uppercase state label - so they take the
   // same type role and the same foreground.
@@ -229,6 +240,7 @@
     }
   }
 
+  .context-qualifier,
   .placed-marker,
   .unavailable-marker {
     color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));

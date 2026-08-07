@@ -3,11 +3,8 @@ import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { TokenStorageService } from '@ghostfolio/client/services/token-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import type { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 import { permissions } from '@ghostfolio/common/permissions';
-import type { ConfirmParams } from '@ghostfolio/ui/notifications';
-import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 
 import { HttpErrorResponse } from '@angular/common/http';
@@ -45,7 +42,10 @@ import { GfModuleCatalogComponent } from '../module-catalog/module-catalog.compo
 import { GfModuleRegistryService } from '../module-registry.service';
 import { GfDashboardLayoutService } from '../services/dashboard-layout.service';
 import { GfDashboardCanvasComponent } from './dashboard-canvas.component';
-import { itemValidateCallback } from './dashboard-canvas.config';
+import {
+  createDashboardCanvasConfig,
+  itemValidateCallback
+} from './dashboard-canvas.config';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host/dashboard-module-host.component';
 import { GfDashboardToolbarComponent } from './dashboard-toolbar/dashboard-toolbar.component';
 import { GfSignInPromptComponent } from './sign-in-prompt/sign-in-prompt.component';
@@ -275,28 +275,37 @@ describe('itemValidateCallback', () => {
     expect(itemValidateCallback({ ...stricterThanFloor, cols: 3 })).toBe(false);
   });
 
-  it('should reject a placement that declares no minimum at all', () => {
-    // Both members are optional on a grid item, and the predicate substitutes
-    // nothing for an absent one: `4 >= undefined` is `false`, so a candidate that
-    // presents no contract is rejected however large it is. That is the point
-    // rather than an oversight - admitting such a candidate on the grid's own
-    // floor is exactly how a module whose registry entry asks for more than 2x2
-    // would slip in below what it declared - and it is why the canvas copies the
-    // registry minimums onto every item it mints. The library's own drag-over
-    // candidate is the one thing that cannot present a contract, and the
-    // configuration keeps it away from this predicate with
-    // `enableOccupiedCellDrop` rather than by loosening the comparison; the
-    // assertion below pins that.
-    expect(itemValidateCallback({ cols: 4, rows: 4, x: 0, y: 0 })).toBe(false);
-    expect(itemValidateCallback({ cols: 12, rows: 12, x: 0, y: 0 })).toBe(
-      false
-    );
+  it('should hold a placement that declares no minimum to the grid-wide floor', () => {
+    // Both members are optional on a grid item, and an absent one falls back to
+    // the 2x2 grid floor - which is precisely what the engine itself does one line
+    // later in `checkGridCollision`. Nothing is loosened by that: every item this
+    // canvas mints carries the registry minimums, so a genuine module always
+    // presents its own contract and a stricter declaration is always the one
+    // applied. The one candidate that cannot present a contract is the library's
+    // own drag-over preview, and admitting it on the grid floor is what keeps
+    // `emptyCellDropCallback` reachable at all.
+    expect(itemValidateCallback({ cols: 4, rows: 4, x: 0, y: 0 })).toBe(true);
+    expect(itemValidateCallback({ cols: 2, rows: 2, x: 0, y: 0 })).toBe(true);
+    expect(itemValidateCallback({ cols: 12, rows: 12, x: 0, y: 0 })).toBe(true);
+
+    // The floor is still a floor.
+    expect(itemValidateCallback({ cols: 1, rows: 4, x: 0, y: 0 })).toBe(false);
+    expect(itemValidateCallback({ cols: 4, rows: 1, x: 0, y: 0 })).toBe(false);
+
+    // And a half-declared contract is measured against what it does declare,
+    // falling back to the floor only for the dimension it leaves out.
+    expect(
+      itemValidateCallback({ cols: 4, minItemCols: 6, rows: 4, x: 0, y: 0 })
+    ).toBe(false);
+    expect(
+      itemValidateCallback({ cols: 4, minItemRows: 6, rows: 4, x: 0, y: 0 })
+    ).toBe(false);
     expect(
       itemValidateCallback({ cols: 4, minItemCols: 2, rows: 4, x: 0, y: 0 })
-    ).toBe(false);
+    ).toBe(true);
     expect(
       itemValidateCallback({ cols: 4, minItemRows: 2, rows: 4, x: 0, y: 0 })
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 
@@ -382,13 +391,28 @@ describe('GfDashboardCanvasComponent', () => {
   let layoutServiceMock: { shouldReloadContent$: Observable<void> };
   let originalResizeObserverDescriptor: PropertyDescriptor;
   let originalScrollIntoViewDescriptor: PropertyDescriptor;
-  // Typed precisely so a test can read back the confirmation parameters the canvas
-  // supplied and invoke `confirmFn` itself, which is how the destructive escape is
-  // exercised without opening a real dialog.
-  let notificationServiceMock: { confirm: jest.Mock<void, [ConfirmParams]> };
   let registryServiceMock: { get: jest.Mock; getAll: jest.Mock };
   let revealModuleSubject: Subject<DashboardModuleType>;
-  let routerMock: { navigate: jest.Mock<Promise<boolean>, []> };
+  /**
+   * Typed from the real method rather than from how this suite happens to call it.
+   *
+   * The argument tuple is not decoration: `jest.Mock<R, A>` types `mock.calls` as
+   * `A[]`, so declaring `A` as `[]` - which is what an implementation taking no
+   * parameters invites - made every recorded call an empty tuple as far as the
+   * compiler was concerned. Reading a command list and its extras back off
+   * `mock.calls` then needed an assertion that TypeScript rejected outright
+   * (TS2352, "neither type sufficiently overlaps"), and because Jest transpiles
+   * each spec in isolation the suite still ran: a red spec program and a green
+   * test run at the same time. Deriving both halves from `Router['navigate']`
+   * makes the recorded calls carry the router's own types, so the assertion is
+   * unnecessary rather than merely tolerated.
+   */
+  let routerMock: {
+    navigate: jest.Mock<
+      ReturnType<Router['navigate']>,
+      Parameters<Router['navigate']>
+    >;
+  };
   let saveErrorSubject: BehaviorSubject<boolean>;
   let scrollIntoViewMock: jest.Mock;
   let shouldReloadContentSubject: Subject<void>;
@@ -528,11 +552,6 @@ describe('GfDashboardCanvasComponent', () => {
       patchUserDashboardLayout: jest.fn()
     };
 
-    // Records the parameters rather than acting on them, so a test decides for
-    // itself whether the viewer confirmed. That is what makes "nothing happens
-    // until it is confirmed" assertable at all.
-    notificationServiceMock = { confirm: jest.fn<void, [ConfirmParams]>() };
-
     registryServiceMock = {
       get: jest.fn((aModuleType: DashboardModuleType) => {
         return definitions.find(({ moduleType }) => moduleType === aModuleType);
@@ -550,7 +569,10 @@ describe('GfDashboardCanvasComponent', () => {
     // unnoticed. The scenario flag is the whole permission system: only the
     // spent-token clean-up sets it.
     routerMock = {
-      navigate: jest.fn(() => {
+      navigate: jest.fn<
+        ReturnType<Router['navigate']>,
+        Parameters<Router['navigate']>
+      >(() => {
         if (!allowsNavigation) {
           throw new Error(
             'The canvas navigated in a scenario that does not permit it. The router still owns the single root route and the canvas addresses no screen; the only navigation it may make is removing a spent jwt parameter.'
@@ -591,7 +613,6 @@ describe('GfDashboardCanvasComponent', () => {
           useValue: dashboardLayoutServiceMock
         },
         { provide: LayoutService, useValue: layoutServiceMock },
-        { provide: NotificationService, useValue: notificationServiceMock },
         { provide: Router, useValue: routerMock },
         { provide: TokenStorageService, useValue: tokenStorageServiceMock },
         { provide: UserService, useValue: userServiceMock }
@@ -2119,10 +2140,10 @@ describe('GfDashboardCanvasComponent', () => {
       // to clear the URL.
       expect(routerMock.navigate).toHaveBeenCalledTimes(1);
 
-      const [commands, options] = routerMock.navigate.mock.calls[0] as [
-        unknown[],
-        { queryParams: Record<string, unknown>; queryParamsHandling: string }
-      ];
+      // Destructured with no assertion at all: the mock is declared with the
+      // router's own parameter tuple, so this reads back as the command list and
+      // the extras the method really takes.
+      const [commands, options] = routerMock.navigate.mock.calls[0];
 
       expect(commands).toEqual([]);
       expect(options.queryParams).toEqual({ jwt: null });
@@ -3076,11 +3097,11 @@ describe('GfDashboardCanvasComponent', () => {
       // through the configuration's callback directly, and it exists for one reason: the
       // library screens its own drag-over candidate with
       // `if (!$options.enableOccupiedCellDrop && checkCollision(item))` and that
-      // candidate carries no per-item minimums, so with the screen in place the strict
-      // minimum predicate would reject it and `emptyCellDropCallback` would never be
-      // reached - drag-to-add would be silently dead in every browser while every other
-      // assertion in this file still passed. Reaching the canvas at all is therefore the
-      // point of it.
+      // candidate carries no per-item minimums, so a minimum predicate that refused it
+      // would leave `emptyCellDropCallback` unreachable - drag-to-add silently dead in
+      // every browser while every other assertion in this file still passed. Holding a
+      // contract-less candidate to the grid floor is what keeps this path alive, and
+      // reaching the canvas at all is therefore the point of this test.
       //
       // The cell it lands in is the engine's own arithmetic, reproduced here so that a
       // change to it would be visible: the outer margin of ten pixels is subtracted
@@ -3094,6 +3115,47 @@ describe('GfDashboardCanvasComponent', () => {
           rows: 4,
           x: 2,
           y: 1
+        }
+      ]);
+    });
+
+    it('should leave a native drop onto an occupied cell to the engine to refuse', async () => {
+      await createCanvas({ layout: of(singleModuleLayout) });
+      paint();
+
+      const gridster = gridsterComponent();
+
+      gridster.curColWidth = 100;
+      gridster.curRowHeight = 80;
+
+      // A module that is NOT already on the canvas, so what is being asserted is the
+      // refusal of the cell rather than the canvas declining to place something twice.
+      const drop = Object.assign(
+        new MouseEvent('drop', { bubbles: true, clientX: 20, clientY: 20 }),
+        {
+          dataTransfer: {
+            getData: (aFormat: string) =>
+              aFormat === 'text/plain' ? DashboardModuleType.MARKETS : null
+          }
+        }
+      );
+
+      gridster.el.dispatchEvent(drop);
+      paint();
+
+      // The engine screens its own drag-over candidate with `checkCollision` and answers
+      // a cell that is already taken by returning nothing at all, so
+      // `emptyCellDropCallback` is never reached and the canvas is never asked. That is
+      // the engine's default and the frozen configuration keeps it: `dropEffect` reads
+      // `none` over an occupied cell while the drag is still in flight, so the refusal is
+      // visible to the viewer before they release rather than silent afterwards.
+      expect(placedGeometry()).toEqual([
+        {
+          cols: 5,
+          moduleType: DashboardModuleType.HOLDINGS,
+          rows: 4,
+          x: 0,
+          y: 0
         }
       ]);
     });
@@ -3147,13 +3209,20 @@ describe('GfDashboardCanvasComponent', () => {
 
       // Hydration is drawn first, and each of its cells reports a first paint. The
       // library's own `scrollToNewItems` is applied from that same place and so cannot
-      // tell a restored module from an added one, which is why it is left off: a
-      // returning viewer's canvas must not scroll as it loads.
+      // tell a restored module from an added one, so the canvas withholds it while it
+      // draws them: a returning viewer's canvas must not scroll as it loads. The
+      // configuration itself ships the option ON - that is grid policy, and it is
+      // asserted in `architectural invariants` - which is exactly why withholding it
+      // here has to be asserted too.
       expect(scrollIntoViewMock).not.toHaveBeenCalled();
       expect(component.options.scrollToNewItems).toBe(false);
 
       moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.MARKETS);
       paint();
+
+      // Released for the cell the viewer asked for, before it is drawn, because the
+      // engine reads the option on entry to the size computation that draws it.
+      expect(component.options.scrollToNewItems).toBe(true);
 
       const added = component.modules.find(({ moduleType }) => {
         return moduleType === DashboardModuleType.MARKETS;
@@ -3902,6 +3971,24 @@ describe('GfDashboardCanvasComponent', () => {
       expect(queryElement('[role="alert"]')).toBeTruthy();
     });
 
+    it('should offer the retry and nothing else', async () => {
+      await createCanvas({
+        layout: throwError(() => new Error('service unavailable'))
+      });
+      paint();
+
+      const actions = queryElements('[role="alert"] button');
+
+      // Exactly one action, and it is the harmless one. A control that emptied the
+      // arrangement and wrote the emptied one back would be a fifth persistence
+      // trigger - a layout write may originate only from a grid state change, so
+      // drag, resize, add and remove are the whole set - and it would be the only
+      // affordance in the application able to overwrite an arrangement the canvas
+      // has never successfully read.
+      expect(actions).toHaveLength(1);
+      expect(actions[0].textContent.trim()).toBe('Try again');
+    });
+
     it('should refuse to place a module over an arrangement it could not read', async () => {
       await createCanvas({
         layout: throwError(() => new Error('service unavailable'))
@@ -3976,120 +4063,6 @@ describe('GfDashboardCanvasComponent', () => {
       expect(dashboardLayoutServiceMock.get).toHaveBeenCalledTimes(2);
       expect(dashboardLayoutServiceMock.get).toHaveBeenLastCalledWith(true);
       expect(component.hasLayoutError).toBe(false);
-      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
-    });
-  });
-
-  /**
-   * The escape from a read that cannot succeed.
-   *
-   * A retry is the right first answer to a failed read, but it is only an answer
-   * while the failure is transient. A stored document this build cannot interpret
-   * fails deterministically, so retrying is an infinite loop and the viewer has no
-   * way back to a usable dashboard from inside the application. These tests pin the
-   * one operation that ends that state, and pin equally that it cannot happen by
-   * accident.
-   */
-  describe('discarding an arrangement that cannot be read', () => {
-    const createFailedRead = async () => {
-      await createCanvas({
-        layout: throwError(() => new Error('the stored layout is unreadable'))
-      });
-      paint();
-    };
-
-    const confirmParams = (): ConfirmParams => {
-      return notificationServiceMock.confirm.mock.calls[0][0];
-    };
-
-    it('should offer the escape alongside the retry', async () => {
-      await createFailedRead();
-
-      const actions = queryElements('[role="alert"] button');
-
-      // Two, in this order: the harmless attempt first, the destructive one after
-      // it, so the destructive action is never the first thing a keyboard user
-      // reaches.
-      expect(actions).toHaveLength(2);
-      expect(actions[0].textContent.trim()).toBe('Try again');
-      expect(actions[1].textContent.trim()).toBe(
-        'Start over with a blank dashboard'
-      );
-    });
-
-    it('should ask for confirmation before discarding anything', async () => {
-      await createFailedRead();
-
-      component.onDiscardLayout();
-
-      expect(notificationServiceMock.confirm).toHaveBeenCalledTimes(1);
-      expect(confirmParams().confirmType).toBe(ConfirmationDialogType.Warn);
-
-      // Nothing at all has happened yet: the notice is still up and no write has
-      // been reported, because the viewer has not answered.
-      expect(component.hasLayoutError).toBe(true);
-      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
-    });
-
-    it('should leave the arrangement alone when the confirmation is dismissed', async () => {
-      await createFailedRead();
-
-      component.onDiscardLayout();
-      paint();
-
-      // The dialog was opened and never confirmed, which is the ordinary way out of
-      // a destructive action - and it must cost the viewer nothing.
-      expect(component.hasLayoutError).toBe(true);
-      expect(queryElement('gridster')).toBeNull();
-      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
-    });
-
-    it('should replace the unreadable arrangement with an empty one once confirmed', async () => {
-      await createFailedRead();
-
-      component.onDiscardLayout();
-      confirmParams().confirmFn();
-      paint();
-
-      // The failed-read state is gone, the canvas is usable again, and the catalog
-      // comes to the viewer exactly as it does for anyone else with nothing placed.
-      expect(component.hasLayoutError).toBe(false);
-      expect(component.isInitialized).toBe(true);
-      expect(component.modules).toHaveLength(0);
-      expect(component.isCatalogOpen).toBe(true);
-      expect(queryElement('gridster')).toBeTruthy();
-      expect(queryElement('gf-empty-canvas-state')).toBeTruthy();
-      expect(queryElement('.gf-dashboard-catalog-trigger')).toBeTruthy();
-    });
-
-    it('should report the emptied arrangement through the one write funnel', async () => {
-      await createFailedRead();
-
-      component.onDiscardLayout();
-      confirmParams().confirmFn();
-
-      // Reported exactly once, as an empty arrangement, and through the same
-      // handler the four grid callbacks feed - so the unreadable row is genuinely
-      // overwritten rather than merely hidden, and no second write origin exists.
-      expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(1);
-      expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledWith(
-        signedInViewer.id,
-        []
-      );
-    });
-
-    it('should let a module be placed again after the discard', async () => {
-      await createFailedRead();
-
-      component.onDiscardLayout();
-      confirmParams().confirmFn();
-      paint();
-
-      component.onAddModule(DashboardModuleType.HOLDINGS);
-      paint();
-
-      // The refusal that protects an unread arrangement is lifted with the state it
-      // protects, so the canvas accepts modules normally from here on.
       expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
     });
   });
@@ -4628,6 +4601,75 @@ describe('GfDashboardCanvasComponent', () => {
       // closure over a torn-down engine alive, and would call into that engine on
       // the next reflow.
       expect(observer.disconnectCount).toBe(1);
+    });
+
+    /**
+     * The canvas outlives its grid, which is the case the teardown above does not
+     * cover.
+     *
+     * Four states draw no grid at all - a shared portfolio, a signed-out viewer, a
+     * failed viewer read and a failed layout read - so entering any of them
+     * destroys the `gridster` child while this component carries on. Releasing the
+     * observer only when the whole canvas dies therefore left a detached host
+     * element and a dead engine held for as long as the viewer stayed on such a
+     * state, and the engine's own teardown hook is what closes that.
+     */
+    it('should stop watching when the grid goes away but the canvas does not', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const observer = gridsterObserver(gridsterComponent());
+
+      expect(observer.disconnectCount).toBe(0);
+
+      // Signing out is the ordinary way into a state with no grid, and it leaves
+      // this component mounted.
+      userServiceMock.stateChanged.next({ user: null });
+      paint();
+
+      expect(queryElement('gridster')).toBeNull();
+      expect(observer.disconnectCount).toBe(1);
+    });
+
+    it('should let go of the destroyed engine itself', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      expect(component['gridster']).toBe(gridsterComponent());
+
+      userServiceMock.stateChanged.next({ user: null });
+      paint();
+
+      // Held, a destroyed engine answers every question the canvas asks it - is
+      // there room for this module, which cell does this item occupy - from a
+      // layout nobody can see. Every reader already treats its absence as "no grid",
+      // which is the same answer as "no grid any more".
+      expect(component['gridster']).toBeNull();
+    });
+
+    it('should watch the grid that replaces one it let go of', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const firstObserver = gridsterObserver(gridsterComponent());
+
+      userServiceMock.stateChanged.next({ user: null });
+      paint();
+
+      dashboardLayoutServiceMock.get.mockReturnValue(of(placedLayout));
+
+      userServiceMock.stateChanged.next({ user: signedInViewer });
+      paint();
+
+      const secondObserver = gridsterObserver(gridsterComponent());
+
+      // A new grid, a new observer, and the old one stays severed: releasing the
+      // engine must not cost the canvas the trigger the next grid depends on.
+      expect(queryElement('gridster')).toBeTruthy();
+      expect(secondObserver).toBeDefined();
+      expect(secondObserver).not.toBe(firstObserver);
+      expect(firstObserver.disconnectCount).toBe(1);
+      expect(component['gridster']).toBe(gridsterComponent());
     });
   });
 
@@ -5329,21 +5371,69 @@ describe('GfDashboardCanvasComponent', () => {
       expect(component.options.itemValidateCallback).toBe(itemValidateCallback);
     });
 
-    it('should keep the drop path reachable without loosening that predicate', async () => {
+    it('should keep the drop path reachable on the engine defaults alone', async () => {
       await createCanvas();
       paint();
 
-      // These two options are a pair and must be read as one. The library screens its
-      // own drag-over candidate with
+      // Drag-to-add needs exactly one option, and the engine's own defaults for
+      // everything else. The library screens its drag-over candidate with
       // `if (!$options.enableOccupiedCellDrop && checkCollision(item))`, and that
-      // candidate carries no per-item minimums, so the strict predicate above would
-      // reject it, the browser would be told `dropEffect = 'none'` and drag-to-add
-      // would be unreachable in every browser. Enabling occupied-cell drop takes the
-      // screen out of the drop path instead of taking the strictness out of the
-      // predicate; the item the canvas appends in response does carry its minimums and
-      // is validated in the ordinary way through `addItem`.
+      // candidate carries no per-item minimums - so what keeps the screen passable is
+      // the predicate's fallback to the grid floor, not an extra option that removes
+      // the screen. `enableOccupiedCellDrop` is therefore left at its default and is
+      // asserted absent: a drop onto an occupied cell is refused by the engine, as it
+      // is by default, and the item the canvas appends on a legitimate drop does carry
+      // its minimums and is validated in the ordinary way through `addItem`.
       expect(component.options.enableEmptyCellDrop).toBe(true);
-      expect(component.options.enableOccupiedCellDrop).toBe(true);
+      expect(component.options.enableOccupiedCellDrop).toBeUndefined();
+    });
+
+    it('should ship the frozen new-item reveal policy', async () => {
+      await createCanvas();
+      paint();
+
+      // Grid policy, asserted against the configuration factory rather than against a
+      // live canvas: the canvas withholds this option while it draws cells nobody asked
+      // for, so reading it off a hydrated component would report the withholding rather
+      // than the policy. Both halves matter and they are asserted in different places -
+      // the policy here, the withholding where hydration is exercised.
+      expect(
+        createDashboardCanvasConfig({
+          onEmptyCellDrop: () => undefined,
+          onGridsterDestroy: () => undefined,
+          onGridsterInit: () => undefined,
+          onItemInit: () => undefined,
+          onLayoutChange: () => undefined
+        }).scrollToNewItems
+      ).toBe(true);
+    });
+
+    /**
+     * The write funnel has exactly one entrance, asserted from the source rather
+     * than from behaviour.
+     *
+     * A layout write may originate only from a grid state change - drag, resize,
+     * add or remove - and all four of the engine's callbacks feed one handler. A
+     * fifth caller of that handler would be a fifth trigger however it was
+     * plumbed: it would compile, it would pass every behavioural test in this file
+     * because the funnel it enters is the correct one, and the rule it breaks is
+     * about *where a write may come from*, which no assertion about the resulting
+     * request can see. Counting the call sites is the only way to observe it.
+     */
+    it('should report a layout change from one place only', () => {
+      const source = readFileSync(
+        join(__dirname, 'dashboard-canvas.component.ts'),
+        'utf8'
+      );
+
+      const callSites = source.match(/this\.notifyLayoutChange\(\)/g);
+
+      // One: the `onLayoutChange` handler the grid configuration is built with,
+      // which all four change callbacks forward to.
+      expect(callSites).toHaveLength(1);
+      expect(source).toContain(
+        'onLayoutChange: () => this.notifyLayoutChange()'
+      );
     });
   });
 });

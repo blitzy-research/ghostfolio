@@ -20,10 +20,10 @@ Ghostfolio is organized as an [Nx](https://nx.dev) workspace. Source code is spl
 
 ## Applications (`apps/`)
 
-| App           | Description                                                                                                                                                                                                                                                 |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api`    | NestJS backend exposing the REST API, backed by PostgreSQL via Prisma and Redis for caching                                                                                                                                                                 |
-| `apps/client` | Angular progressive web frontend, styled with Angular Material and Bootstrap utilities, presenting every feature as a module of a single-canvas modular dashboard laid out by `angular-gridster2`, and implemented under `apps/client/src/app/dashboard/**` |
+| App           | Description                                                                                                                                                                                                                                                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apps/api`    | NestJS backend exposing the REST API, backed by PostgreSQL via Prisma and Redis for caching                                                                                                                                                                                                                                                                        |
+| `apps/client` | Angular progressive web frontend, styled with Angular Material and Bootstrap utilities, presenting every feature as a module of a single-canvas modular dashboard laid out by `angular-gridster2`, implemented under `apps/client/src/app/dashboard/**`, which holds the canvas host, the module registry, the module catalog and 21 lazily loaded module wrappers |
 
 ## Libraries (`libs/`)
 

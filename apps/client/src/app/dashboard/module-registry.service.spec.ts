@@ -207,6 +207,71 @@ describe('GfModuleRegistryService', () => {
     });
   });
 
+  /**
+   * Which component each registered loader actually resolves to.
+   *
+   * Everything else in this file treats a loader as an opaque thunk - typed,
+   * lazy, zero-argument, uninvoked - and every one of those properties holds just
+   * as well for the *wrong* thunk. Two entries in the declarative table can be
+   * swapped, or a rename can move a class without moving the entry that names it,
+   * and the registry then hands the canvas the wrong module for a saved
+   * discriminator: `holdings` resolves the watchlist, silently, for everyone who
+   * had placed it.
+   *
+   * The binding is read off the thunk's own source rather than by invoking it.
+   * Invoking all 21 would materialise every module tree in this process, which is
+   * exactly the lazy boundary the rest of this suite exists to prove, and would
+   * make the registry's isolation from `modules/**` untestable in the same
+   * breath. A thunk's source still carries both halves of the binding - the
+   * module specifier it resolves and the export it reads off it - and neither can
+   * be satisfied by a swapped entry. If a future transform ever erased the
+   * specifier, these assertions fail loudly rather than passing vacuously,
+   * because they assert presence rather than absence.
+   */
+  describe('loader bindings', () => {
+    const toPascalCase = (aModuleType: string) => {
+      return aModuleType
+        .split('-')
+        .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+        .join('');
+    };
+
+    it.each(moduleTypes.map(String))(
+      'should resolve %s from its own wrapper directory and export',
+      (moduleType) => {
+        const { loadComponent } = registry.get(asModuleType(moduleType));
+
+        const loaderSource = String(loadComponent);
+
+        // The directory name IS the persisted discriminator, so this is the half
+        // a swapped entry breaks first.
+        expect(loaderSource).toContain(
+          `./modules/${moduleType}/${moduleType}.module.component`
+        );
+
+        // And the export it reads has to be that wrapper's own class, so an entry
+        // pointing at the right directory but reading a neighbour's symbol - which
+        // is what a partial rename leaves behind - fails here.
+        expect(loaderSource).toContain(
+          `Gf${toPascalCase(moduleType)}ModuleComponent`
+        );
+      }
+    );
+
+    it('should bind each discriminator to a distinct wrapper', () => {
+      const specifiers = registry.getAll().map(({ loadComponent }) => {
+        return /\.\/modules\/([^'"]+)/.exec(String(loadComponent))?.[1];
+      });
+
+      expect(specifiers.filter(Boolean)).toHaveLength(moduleTypes.length);
+
+      // Two discriminators sharing one wrapper is the other shape the swap
+      // defect takes: a copied entry whose `moduleType` was updated and whose
+      // loader was not.
+      expect(new Set(specifiers).size).toBe(moduleTypes.length);
+    });
+  });
+
   describe('unknown module types', () => {
     it('should return undefined for a stale discriminator instead of throwing', () => {
       expect(() => registry.get(staleModuleType)).not.toThrow();

@@ -122,9 +122,34 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
   @Input() tooltip: string;
   @Input() url: string;
 
+  /**
+   * The address being rendered, wrapped and held in a list so the template can
+   * track it by key.
+   *
+   * A list of at most one, which is what makes the `<img>` element's identity
+   * follow the address it is loading. Shown with `@if` instead, one element is
+   * reused across a change of address - and a reused element is exactly what let
+   * a `load` or `error` the browser had already queued for the PREVIOUS address
+   * arrive after the swap and be taken for an answer about the new one. Tracked by
+   * `source`, the old element is destroyed with its listeners and a new one takes
+   * its place, so each handler is told which address it is answering for by its
+   * own view rather than by state that has since moved on.
+   *
+   * Tracked by the `source` key rather than by the wrapper's identity, and that
+   * distinction is load-bearing twice over: the wrapper is a new object whenever
+   * the address changes, so its identity is not a stable key to begin with; and
+   * `track` on the bare item is the one form Angular treats as a mis-tracking
+   * smell, warning NG0956 every time a keyed view is legitimately re-created.
+   * Written back to identity tracking, this would put a console warning on every
+   * sorted or paged table row - the very noise this component exists to remove.
+   */
+  public probes: { source: string }[] = [];
+
   // Nullable by declaration, because "no logo to show" is a state this component
   // has to be able to express: an address whose probe came back unavailable, and
   // an address another instance is still probing, both render nothing at all.
+  // Read by consumers and by tests; written only through `show`, which keeps
+  // `probes` in step with it.
   public src: string | undefined;
 
   private isObserving = false;
@@ -149,19 +174,21 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
   public ngOnDestroy() {
     this.stopObserving();
 
-    if (this.probedSource) {
-      releaseLogoAttempt(this.probedSource);
-
-      this.probedSource = null;
-    }
+    this.releaseProbe();
   }
 
-  public onImageError() {
-    this.settle(false);
+  /**
+   * @param aSource the address this image element was created for, handed over by
+   * the template's own view context rather than read back from the element - which
+   * would report whatever `src` has become by the time the event is dispatched.
+   */
+  public onImageError(aSource: string) {
+    this.settle(aSource, false);
   }
 
-  public onImageLoad() {
-    this.settle(true);
+  /** Companion of {@link onImageError}; see it for why the source is a parameter. */
+  public onImageLoad(aSource: string) {
+    this.settle(aSource, true);
   }
 
   /**
@@ -176,9 +203,21 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
     const source = this.resolveSource();
 
     if (!source) {
-      // Left exactly as before: with nothing to resolve, `src` is not written at
-      // all. `ngOnChanges` fires for every input, including `size` and `tooltip`
-      // on their own, so assigning here would clear a logo that is still correct.
+      // Nothing identifies a logo any more, so anything still rendered describes
+      // inputs that have since been cleared. Note this branch is reached only when
+      // the asset profile identifier AND the explicit url are all absent - not
+      // merely when some unrelated input like `size` or `tooltip` changed - so a
+      // rendered address here is stale by definition rather than possibly still
+      // correct.
+      this.releaseProbe();
+      this.stopObserving();
+
+      if (this.src !== undefined) {
+        this.show(undefined);
+
+        this.changeDetectorRef.markForCheck();
+      }
+
       return;
     }
 
@@ -186,12 +225,19 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
       return;
     }
 
+    // Handed back before it is forgotten. This instance is about to stop being the
+    // one probing its previous address, and an unresolved attempt left in the
+    // register is worse than the duplicate request the register exists to prevent:
+    // every later instance that wants that address waits on an answer which can no
+    // longer come, silently and without resolving itself.
+    this.releaseProbe();
+
     const attempt = logoAttempts.get(source);
 
     if (attempt?.resolved) {
       this.stopObserving();
 
-      this.src = attempt.available ? source : undefined;
+      this.show(attempt.available ? source : undefined);
 
       this.changeDetectorRef.markForCheck();
 
@@ -204,7 +250,7 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
       // where there is not.
       this.startObserving();
 
-      this.src = undefined;
+      this.show(undefined);
 
       this.changeDetectorRef.markForCheck();
 
@@ -217,7 +263,8 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
     logoAttempts.set(source, { available: false, resolved: false });
 
     this.probedSource = source;
-    this.src = source;
+
+    this.show(source);
 
     this.changeDetectorRef.markForCheck();
   }
@@ -247,22 +294,61 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
    * is reported too, so a row waiting on this probe can show the logo instead of
    * waiting forever.
    */
-  private settle(available: boolean) {
+  private settle(aSource: string, available: boolean) {
+    // Two conditions, and the second is the one that matters. An event only ever
+    // answers the address its own element was loading, so an event whose source is
+    // not the one this instance is currently probing belongs to a superseded render
+    // - and publishing it would answer the CURRENT address with the previous
+    // address's outcome, which for a 404 means hiding a logo that exists and
+    // poisoning the register for the rest of the session.
+    if (!this.probedSource || aSource !== this.probedSource) {
+      return;
+    }
+
+    this.probedSource = null;
+
+    settleLogoAttempt(aSource, available);
+
+    if (!available) {
+      this.show(undefined);
+
+      this.changeDetectorRef.markForCheck();
+    }
+  }
+
+  /**
+   * The one writer of what is rendered.
+   *
+   * `src` and `probes` describe the same single fact and are only correct while
+   * they agree, so they are never assigned apart. A fresh wrapper is built only
+   * when the address actually changes, which keeps the tracked key stable - and
+   * therefore the element, and its pending request, untouched - when something
+   * that does not identify a logo, such as the tooltip, changes instead.
+   */
+  private show(source: string | undefined) {
+    if (this.src === source) {
+      return;
+    }
+
+    this.src = source;
+    this.probes = source ? [{ source }] : [];
+  }
+
+  /**
+   * Hands this instance's unresolved probe back to the register, if it holds one.
+   *
+   * Called wherever `probedSource` stops describing what is rendered - a change of
+   * inputs, inputs cleared, or destruction - so that an address is never left
+   * pending with nobody probing it.
+   */
+  private releaseProbe() {
     if (!this.probedSource) {
       return;
     }
 
-    const source = this.probedSource;
+    releaseLogoAttempt(this.probedSource);
 
     this.probedSource = null;
-
-    settleLogoAttempt(source, available);
-
-    if (!available) {
-      this.src = undefined;
-
-      this.changeDetectorRef.markForCheck();
-    }
   }
 
   private startObserving() {

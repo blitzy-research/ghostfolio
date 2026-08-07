@@ -1,11 +1,13 @@
 import type { LoginWithAccessTokenDialogParams } from '@ghostfolio/client/components/login-with-access-token-dialog/interfaces/interfaces';
 import type { UserAccountRegistrationDialogParams } from '@ghostfolio/client/components/user-account-registration-dialog/interfaces/interfaces';
+import { LazyDialogService } from '@ghostfolio/client/core/lazy-dialog.service';
 import {
   KEY_STAY_SIGNED_IN,
   SettingsStorageService
 } from '@ghostfolio/client/services/settings-storage.service';
 import { TokenStorageService } from '@ghostfolio/client/services/token-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { GfLogoComponent } from '@ghostfolio/ui/logo';
 import { NotificationService } from '@ghostfolio/ui/notifications';
@@ -51,6 +53,18 @@ export class GfSignInPromptComponent implements OnInit {
 
   public hasPermissionToCreateUser: boolean;
 
+  /**
+   * Whether a dialog's own chunk is currently being resolved.
+   *
+   * Bound to both controls on this card rather than to the one that started the
+   * load, and deliberately so: each opens a dialog and there is only ever one
+   * visitor pressing them, so while either is resolving neither should start a
+   * second. It is what makes the wait visible as well as survivable - a control that
+   * has gone quiet for a moment is otherwise indistinguishable from one that did
+   * nothing at all.
+   */
+  public isOpeningDialog = false;
+
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
     private dashboardLayoutService: GfDashboardLayoutService,
@@ -58,6 +72,7 @@ export class GfSignInPromptComponent implements OnInit {
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
     private dialog: MatDialog,
+    private lazyDialogService: LazyDialogService,
     private notificationService: NotificationService,
     private router: Router,
     private settingsStorageService: SettingsStorageService,
@@ -103,14 +118,37 @@ export class GfSignInPromptComponent implements OnInit {
    * the success branch; the alert is the whole of the failure handling.
    */
   public async openLoginDialog() {
-    // Resolved here rather than imported at the top of the file. This dialog
+    // Resolved on demand rather than imported at the top of the file. This dialog
     // carries the whole alternative-credential surface - including the WebAuthn
     // client - and it is opened only when a visitor asks to sign in, so a static
     // reference would put all of it in the initial bundle for every visitor.
     // With the route table collapsed onto one canvas there is no route boundary
     // left to do this for us.
-    const { GfLoginWithAccessTokenDialogComponent } =
-      await import('@ghostfolio/client/components/login-with-access-token-dialog/login-with-access-token-dialog.component');
+    //
+    // The load goes through the shared loader, which deduplicates concurrent
+    // requests, reports a rejected chunk through the sanitized channel and tells the
+    // visitor about it. The guard below is this card's own share of that: without it
+    // a slow chunk could be pressed again and would stack a second dialog on the
+    // first.
+    if (this.isOpeningDialog) {
+      return;
+    }
+
+    const GfLoginWithAccessTokenDialogComponent = await this.resolveDialog(
+      'login-with-access-token-dialog',
+      () =>
+        import('@ghostfolio/client/components/login-with-access-token-dialog/login-with-access-token-dialog.component').then(
+          (chunk) => {
+            return chunk.GfLoginWithAccessTokenDialogComponent;
+          }
+        )
+    );
+
+    // Nothing to open, and nothing to say: the loader has already reported the
+    // failure and told the visitor about it.
+    if (!GfLoginWithAccessTokenDialogComponent) {
+      return;
+    }
 
     // The third type argument is what the dialog actually resolves with. Without
     // it `afterClosed()` yields `any`, and every read of the token below is an
@@ -191,9 +229,25 @@ export class GfSignInPromptComponent implements OnInit {
   public async openShowAccessTokenDialog() {
     // Resolved on demand for the same reason as the sign-in dialog above: this is
     // reached only when a visitor asks to create an account, so its graph stays
-    // out of every visitor's initial bundle.
-    const { GfUserAccountRegistrationDialogComponent } =
-      await import('@ghostfolio/client/components/user-account-registration-dialog/user-account-registration-dialog.component');
+    // out of every visitor's initial bundle - and through the same shared loader,
+    // for the same three reasons.
+    if (this.isOpeningDialog) {
+      return;
+    }
+
+    const GfUserAccountRegistrationDialogComponent = await this.resolveDialog(
+      'user-account-registration-dialog',
+      () =>
+        import('@ghostfolio/client/components/user-account-registration-dialog/user-account-registration-dialog.component').then(
+          (chunk) => {
+            return chunk.GfUserAccountRegistrationDialogComponent;
+          }
+        )
+    );
+
+    if (!GfUserAccountRegistrationDialogComponent) {
+      return;
+    }
     // Resolves with the freshly issued token, or with nothing when the dialog is
     // cancelled - its template closes on `authToken` and on `undefined`
     // respectively - so the result is declared rather than inferred as `any`.
@@ -231,8 +285,15 @@ export class GfSignInPromptComponent implements OnInit {
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe({
             error: (error) => {
-              console.error(
-                'Failed to read the newly created user account',
+              // Sanitized rather than raw, and with an identifier of its own so this
+              // failure stays distinguishable from the token sign-in one below. Both
+              // are credential-adjacent paths: an `HttpErrorResponse` carries the
+              // request URL and the response body, and the console is readable by
+              // every script on the page and captured verbatim by session-replay
+              // tooling. A fixed event identifier and the numeric status are what an
+              // operator can act on, and they are all that is emitted.
+              reportSanitizedError(
+                'GF-SIGN-IN-PROMPT-USER-CREATE-READ-FAILED',
                 error
               );
 
@@ -273,7 +334,14 @@ export class GfSignInPromptComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         error: (error) => {
-          console.error('Failed to read the signed-in user account', error);
+          // A distinct identifier for a distinct path: this one follows a token the
+          // viewer supplied, so the failing request carries a credential the log
+          // must never come near. Reported sanitized, exactly as the account-creation
+          // path above is.
+          reportSanitizedError(
+            'GF-SIGN-IN-PROMPT-TOKEN-SIGN-IN-READ-FAILED',
+            error
+          );
 
           window.location.reload();
         },
@@ -291,5 +359,37 @@ export class GfSignInPromptComponent implements OnInit {
           }
         }
       });
+  }
+  /**
+   * Resolves a dialog component while both controls on this card report the wait.
+   *
+   * The pending flag is raised before the load and lowered however it settles, so a
+   * failed chunk leaves the controls usable rather than permanently inert - the
+   * loader releases its own entry the same way, and a visitor pressing the control
+   * again genuinely tries again.
+   *
+   * @param aKey stable, data-free name of the dialog, used for deduplication and in
+   * the sanitized failure report.
+   * @param aLoad performs the dynamic import and picks the component out of it.
+   * @returns the component, or `null` when the chunk could not be loaded - in which
+   * case the visitor has already been told.
+   */
+  private async resolveDialog<T>(
+    aKey: string,
+    aLoad: () => Promise<T>
+  ): Promise<T | null> {
+    this.isOpeningDialog = true;
+
+    this.changeDetectorRef.markForCheck();
+
+    try {
+      return await this.lazyDialogService.load(aKey, aLoad);
+    } finally {
+      // `finally`, so the controls are released even if the loader itself were ever
+      // to throw rather than resolve with nothing.
+      this.isOpeningDialog = false;
+
+      this.changeDetectorRef.markForCheck();
+    }
   }
 }

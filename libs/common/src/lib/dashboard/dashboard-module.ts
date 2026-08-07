@@ -76,6 +76,28 @@ if (typeof localizeGlobalScope.$localize !== 'function') {
  */
 export interface DashboardModule {
   /**
+   * Optional localized qualifier that tells two modules sharing one
+   * {@link DashboardModule.name} apart.
+   *
+   * Secondary metadata, deliberately, and never folded into the name. The name is
+   * the authoritative display string and is reused verbatim from the shared route
+   * registry, which is what keeps all thirteen locales translated at no cost; the
+   * route registry itself, however, gives two of its screens the same title -
+   * `Markets` for both market screens and `Settings` for both the account and the
+   * admin one - and behind a URL that was harmless. On a single canvas there is no
+   * URL, so the distinction has to be rendered, and rendering it from a separate
+   * field is what lets the name stay exact.
+   *
+   * Presentation only. The catalog draws it beside the name and folds it into the
+   * row's accessible name; nothing keys off it, and a module without one is
+   * complete.
+   *
+   * Populated exclusively from messages this application already translates, so a
+   * qualifier never introduces an untranslated string into a locale.
+   */
+  context?: string;
+
+  /**
    * Column span applied when the module is first placed on the canvas.
    * Must be greater than or equal to {@link DashboardModule.minItemCols} and
    * must not exceed the fixed 12-column width of the grid.
@@ -108,8 +130,12 @@ export interface DashboardModule {
   moduleType: DashboardModuleType;
 
   /**
-   * Localized display name; keep source text stable so existing translation IDs
-   * remain reusable.
+   * Localized display name, reused verbatim from the shared route registry's
+   * title for the screen this module replaces. Keep the source text identical to
+   * that title: it is what makes the existing translation unit - and therefore
+   * all twelve locales - apply to this module without a new message. Where two
+   * registry titles collide, disambiguate through
+   * {@link DashboardModule.context} rather than by editing this string.
    */
   name: string;
 
@@ -187,18 +213,19 @@ export const dashboardModules = {
     name: $localize`Markets`
   },
   [DashboardModuleType.MARKETS_PREMIUM]: {
+    // Qualified because the ungated markets module above carries the same name,
+    // and it has to: the shared route registry gives both market screens the
+    // title `Markets`, and the name is that title verbatim. The qualifier names
+    // what the permission below actually grants, and it is a separate field so
+    // the authoritative name stays exactly the message every locale already
+    // translates.
+    context: $localize`Market Data`,
     defaultItemCols: 8,
     defaultItemRows: 6,
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.MARKETS_PREMIUM,
-    // Qualified so it cannot be confused with the ungated markets module above,
-    // which a fully entitled viewer sees in the same catalog. The qualifier names
-    // what the permission on the next line actually grants, and the module's own
-    // word stays first so a search for it still finds both. Composed from two
-    // messages the application already translates - the same technique the shared
-    // route registry uses - so no locale is left with a new untranslated string.
-    name: $localize`Markets` + ' · ' + $localize`Market Data`,
+    name: $localize`Markets`,
     permission: permissions.readMarketDataOfMarkets
   },
   [DashboardModuleType.WATCHLIST]: {
@@ -261,16 +288,24 @@ export const dashboardModules = {
     name: $localize`Accounts`
   },
   [DashboardModuleType.ACCOUNT_SETTINGS]: {
+    // Qualified because the admin module of the same purpose carries the same
+    // name, and both are named `Settings` because that is the title the shared
+    // route registry gives each of those screens. An administrator sees both rows
+    // in one list, so the qualifier names the family this one belongs to - the
+    // same word its sibling access and membership modules sit under.
+    context: $localize`Account`,
     defaultItemCols: 6,
     defaultItemRows: 8,
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.ACCOUNT_SETTINGS,
-    // Qualified because the admin module of the same purpose was also called
-    // just `Settings`, and an administrator sees both rows in one list. What
-    // used to disambiguate them was the URL they sat behind; on a single canvas
-    // the name is all there is, so it has to carry the distinction itself.
-    name: $localize`Account settings`
+    // Deliberately the exact route title, unqualified. The distinction from the
+    // admin module of the same name travels in {@link DashboardModule.context}
+    // above rather than being welded into the name, so the name a viewer reads
+    // stays identical to the one the shared route registry has always published
+    // and every locale already translates - which is also why it mints no new
+    // trans-unit.
+    name: $localize`Settings`
   },
   [DashboardModuleType.ACCOUNT_MEMBERSHIP]: {
     defaultItemCols: 4,
@@ -336,17 +371,17 @@ export const dashboardModules = {
     permission: permissions.accessAdminControl
   },
   [DashboardModuleType.ADMIN_SETTINGS]: {
+    // Qualified for the same reason as the account settings module above: an
+    // administrator holds both, and the route registry titles both screens
+    // `Settings`. The qualifier is the title of the route these admin screens sit
+    // under, which is also the name of this family's own overview module.
+    context: $localize`Admin Control`,
     defaultItemCols: 8,
     defaultItemRows: 7,
     minItemCols: 4,
     minItemRows: 4,
     moduleType: DashboardModuleType.ADMIN_SETTINGS,
-    // Qualified for the same reason as the markets module above: an administrator
-    // also holds the account settings module, and two rows reading `Settings`
-    // cannot be told apart. The qualifier is the name this family already carries
-    // on its overview module, and both halves are messages the application
-    // already translates.
-    name: $localize`Admin Control` + ' · ' + $localize`Settings`,
+    name: $localize`Settings`,
     permission: permissions.accessAdminControl
   },
   [DashboardModuleType.ADMIN_USERS]: {

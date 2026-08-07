@@ -165,19 +165,19 @@
           <div class="mb-1" i18n>Oops! Something went wrong.</div>
           <div class="mb-3 secondary-text" i18n>Please try again later.</div>
           <!--
-            Two ways out, and both are needed because they answer different
-            failures. A read that failed for a transient reason - the request was
-            dropped, the service was briefly away - is fixed by asking again, and
-            that must stay first because it costs the viewer nothing.
+            One way out, and deliberately only one: asking again. It costs the
+            viewer nothing and it is the answer to a read that failed for a
+            transient reason - the request was dropped, the service was briefly
+            away.
 
-            A read that failed because the STORED document cannot be interpreted
-            fails identically every time, so asking again can never succeed. That
-            is what the second action is for, and it is the only affordance on
-            this notice that can end such a state from inside the application.
-            It is deliberately destructive and deliberately secondary: it is
-            confirmed before anything happens, it is named for what it does to
-            the arrangement rather than for the mechanism, and it sits after the
-            harmless action so it is never the first thing reached.
+            There is deliberately NO action here that empties the arrangement and
+            writes the emptied one back. A layout write may originate only from a
+            grid state change - drag, resize, add or remove - and a control on a
+            notice is none of those, so such an action would be a fifth
+            persistence trigger and a second write origin however it was plumbed.
+            It would also be the only affordance in the application able to
+            overwrite an arrangement the canvas has never successfully read, which
+            is precisely the arrangement the failed-read state exists to protect.
           -->
           <div class="d-flex justify-content-center">
             <button
@@ -187,9 +187,6 @@
               (click)="onRetryLayout()"
             >
               <span i18n>Try again</span>
-            </button>
-            <button mat-button type="button" (click)="onDiscardLayout()">
-              <span i18n>Start over with a blank dashboard</span>
             </button>
           </div>
         </div>

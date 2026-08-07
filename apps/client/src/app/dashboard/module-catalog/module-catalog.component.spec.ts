@@ -191,6 +191,12 @@ describe('GfModuleCatalogComponent', () => {
         permission: permissions.readAiPrompt
       },
       {
+        // Named `Markets` like the row above it, and qualified - which is exactly
+        // how the real shared metadata is shaped, because each module name is the
+        // route registry's title for the screen it replaces and that registry
+        // titles both market screens `Markets`. The qualifier is what separates
+        // the two rows a fully entitled viewer sees.
+        context: 'Market Data',
         defaultItemCols: 8,
         defaultItemRows: 6,
         loadComponent: jest.fn(),
@@ -454,6 +460,87 @@ describe('GfModuleCatalogComponent', () => {
         'Watchlist'
       ]);
       expect(rowElements()[0].textContent).not.toMatch(/\d/);
+    });
+
+    /**
+     * Two modules sharing one display name.
+     *
+     * They share it because each name is the shared route registry's title for the
+     * screen the module replaces, reused verbatim so every locale already
+     * translates it - and that registry gives both market screens the title
+     * `Markets`. Behind a URL the collision was invisible; in one flat list it
+     * leaves two rows a viewer cannot tell apart, so the qualifier carries the
+     * distinction instead of the name.
+     */
+    describe('a module whose display name is shared', () => {
+      const entitledViewer: CatalogViewerState = {
+        user: { permissions: [permissions.readMarketDataOfMarkets] }
+      };
+
+      it('should draw the qualifier beside the name it disambiguates', () => {
+        emitViewerState(entitledViewer);
+        advance();
+
+        // Registry order, which is catalog order: the qualified row sits where
+        // the registry puts it rather than beside the name it shares.
+        expect(renderedModuleNames()).toEqual([
+          'Holdings',
+          'Markets',
+          'Watchlist',
+          'Markets · Market Data'
+        ]);
+      });
+
+      it('should keep the qualifier out of the announcement it duplicates', () => {
+        emitViewerState(entitledViewer);
+        advance();
+
+        // The qualifier sits in its own element and that element is decorative:
+        // the button's accessible name already carries the same words, and a
+        // screen reader announcing them twice is noise.
+        expect(
+          queryElements('gf-module-catalog-item .context-qualifier')
+        ).toHaveLength(1);
+        expect(
+          queryElement(
+            'gf-module-catalog-item .context-qualifier'
+          ).getAttribute('aria-hidden')
+        ).toBe('true');
+      });
+
+      it('should fold the qualifier into the row name', () => {
+        emitViewerState(entitledViewer);
+        advance();
+
+        // The distinction has to reach a screen reader as well as the eye: two
+        // rows announced as `Add Markets module` are indistinguishable, which is
+        // the whole reason the qualifier exists.
+        expect(
+          rowElements().map((row) => {
+            return row.getAttribute('aria-label');
+          })
+        ).toEqual([
+          'Add Holdings module',
+          'Add Markets module',
+          'Add Watchlist module',
+          'Add Markets · Market Data module'
+        ]);
+      });
+
+      it('should be reachable by searching its qualifier', () => {
+        emitViewerState(entitledViewer);
+        advance();
+
+        // Searching what the row shows. Without the qualifier in the index the
+        // word that separates the two rows would be the one word that cannot be
+        // used to find either of them.
+        setSearchTerm('Market Data');
+        advance();
+
+        expect(displayedModuleTypes()).toEqual([
+          DashboardModuleType.MARKETS_PREMIUM
+        ]);
+      });
     });
 
     it('should announce the results as a list of items', () => {
@@ -1246,7 +1333,13 @@ describe('GfModuleCatalogComponent', () => {
       setSearchTerm('Market');
       advance();
 
-      expect(renderedModuleNames()).toEqual(['Markets', 'Markets']);
+      // Both market rows, in relevance order: the qualified one matches the term
+      // on its name AND on its qualifier, so it scores ahead of the row that
+      // matches on the name alone.
+      expect(renderedModuleNames()).toEqual([
+        'Markets · Market Data',
+        'Markets'
+      ]);
 
       dispatchKeydown('ArrowDown', DOWN_ARROW);
 

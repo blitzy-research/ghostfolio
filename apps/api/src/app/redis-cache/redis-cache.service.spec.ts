@@ -3,6 +3,7 @@ import { ConfigurationService } from '@ghostfolio/api/services/configuration/con
 import { Cache } from '@nestjs/cache-manager';
 import { Logger } from '@nestjs/common';
 import ms from 'ms';
+import { inspect } from 'node:util';
 
 import { RedisCacheService } from './redis-cache.service';
 
@@ -31,6 +32,24 @@ describe('RedisCacheService', () => {
 
   /** Backs the healthy-store mocks, so a read observes what the write stored. */
   let store: Map<string, string>;
+
+  /**
+   * Everything reported at `error`, flattened into one string.
+   *
+   * Used for the negative assertions: what matters about these lines is as much
+   * what they cannot contain - a host, a port, a provider message, a stack - as
+   * what they do.
+   */
+  const emittedErrors = () =>
+    (loggerError.mock.calls as unknown[][])
+      .map((call) =>
+        call
+          .map((argument) =>
+            typeof argument === 'string' ? argument : inspect(argument)
+          )
+          .join(' ')
+      )
+      .join('\n');
 
   beforeEach(() => {
     // `Date.now()` is faked alongside the timers, which is what lets the
@@ -139,7 +158,7 @@ describe('RedisCacheService', () => {
 
       await expect(redisCacheService.isHealthy()).resolves.toBe(false);
       expect(loggerError).toHaveBeenCalledWith(
-        'Redis health check failed: value mismatch',
+        'GF-REDIS-HEALTH-CHECK-FAILED (category VALUE_MISMATCH)',
         'RedisCacheService'
       );
     });
@@ -156,9 +175,37 @@ describe('RedisCacheService', () => {
       // The one line that explains the outage. It is only worth emitting if it
       // stays findable, which is what the suppression below protects.
       expect(loggerError).toHaveBeenCalledWith(
-        'Redis health check failed: timeout',
+        'GF-REDIS-HEALTH-CHECK-FAILED (category PROBE_TIMED_OUT)',
         'RedisCacheService'
       );
+    });
+
+    it('categorises a fault the store itself raised without repeating what it said', async () => {
+      // The store's own text is where the host and the port live, so it selects a
+      // category and then goes no further. What is emitted describes the class of
+      // fault; where the store was and what it was asked stays in the store's log.
+      set.mockRejectedValue(new Error('connect ECONNREFUSED 10.1.2.3:6379'));
+
+      await expect(redisCacheService.isHealthy()).resolves.toBe(false);
+
+      expect(loggerError).toHaveBeenCalledWith(
+        'GF-REDIS-HEALTH-CHECK-FAILED (category CONNECTION_REFUSED)',
+        'RedisCacheService'
+      );
+      expect(emittedErrors()).not.toContain('10.1.2.3');
+      expect(emittedErrors()).not.toContain('6379');
+    });
+
+    it('reports a fault it has no category for as unclassified rather than describing it', async () => {
+      set.mockRejectedValue(new Error('something nobody has seen before'));
+
+      await expect(redisCacheService.isHealthy()).resolves.toBe(false);
+
+      expect(loggerError).toHaveBeenCalledWith(
+        'GF-REDIS-HEALTH-CHECK-FAILED (category UNCLASSIFIED)',
+        'RedisCacheService'
+      );
+      expect(emittedErrors()).not.toContain('nobody has seen before');
     });
   });
 
@@ -170,18 +217,30 @@ describe('RedisCacheService', () => {
       expect(typeof clientErrorHandler).toBe('function');
     });
 
-    it('reports the first occurrence in full', () => {
-      const error = connectionRefused();
+    it('reports the first occurrence as an event and a category, and nothing the client said', () => {
+      clientErrorHandler(connectionRefused());
 
-      clientErrorHandler(error);
-
-      // The error object, not its message, so the first report still carries a
-      // stack.
       expect(loggerError).toHaveBeenCalledTimes(1);
-      expect(loggerError).toHaveBeenCalledWith(error, 'RedisCacheService');
+      expect(loggerError).toHaveBeenCalledWith(
+        'GF-REDIS-CLIENT-ERROR (category CONNECTION_REFUSED)',
+        'RedisCacheService'
+      );
+
+      // Neither the `Error` object nor its message: a store client's error text
+      // names the address it could not reach and the command that failed, and the
+      // object additionally carries a stack that maps the application out. The
+      // category is what an operator acts on, and it is all that is emitted.
+      const reported = emittedErrors();
+
+      expect(reported).not.toContain('127.0.0.1');
+      expect(reported).not.toContain('6379');
+      expect(reported).not.toContain('ECONNREFUSED');
+      const [firstReport] = loggerError.mock.calls[0] as [unknown];
+
+      expect(firstReport).toEqual(expect.any(String));
     });
 
-    it('collapses identical repeats instead of logging every one', () => {
+    it('collapses repeats of the same fault instead of logging every one', () => {
       for (let attempt = 0; attempt < 500; attempt++) {
         clientErrorHandler(connectionRefused());
       }
@@ -206,34 +265,45 @@ describe('RedisCacheService', () => {
 
       const [summary] = loggerError.mock.calls[1] as [string];
 
-      // The count is what tells an operator the dependency is still down, and
-      // it is the reason suppression is not simply silence.
-      expect(summary).toContain('connect ECONNREFUSED 127.0.0.1:6379');
-      expect(summary).toContain('repeated 500 times');
-      expect(summary).toContain('60 seconds');
+      // The count and the elapsed time are what tell an operator the dependency is
+      // still down, and they are the reason suppression is not simply silence.
+      // They are also measures rather than values, which is why they are the only
+      // things the summary adds to the event and its category.
+      expect(summary).toBe(
+        'GF-REDIS-CLIENT-ERROR (category CONNECTION_REFUSED, repeated 500 times in the last 60 seconds)'
+      );
+      expect(summary).not.toContain('127.0.0.1');
+      expect(summary).not.toContain('6379');
     });
 
     it('reports a different failure immediately rather than masking it behind an ongoing one', () => {
       clientErrorHandler(connectionRefused());
 
-      const readOnlyReplica = new Error(
-        'READONLY You can not write against a read only replica'
+      // A server reply carries no errno code, only a leading error word, so this
+      // is what the text matching is for: without it every codeless reply would
+      // collapse into one category and this fault would be counted as a repeat of
+      // the connection failure above rather than reported.
+      clientErrorHandler(
+        new Error('READONLY You can not write against a read only replica')
       );
-
-      clientErrorHandler(readOnlyReplica);
 
       expect(loggerError).toHaveBeenCalledTimes(2);
       expect(loggerError).toHaveBeenLastCalledWith(
-        readOnlyReplica,
+        'GF-REDIS-CLIENT-ERROR (category READ_ONLY_REPLICA)',
         'RedisCacheService'
       );
+      expect(emittedErrors()).not.toContain('read only replica');
     });
 
-    it('groups messageless errors under a stable label rather than under undefined', () => {
+    it('groups faults it cannot recognise under one stable category rather than under undefined', () => {
       clientErrorHandler(undefined);
       clientErrorHandler(undefined);
 
       expect(loggerError).toHaveBeenCalledTimes(1);
+      expect(loggerError).toHaveBeenCalledWith(
+        'GF-REDIS-CLIENT-ERROR (category UNCLASSIFIED)',
+        'RedisCacheService'
+      );
     });
   });
 });

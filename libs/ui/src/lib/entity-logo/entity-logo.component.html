@@ -1,4 +1,15 @@
-@if (src) {
+<!--
+  Keyed on the address rather than shown with `@if`, and that is a correctness
+  choice rather than a stylistic one. `@if (src)` reuses a single `<img>` across a
+  change of address, and a reused element is what allowed a `load` or `error` the
+  browser had already queued for the PREVIOUS address to arrive after the swap and
+  be taken for an answer about the new one - hiding a logo that exists and, worse,
+  recording that verdict in the session-wide register. Tracking by the address
+  destroys the old element with its listeners and creates a new one, so each
+  handler is told, from its own view's context, which address it is answering for.
+  See `probes` for why the key is `source` rather than the item itself.
+-->
+@for (probe of probes; track probe.source) {
   <!--
     `alt` is bound to the same text as `title` rather than left off. Without it
     this image relies on `title` alone for its name, which is a fallback rather
@@ -17,9 +28,9 @@
   <img
     [alt]="tooltip ? tooltip : ''"
     [ngClass]="{ large: size === 'large' }"
-    [src]="src"
+    [src]="probe.source"
     [title]="tooltip ? tooltip : ''"
-    (error)="onImageError()"
-    (load)="onImageLoad()"
+    (error)="onImageError(probe.source)"
+    (load)="onImageLoad(probe.source)"
   />
 }

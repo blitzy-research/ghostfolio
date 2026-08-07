@@ -11,12 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a module registry as the single mechanism to register the modules of the dashboard canvas
 - Added a searchable module catalog which supports adding a module by click or by drag and drop, opening automatically when no layout has been saved yet
-- Added a single-canvas modular dashboard at the application root, rendering every feature as a grid module which can be individually positioned and resized
+- Added a single-canvas modular dashboard at the application root, rendering the screen-level features as 21 registered grid modules which can be individually positioned and resized
 - Added an _AI_ chat module as a first-class module of the dashboard canvas
 - Added `angular-gridster2` version `21.0.1` as the grid engine of the dashboard canvas
 - Added the ability to remove a module from the dashboard canvas via the module chrome
-- Added the endpoint `GET api/v1/user/layout` to load the dashboard layout of the current user
-- Added the endpoint `PATCH api/v1/user/layout` to save the dashboard layout of the current user
+- Added the endpoint `GET /api/v1/user/layout` to load the dashboard layout of the current user
+- Added the endpoint `PATCH /api/v1/user/layout` to save the dashboard layout of the current user
 - Added the `UserDashboardLayout` database model to persist the dashboard layout per user
 
 ### Changed

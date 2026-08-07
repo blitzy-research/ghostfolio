@@ -62,7 +62,32 @@
     (dragstart)="onDragStart($event)"
     (focus)="onFocus()"
   >
-    <span class="text-truncate">{{ definition.name }}</span>
+    <span class="text-truncate">{{ definition.name }}</span
+    >&ngsp;
+    <!--
+      The qualifier that tells two modules sharing one name apart - `Markets` for
+      both market modules, `Settings` for both settings modules - which they share
+      because each name is the route registry's title for the screen it replaces,
+      reused verbatim so every locale already translates it.
+
+      Rendered as its own element rather than appended to the name above, because
+      the name is the authoritative localized string and stays untouched. Hidden
+      from assistive technology for the same reason the placed and unavailable
+      markers are: the button's accessible name already carries the qualifier, and
+      announcing it twice is noise.
+
+      `&ngsp;` above is load-bearing. Angular strips whitespace between elements,
+      so without it the name and the qualifier abut and the row's text reads
+      `Markets· Market Data` - a gap drawn by padding would look right while
+      anything reading the text, a copied selection included, would not. It is the
+      compiler's own pseudo-entity for exactly this, and it survives whitespace
+      removal as a real space.
+    -->
+    @if (definition.context) {
+      <span aria-hidden="true" class="context-qualifier text-truncate"
+        >· {{ definition.context }}</span
+      >
+    }
 
     <!--
       Tells the viewer this module is already on their canvas, so a row whose

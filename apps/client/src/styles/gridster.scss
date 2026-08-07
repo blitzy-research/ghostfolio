@@ -37,27 +37,31 @@
     // rest - all four border colours `rgba(0, 0, 0, 0)`, and a pixel probe inside
     // the handle returning the card fill exactly. Every module was resizable and
     // nothing said so; the affordance only existed for someone who already knew
-    // to go looking in that corner. `handle-s` and `handle-e` are deliberately
-    // left alone: they carry `border-width: 0` and are pure hit areas, so they
-    // have no triangle to tint in either state.
+    // to go looking in that corner. Declaring the resting state is what says so.
+    // `handle-s` and `handle-e` are deliberately left alone: they carry
+    // `border-width: 0` and are pure hit areas, so they have no triangle to tint
+    // in either state.
     //
-    // Both tones are the surface-text tokens rather than the outline token that
-    // AAP 0.3.3 nominates for this element. The outline fallback is the one that
-    // would actually paint here and it composites to 2.68:1 against the card,
-    // which would have closed this finding by opening a contrast one in its
-    // place; the variant clears the 3:1 non-text minimum at 4.61:1 while still
-    // reading as quiet chrome, and hover escalates to the full surface-text tone
-    // so the state change stays obvious rather than becoming a tonal hair.
+    // The token is `--mat-sys-outline` with the fallback AAP 0.3.3 prescribes for
+    // it, and that mapping is semantically right as well as specified: a resize
+    // handle is a boundary, so it belongs to the outline family rather than to the
+    // surface-text family, and borrowing a text tone would make the handle read as
+    // loud as a module's own title.
+    //
+    // The hover block restates the same token deliberately, and it is not
+    // redundant. The library ships
+    // `gridster-item:hover .gridster-item-resizable-handler.handle-se` with a
+    // hardcoded `#ccc`, which carries exactly the specificity of the resting
+    // selector below and is injected after this stylesheet - so without a hover
+    // selector of its own, the token would paint at rest and then be overridden
+    // the moment a pointer arrived.
     .gridster-item-resizable-handler.handle-se {
-      border-bottom-color: var(
-        --mat-sys-on-surface-variant,
-        rgba(0, 0, 0, 0.54)
-      );
+      border-bottom-color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
     }
 
     &:hover {
       .gridster-item-resizable-handler.handle-se {
-        border-bottom-color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+        border-bottom-color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
       }
     }
 
@@ -105,19 +109,16 @@
       border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
       color: var(--mat-sys-on-surface, #ffffff);
 
-      // Restated for the dark fallbacks, which are what paint. At rest this
-      // composites to 8.13:1 against the dark card and hover to 15.1:1, so the
-      // rest state is discoverable and the escalation is still visible.
+      // Restated for the dark fallback AAP 0.3.3 prescribes, which is what
+      // actually paints while the `--mat-sys` layer is unpopulated. Both states
+      // again, for the same specificity reason as in the light branch.
       .gridster-item-resizable-handler.handle-se {
-        border-bottom-color: var(
-          --mat-sys-on-surface-variant,
-          rgba(255, 255, 255, 0.7)
-        );
+        border-bottom-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
       }
 
       &:hover {
         .gridster-item-resizable-handler.handle-se {
-          border-bottom-color: var(--mat-sys-on-surface, #ffffff);
+          border-bottom-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
         }
       }
 

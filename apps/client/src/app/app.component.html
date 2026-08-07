@@ -12,9 +12,19 @@
         <div class="align-items-center d-flex h-100 justify-content-center">
           @if (canCreateAccount) {
             <div class="text-center">
+              <!--
+                Disabled while the dialog's own chunk is being resolved. The load is
+                a network request, so it can take long enough to be pressed again,
+                and a second press used to open a second copy of the dialog.
+                `aria-busy` says the same thing to assistive technology, since a
+                control that has gone quiet for a moment is otherwise
+                indistinguishable from one that did nothing.
+              -->
               <button
                 class="cursor-pointer d-inline-block info-message"
                 type="button"
+                [attr.aria-busy]="isCreatingAccount ? 'true' : null"
+                [disabled]="isCreatingAccount"
                 (click)="onCreateAccount()"
               >
                 <span i18n>You are using the Live Demo.</span>

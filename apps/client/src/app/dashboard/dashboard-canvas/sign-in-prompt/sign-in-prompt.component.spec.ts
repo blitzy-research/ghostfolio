@@ -1,5 +1,6 @@
 import { GfLoginWithAccessTokenDialogComponent } from '@ghostfolio/client/components/login-with-access-token-dialog/login-with-access-token-dialog.component';
 import { GfUserAccountRegistrationDialogComponent } from '@ghostfolio/client/components/user-account-registration-dialog/user-account-registration-dialog.component';
+import { LazyDialogService } from '@ghostfolio/client/core/lazy-dialog.service';
 import { GfDashboardLayoutService } from '@ghostfolio/client/dashboard/services/dashboard-layout.service';
 import {
   KEY_STAY_SIGNED_IN,
@@ -60,7 +61,9 @@ import { GfSignInPromptComponent } from './sign-in-prompt.component';
  * reports through `console.error` without naming the target, and `window.location`
  * is not redefinable - so the two branches of `setToken` are separated by the pair
  * of facts that *do* distinguish them: a blocked document navigation was reported
- * and the router was not asked, or the reverse.
+ * and the router was not asked, or the reverse. The component's own failure reports
+ * arrive on the same channel and are told apart from jsdom's by their sanitized
+ * event identifier, which is also what makes their content assertable.
  */
 describe('GfSignInPromptComponent', () => {
   const JSDOM_NAVIGATION_REPORT = 'Not implemented: navigation';
@@ -136,8 +139,35 @@ describe('GfSignInPromptComponent', () => {
    */
   let dashboardLayoutServiceMock: { beginIdentityTransition: jest.Mock };
 
+  /**
+   * The shared lazy-dialog loader, stubbed so a chunk load can be made slow or made
+   * to fail on demand.
+   *
+   * By default it performs the loader it is handed, which is what the real service
+   * does on the happy path - so every existing expectation about which component was
+   * opened still holds against the real class. Deduplication across components and
+   * the visible failure report are the service's own contract, asserted in its own
+   * suite; what is asserted here is what this CARD does with a slow or failed load.
+   */
+  let lazyDialogServiceMock: {
+    isLoading: jest.Mock<boolean, [string]>;
+    load: jest.Mock<Promise<unknown>, [string, () => Promise<unknown>]>;
+  };
+
   /** Blocked document navigations, collected from jsdom's own report. */
   let navigationAttempts: string[];
+
+  /**
+   * Everything this component reported about a failure, verbatim.
+   *
+   * Collected rather than merely swallowed because these two paths are
+   * credential-adjacent - one follows a token the viewer supplied, the other the
+   * account that was just created for them - so what a failure is allowed to say is
+   * part of the contract. A raw `HttpErrorResponse` here would carry the request
+   * URL and the response body into a console that every script on the page can read
+   * and that session-replay tooling captures verbatim.
+   */
+  let sanitizedReports: string[];
 
   let consoleErrorSpy: jest.SpyInstance;
   let originalDocumentLanguage: string;
@@ -149,6 +179,11 @@ describe('GfSignInPromptComponent', () => {
     dataServiceMock = {
       fetchInfo: jest.fn(() => ({ globalPermissions })),
       loginAnonymous: jest.fn(() => loginAnonymousResult)
+    };
+
+    lazyDialogServiceMock = {
+      isLoading: jest.fn<boolean, [string]>(() => false),
+      load: jest.fn((_aKey: string, aLoad: () => Promise<unknown>) => aLoad())
     };
 
     await TestBed.configureTestingModule({
@@ -163,6 +198,7 @@ describe('GfSignInPromptComponent', () => {
           provide: GfDashboardLayoutService,
           useValue: dashboardLayoutServiceMock
         },
+        { provide: LazyDialogService, useValue: lazyDialogServiceMock },
         { provide: MatDialog, useValue: { open: dialogOpen } },
         { provide: NotificationService, useValue: notificationServiceMock },
         { provide: Router, useValue: routerMock },
@@ -188,6 +224,25 @@ describe('GfSignInPromptComponent', () => {
     return dialogRequests.at(-1);
   };
 
+  /**
+   * Makes every chunk load wait, and hands back the means to answer each one.
+   *
+   * A dialog's chunk is a network request, so the state worth asserting is the one
+   * that takes time: a second press arriving while the first load is still
+   * resolving. It is not observable with a load that settles immediately.
+   */
+  const deferChunkLoads = () => {
+    const answers: ((component: unknown) => void)[] = [];
+
+    lazyDialogServiceMock.load.mockImplementation(() => {
+      return new Promise<unknown>((resolve) => {
+        answers.push(resolve);
+      });
+    });
+
+    return answers;
+  };
+
   const host = () => fixture.nativeElement as HTMLElement;
 
   /**
@@ -206,6 +261,7 @@ describe('GfSignInPromptComponent', () => {
     dialogRequests = [];
     loginAnonymousResult = of({ authToken: 'an-auth-token' });
     navigationAttempts = [];
+    sanitizedReports = [];
     staySignedInSetting = null;
     viewer = { settings: { language: 'en' } };
 
@@ -308,10 +364,17 @@ describe('GfSignInPromptComponent', () => {
 
         // The component's own diagnostic, emitted on every path that gives up on
         // reading the viewer before it reloads. Swallowed rather than forwarded so
-        // the suite output stays readable, and recorded so its presence is
-        // assertable rather than merely tolerated.
-        if (report.startsWith('Failed to read the ')) {
+        // the suite output stays readable, and recorded - in full - so both its
+        // presence and its content are assertable rather than merely tolerated.
+        //
+        // Matched on the sanitized identifier prefix, which is the whole point: the
+        // failure is reported as a fixed event and a numeric status through
+        // `reportSanitizedError`, so anything arriving here that is not a single
+        // string beginning that way is a raw error object and falls through to the
+        // real console, where the recorded reports below will not account for it.
+        if (report.startsWith('GF-SIGN-IN-PROMPT-')) {
           callOrder.push('reportFailure');
+          sanitizedReports.push(report);
 
           return;
         }
@@ -891,6 +954,126 @@ describe('GfSignInPromptComponent', () => {
    * `reload` throws. What it does emit is the same virtual-console report that
    * {@link navigationAttempts} already collects.
    */
+  /**
+   * Loading a dialog's own chunk, when that takes time or fails.
+   *
+   * Collapsing the route table moved chunk loading out of the router - which handled
+   * both cases - and into two controls a visitor can press twice. Both live on one
+   * card and there is one visitor, so while either chunk is resolving neither control
+   * should start a second load.
+   */
+  describe('resolving a dialog on demand', () => {
+    it('opens one dialog however many times a control is pressed while loading', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      const answers = deferChunkLoads();
+
+      const first = component.openLoginDialog();
+      const second = component.openLoginDialog();
+
+      expect(lazyDialogServiceMock.load).toHaveBeenCalledTimes(1);
+      expect(component.isOpeningDialog).toBe(true);
+
+      answers[0](GfLoginWithAccessTokenDialogComponent);
+
+      await first;
+      await second;
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(component.isOpeningDialog).toBe(false);
+    });
+
+    it('refuses the other control while a chunk is still resolving', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      const answers = deferChunkLoads();
+
+      const signingIn = component.openLoginDialog();
+      const creating = component.openShowAccessTokenDialog();
+
+      // One visitor, two controls, one dialog at a time: the second is refused
+      // rather than queued behind the first.
+      expect(lazyDialogServiceMock.load).toHaveBeenCalledTimes(1);
+
+      answers[0](GfLoginWithAccessTokenDialogComponent);
+
+      await signingIn;
+      await creating;
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(openedDialog().component).toBe(
+        GfLoginWithAccessTokenDialogComponent
+      );
+    });
+
+    it('disables both controls while a chunk is resolving, and marks them busy', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      const answers = deferChunkLoads();
+
+      const opening = component.openLoginDialog();
+
+      fixture.detectChanges();
+
+      const controls = [
+        buttonLabelled('Sign in'),
+        buttonLabelled('Create Account')
+      ];
+
+      // Visible as well as guarded: a control that has gone quiet for a moment is
+      // otherwise indistinguishable from one that did nothing at all.
+      for (const control of controls) {
+        expect(control.disabled).toBe(true);
+        expect(control.getAttribute('aria-busy')).toBe('true');
+      }
+
+      answers[0](GfLoginWithAccessTokenDialogComponent);
+
+      await opening;
+
+      fixture.detectChanges();
+
+      for (const control of [
+        buttonLabelled('Sign in'),
+        buttonLabelled('Create Account')
+      ]) {
+        expect(control.disabled).toBe(false);
+        expect(control.getAttribute('aria-busy')).toBeNull();
+      }
+    });
+
+    it.each([
+      {
+        description: 'signing in',
+        open: () => component.openLoginDialog()
+      },
+      {
+        description: 'creating an account',
+        open: () => component.openShowAccessTokenDialog()
+      }
+    ])(
+      'opens nothing and releases the controls when the $description chunk fails',
+      async ({ open }) => {
+        await createComponent({ globalPermissions: allGlobalPermissions });
+
+        lazyDialogServiceMock.load.mockResolvedValueOnce(null);
+
+        await open();
+
+        // The loader has already reported the failure and told the visitor; what
+        // matters here is that nothing was opened and that the controls are usable
+        // again, so pressing one genuinely tries again.
+        expect(dialogOpen).not.toHaveBeenCalled();
+        expect(component.isOpeningDialog).toBe(false);
+        expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+
+        await open();
+
+        expect(dialogOpen).toHaveBeenCalledTimes(1);
+      }
+    );
+  });
+
   describe('recovering from a viewer that cannot be read', () => {
     /** Makes the next forced read fail, without disturbing the recorded ordering. */
     const failTheViewerRead = () => {
@@ -918,6 +1101,13 @@ describe('GfSignInPromptComponent', () => {
         'leaveTheApplication'
       ]);
       expect(navigationAttempts).toHaveLength(1);
+
+      // A fixed identifier of its own, so this failure stays distinguishable from the
+      // token sign-in one without either of them describing what was being read. The
+      // thrown error carries no numeric status, so the identifier is the whole line.
+      expect(sanitizedReports).toEqual([
+        'GF-SIGN-IN-PROMPT-USER-CREATE-READ-FAILED'
+      ]);
     });
 
     it('reloads after an adopted token cannot be resolved, and navigates nowhere', async () => {
@@ -938,6 +1128,47 @@ describe('GfSignInPromptComponent', () => {
         'leaveTheApplication'
       ]);
       expect(routerMock.navigate).not.toHaveBeenCalled();
+      expect(sanitizedReports).toEqual([
+        'GF-SIGN-IN-PROMPT-TOKEN-SIGN-IN-READ-FAILED'
+      ]);
+    });
+
+    it('reports an HTTP failure as an event and a status, and nothing the response carried', async () => {
+      await createComponent();
+
+      // Shaped like the `HttpErrorResponse` this path really produces: the failing
+      // request is the one that carries the viewer's credential, so its URL, its
+      // message and its body are exactly what must not be written anywhere.
+      userServiceMock.get = jest.fn((force?: boolean) => {
+        callOrder.push(force ? 'get(true)' : 'get()');
+
+        return throwError(() => ({
+          error: { detail: 'a-secret-detail' },
+          message:
+            'Http failure response for https://ghostfol.io/api/v1/user: 500 Internal Server Error',
+          status: 500,
+          url: 'https://ghostfol.io/api/v1/user?token=a-bearer-token'
+        }));
+      });
+
+      component.setToken('a-bearer-token');
+
+      // The status is kept because it is what makes the report actionable; the URL,
+      // the message and the body are not, and none of them is a thing an operator
+      // needs in order to read a failure rate.
+      expect(sanitizedReports).toEqual([
+        'GF-SIGN-IN-PROMPT-TOKEN-SIGN-IN-READ-FAILED (status 500)'
+      ]);
+
+      const reported = sanitizedReports.join('\n');
+
+      expect(reported).not.toContain('a-bearer-token');
+      expect(reported).not.toContain('a-secret-detail');
+      expect(reported).not.toContain('ghostfol.io');
+      expect(reported).not.toContain('Http failure response');
+
+      // And the recovery still happens: a report is not a substitute for it.
+      expect(navigationAttempts).toHaveLength(1);
     });
   });
 });

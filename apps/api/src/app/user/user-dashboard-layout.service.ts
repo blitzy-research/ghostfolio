@@ -22,6 +22,35 @@ import { Prisma } from '@prisma/client';
  */
 const SUPPORTED_LAYOUT_VERSION = 1;
 
+/**
+ * The stable event identifier every refused read is reported under, and the
+ * reason categories that distinguish them.
+ *
+ * Fixed strings, deliberately. A log line is readable by everyone who can read
+ * the log and outlives the request that produced it, so it carries what an
+ * operator needs to act — which of the three ways a document can be unreadable
+ * this was — and nothing that describes the viewer or what they had stored.
+ * Neither the account the row belongs to nor any value out of the row appears in
+ * any of them, which is what makes the identifier searchable without being
+ * disclosive.
+ */
+const LAYOUT_UNREADABLE_EVENT = 'GF-USER-DASHBOARD-LAYOUT-UNREADABLE';
+
+const LAYOUT_UNREADABLE_REASONS = {
+  invalidEnvelope: 'INVALID_ENVELOPE',
+  missingModulesArray: 'MISSING_MODULES_ARRAY',
+  unsupportedVersion: 'UNSUPPORTED_VERSION'
+} as const;
+
+/**
+ * The stable event identifier a partially readable document is reported under.
+ *
+ * The count travels with it because a count is a measure rather than a value: it
+ * tells an operator how much of the document could not be interpreted without
+ * telling them anything that was in it.
+ */
+const LAYOUT_ITEMS_DROPPED_EVENT = 'GF-USER-DASHBOARD-LAYOUT-ITEMS-DROPPED';
+
 @Injectable()
 export class UserDashboardLayoutService {
   public constructor(private readonly prismaService: PrismaService) {}
@@ -58,10 +87,7 @@ export class UserDashboardLayoutService {
       return null;
     }
 
-    return this.parseLayout({
-      layoutData: userDashboardLayout.layoutData,
-      userId
-    });
+    return this.parseLayout(userDashboardLayout.layoutData);
   }
 
   /**
@@ -154,21 +180,25 @@ export class UserDashboardLayoutService {
    *
    * Only the two members the contract defines are carried over, so an extra
    * property that found its way into the row cannot reach the response.
+   *
+   * Each outcome is reported as a fixed event identifier and a reason category,
+   * and that is the whole of what is emitted. The account the row belongs to is
+   * deliberately absent — it is the authenticated caller, so the request log
+   * already establishes who asked, and repeating it here would put an account
+   * identifier into every operator's view of this failure. The offending value is
+   * absent for the same reason and more so: it comes straight out of a JSON column
+   * the viewer's own client wrote, so serialising it into a log would copy stored
+   * viewer data somewhere it is neither protected nor expiring. The reason
+   * category is what an operator acts on, and it survives without either.
    */
-  private parseLayout({
-    layoutData,
-    userId
-  }: {
-    layoutData: Prisma.JsonValue;
-    userId: string;
-  }): UserDashboardLayout {
+  private parseLayout(layoutData: Prisma.JsonValue): UserDashboardLayout {
     if (
       typeof layoutData !== 'object' ||
       layoutData === null ||
       Array.isArray(layoutData)
     ) {
       Logger.error(
-        `The stored dashboard layout of user '${userId}' is not a layout document`,
+        `${LAYOUT_UNREADABLE_EVENT} (reason ${LAYOUT_UNREADABLE_REASONS.invalidEnvelope})`,
         'UserDashboardLayoutService'
       );
 
@@ -181,12 +211,7 @@ export class UserDashboardLayoutService {
 
     if (version !== undefined && version !== SUPPORTED_LAYOUT_VERSION) {
       Logger.error(
-        // Serialised rather than coerced: the value is `unknown` because it comes
-        // straight out of a JSON column, so coercing it would render an object as
-        // '[object Object]' and hide the very thing the operator needs to see.
-        `The stored dashboard layout of user '${userId}' declares unsupported version ${JSON.stringify(
-          version
-        )}`,
+        `${LAYOUT_UNREADABLE_EVENT} (reason ${LAYOUT_UNREADABLE_REASONS.unsupportedVersion})`,
         'UserDashboardLayoutService'
       );
 
@@ -197,7 +222,7 @@ export class UserDashboardLayoutService {
 
     if (!Array.isArray(modules)) {
       Logger.error(
-        `The stored dashboard layout of user '${userId}' holds no modules array`,
+        `${LAYOUT_UNREADABLE_EVENT} (reason ${LAYOUT_UNREADABLE_REASONS.missingModulesArray})`,
         'UserDashboardLayoutService'
       );
 
@@ -212,9 +237,9 @@ export class UserDashboardLayoutService {
 
     if (layoutItems.length !== modules.length) {
       Logger.warn(
-        `Dropped ${
+        `${LAYOUT_ITEMS_DROPPED_EVENT} (count ${
           modules.length - layoutItems.length
-        } unreadable module(s) from the stored dashboard layout of user '${userId}'`,
+        })`,
         'UserDashboardLayoutService'
       );
     }

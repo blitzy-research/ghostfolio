@@ -100,8 +100,15 @@ export class SubscriptionController {
     );
 
     if (userId) {
+      // Deliberately identity-free. What an operator needs from this line is that
+      // a checkout session was turned into a subscription, which is what makes the
+      // warning below meaningful by contrast; naming the account would put a
+      // subscriber identifier into a line that is read by everyone who can read the
+      // log, is captured verbatim by log shipping and outlives the payment it
+      // describes. The account is already reachable from the subscription record
+      // itself, where it is protected.
       Logger.log(
-        `Subscription for user '${userId}' has been created via Stripe`,
+        'A Stripe checkout session has been turned into a subscription',
         'SubscriptionController'
       );
     } else {

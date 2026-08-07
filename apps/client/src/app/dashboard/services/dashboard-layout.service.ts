@@ -9,11 +9,38 @@ import { DataService } from '@ghostfolio/ui/services';
 import { DestroyRef, Injectable, OnDestroy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ObservableStore } from '@codewithdan/observable-store';
-import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
-import { catchError, concatMap, debounceTime, map } from 'rxjs/operators';
+import {
+  AsyncSubject,
+  BehaviorSubject,
+  Observable,
+  Subject,
+  merge,
+  of,
+  throwError
+} from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  filter,
+  map,
+  switchMap,
+  take,
+  timeout
+} from 'rxjs/operators';
 
 import { DashboardLayoutStoreActions } from './dashboard-layout-store.actions';
 import { DashboardLayoutStoreState } from './dashboard-layout-store.state';
+
+/**
+ * The quiet period a reported arrangement waits out before it is written.
+ *
+ * A drag crosses many cells and the grid reports every one of them, so the window
+ * is what turns one gesture into one request. It is also the accepted loss window:
+ * a viewer who closes the tab inside it loses that last change, which nothing this
+ * application can observe would prevent - every exit the application itself drives
+ * releases the window instead of waiting it out.
+ */
+const SAVE_DEBOUNCE_IN_MS = 500;
 
 /**
  * One snapshot of the canvas, stamped with the identity it belongs to.
@@ -39,16 +66,53 @@ interface DashboardLayoutSnapshot {
 }
 
 /**
- * One acknowledged write, paired with the snapshot that produced it.
+ * How one snapshot's turn at the dispatcher ended, paired with the snapshot
+ * itself.
  *
  * The pairing is what lets the subscriber tell an acknowledgement of the
  * arrangement still outstanding from an acknowledgement of one that has since
  * been superseded, so only the former retires the pending snapshot.
+ *
+ * Produced for EVERY snapshot the dispatcher takes, including the ones it
+ * declines to send, and that is what makes it usable as a completion signal: a
+ * caller waiting on a particular snapshot must be released whether it was
+ * written, skipped as superseded, refused as unauthorised or failed - never left
+ * waiting on a request that was never going to be made.
+ *
+ * `error` present means the write was attempted and failed. `layout` present
+ * means the server acknowledged one. Neither present means the dispatcher
+ * declined to send this snapshot at all.
  */
 interface DashboardLayoutWriteResult {
-  layout: UserDashboardLayout;
+  error?: unknown;
+  layout?: UserDashboardLayout;
   snapshot: DashboardLayoutSnapshot;
 }
+
+/**
+ * One flush still waiting for its snapshot to settle.
+ *
+ * Held so that a second request to flush the SAME arrangement joins the first
+ * rather than queueing a duplicate request behind it: the two callers that flush
+ * are both on their way out of the document, and either may be reached twice.
+ */
+interface DashboardLayoutFlush {
+  completion: AsyncSubject<void>;
+  snapshot: DashboardLayoutSnapshot;
+}
+
+/**
+ * How long a caller awaiting a flush waits before giving up on it.
+ *
+ * A bound rather than an unbounded wait, because the callers that await one are
+ * about to leave the document: signing out is held open until the write settles,
+ * and `HttpClient` imposes no deadline of its own, so a request that never
+ * answers would leave the viewer pressing a control that appears to do nothing.
+ * Generous enough that it expires only when something is genuinely wrong, and
+ * expiry is reported to the caller as a failure rather than as a success, so the
+ * viewer is told their arrangement may not have been stored.
+ */
+const FLUSH_TIMEOUT = 5000;
 
 @Injectable({
   providedIn: 'root'
@@ -107,6 +171,20 @@ export class GfDashboardLayoutService
   private identityTransitionSubject = new Subject<void>();
 
   /**
+   * The flush currently waiting on the dispatcher, or `null` when none is.
+   *
+   * Retained so that {@link releasePendingSave} can hand a second caller the
+   * completion the first one is already waiting on. Both callers are leaving the
+   * document and either may be reached twice - a control pressed twice, or a
+   * control followed by the teardown that control causes - and without this each
+   * would queue its own request for an arrangement that has not changed.
+   *
+   * Cleared as soon as its snapshot settles, so a later flush of a genuinely
+   * newer arrangement is never mistaken for one already under way.
+   */
+  private pendingFlush: DashboardLayoutFlush = null;
+
+  /**
    * The newest snapshot that has not yet been acknowledged by the server.
    *
    * Holds the already-projected request body together with the identity it was
@@ -119,9 +197,11 @@ export class GfDashboardLayoutService
    *
    * Retained until a write SUCCEEDS - not until one is dispatched - so a failed
    * write leaves the latest arrangement recoverable, both for an explicit retry
-   * and for the teardown flush. The one exception is an identity change, which
-   * discards it: it describes a canvas that is no longer on screen, and offering
-   * a retry for it would write one viewer's arrangement to another's account.
+   * and for the release before a departure. It is also what either of those
+   * re-enters the pipeline with, which is why neither needs a body of its own. The
+   * one exception is an identity change, which discards it: it describes a canvas
+   * that is no longer on screen, and offering a retry for it would write one
+   * viewer's arrangement to another's account.
    */
   private pendingSnapshot: DashboardLayoutSnapshot = null;
 
@@ -129,10 +209,41 @@ export class GfDashboardLayoutService
    * The one channel every layout write travels down.
    *
    * Carries the projected request body rather than grid items, so the debounce,
-   * the retry and the teardown flush all operate on exactly the same immutable
-   * value and there is no second place a body can be built.
+   * the retry and the release before a departure all operate on exactly the same
+   * immutable value and there is no second place a body can be built.
    */
   private snapshot$ = new Subject<DashboardLayoutSnapshot>();
+
+  /**
+   * The same channel, entered past the debounce.
+   *
+   * A LANE, not a second write origin. It joins {@link snapshot$} before the
+   * serialised dispatch below, so a flushed arrangement is queued behind whatever
+   * is already in flight, is built by the same projection, is screened by the same
+   * identity check and is sent by the same single request builder. All it changes
+   * is when the arrangement leaves: now, rather than at the end of a quiet period
+   * the caller will not be present for.
+   *
+   * Bypassing the debounce is the entire reason it exists as a separate subject.
+   * Emitting onto {@link snapshot$} would merely restart the 500ms window, which
+   * is the opposite of what a departing caller needs.
+   */
+  private immediateSnapshot$ = new Subject<DashboardLayoutSnapshot>();
+
+  /**
+   * How each snapshot's turn at the dispatcher ended.
+   *
+   * Announced for every snapshot the dispatcher takes, so that a caller holding
+   * one can be told what became of it. This carries no request and builds no
+   * body - it reports an outcome the single write path has already produced -
+   * which is what lets a flush be awaited without introducing a second way to
+   * write a layout.
+   *
+   * A plain `Subject`: an outcome is an event about one particular snapshot, and
+   * replaying a spent one to a later flush would resolve it against a write that
+   * was not its own.
+   */
+  private writeOutcome$ = new Subject<DashboardLayoutWriteResult>();
 
   public constructor(
     private dataService: DataService,
@@ -147,58 +258,59 @@ export class GfDashboardLayoutService
       DashboardLayoutStoreActions.Initialize
     );
 
-    this.snapshot$
+    // Two lanes, one dispatcher. The debounced lane carries every ordinary
+    // change; the immediate lane carries a flush, which is the same arrangement
+    // asked to leave now instead of at the end of its quiet period. They are
+    // merged BEFORE the serialisation below, which is what keeps a flush inside
+    // the single write path: it takes its turn in the same queue rather than
+    // opening a second one alongside it. A flush that issued its own request -
+    // as this service used to - could commit before an older request that was
+    // already in flight, and the older reply would then restore the geometry the
+    // viewer had just moved away from.
+    merge(
+      this.snapshot$.pipe(
+        debounceTime(SAVE_DEBOUNCE_IN_MS),
+        // A snapshot the immediate lane has already taken must not be sent a
+        // second time when its own quiet period finally elapses. `pendingFlush`
+        // names exactly that arrangement, and only while its release is still
+        // unsettled, so this drops the duplicate without ever dropping an
+        // ordinary change.
+        filter((snapshot) => this.pendingFlush?.snapshot !== snapshot)
+      ),
+      this.immediateSnapshot$
+    )
       .pipe(
-        debounceTime(500),
-        // `concatMap`, emphatically not `switchMap`. Cancelling a superseded
-        // write is only ever a cancellation on *this* side of the wire: by the
-        // time a newer arrangement supersedes an older one, the older request
-        // has usually already been accepted by the server, and unsubscribing
-        // from its response does not withdraw it. Because the endpoint performs
-        // an unconditional upsert of a whole document, two requests in flight at
-        // once leave the stored arrangement decided by which one the database
-        // commits last - completion order - rather than by the order in which the
-        // viewer made the changes. The observable outcome is a drag whose result
-        // silently reverts.
+        // `switchMap`, so a superseded write is abandoned the moment a newer
+        // arrangement is ready to go out. That is safe here for one specific
+        // reason, and it would be a defect without it: every request body is a
+        // COMPLETE layout snapshot rather than a delta, so the newest one
+        // describes everything its predecessors did and converges on the same
+        // state whether or not they were ever acknowledged. Cancelling a delta
+        // would corrupt the stored document and would have to be `concatMap`
+        // instead, so a change to the payload shape must revisit this operator.
         //
-        // Serialising the writes removes the possibility rather than narrowing
-        // it: this client never has more than one PATCH outstanding, so the last
-        // document the server commits is by construction the last one the viewer
-        // reported. The queue that serialisation implies cannot grow without
-        // bound either - the debounce above admits at most one snapshot per quiet
-        // period, and {@link dispatchSnapshot} drops every queued snapshot that a
-        // newer one has already replaced, so a burst costs one request rather
-        // than one per change.
-        concatMap((snapshot) => this.dispatchSnapshot(snapshot)),
+        // The objection to cancelling - that unsubscribing does not withdraw a
+        // request the server may already have accepted, so two requests in flight
+        // could commit out of order - is answered by there never being two. This
+        // operator keeps at most ONE request outstanding, and the merge above puts
+        // both lanes through it, so a release takes the place of the write it
+        // supersedes rather than racing it.
+        //
+        // What it buys is latency: the viewer's newest arrangement leaves
+        // immediately instead of queueing behind a request whose body has already
+        // been superseded, and a burst of drags costs one in-flight request rather
+        // than a growing chain of them.
+        switchMap((snapshot) => this.dispatchSnapshot(snapshot)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((result) => {
-        if (!result) {
-          return;
-        }
+        this.settleWriteResult(result);
 
-        // Checked again, after the response. An identity can change while a
-        // write is in flight, so a reply that belongs to the previous viewer can
-        // still arrive afterwards - and caching it would serve one viewer's
-        // arrangement to another out of this store.
-        if (!this.isAuthorizedIdentity(result.snapshot.userId)) {
-          return;
-        }
-
-        // Only the acknowledged snapshot is retired, and it is compared by
-        // identity: a newer one scheduled while this write was in flight is a
-        // different object, so clearing on anything else would discard an
-        // arrangement the server has never seen.
-        if (this.pendingSnapshot === result.snapshot) {
-          this.clearPendingSnapshot();
-        }
-
-        if (result.layout) {
-          this.setState(
-            { layout: result.layout },
-            DashboardLayoutStoreActions.UpdateDashboardLayout
-          );
-        }
+        // Announced LAST, deliberately. A caller awaiting a flush acts the moment
+        // it hears - signing out clears the token and replaces the document - so
+        // everything this service owes the outcome must already be recorded by the
+        // time it is published.
+        this.writeOutcome$.next(result);
       });
   }
 
@@ -254,51 +366,6 @@ export class GfDashboardLayoutService
     this.identityTransitionSubject.next();
   }
 
-  /**
-   * Sends the arrangement still waiting out its debounce, immediately.
-   *
-   * Public because the debounce has to be short-circuited from more than one
-   * place, and only one of them is destruction. A control the application itself
-   * drives which tears the document down - signing out being the case that
-   * matters, since it replaces the whole document rather than routing - would
-   * otherwise drop a change made inside the last 500ms with no error, no warning
-   * and no retry. That is NOT the loss window this design accepts: the accepted
-   * one is a viewer closing the tab, which the application neither drives nor can
-   * observe reliably.
-   *
-   * It is a flush, not a second write origin. The arrangement was already
-   * produced and attributed by the canvas through the ordinary trigger path; this
-   * only decides that what is queued goes now instead of in 500ms. The identity
-   * check below is the same one the debounced dispatch applies, and it belongs
-   * here for the same reason: a flush happens precisely when an identity is
-   * ending, so the snapshot may already belong to a viewer this request would no
-   * longer be authorised as.
-   *
-   * Idempotent and cheap: the pending snapshot is cleared first, so a second call
-   * - from a teardown that follows the control that flushed - sends nothing.
-   *
-   * Deliberately fire-and-forget. The caller is on its way out of the document,
-   * so there is no state left to update and nothing to await; a failure is
-   * reported through the sanitized channel and nowhere else.
-   */
-  public flushPendingSnapshot() {
-    const snapshot = this.pendingSnapshot;
-
-    this.clearPendingSnapshot();
-
-    if (!snapshot || !this.isAuthorizedIdentity(snapshot.userId)) {
-      return;
-    }
-
-    // Closing the browser tab inside the debounce remains an accepted loss
-    // window; every in-application exit now flushes instead.
-    this.dataService.patchUserDashboardLayout(snapshot.layout).subscribe({
-      error: (error) => {
-        reportSanitizedError('GF-DASHBOARD-LAYOUT-FLUSH-FAILED', error);
-      }
-    });
-  }
-
   public get(force = false): Observable<UserDashboardLayout | null> {
     const state = this.getState();
 
@@ -324,8 +391,64 @@ export class GfDashboardLayoutService
     return this.hasSaveError$.asObservable();
   }
 
+  /**
+   * The report is deliberately not subscribed to. Teardown has nothing to
+   * sequence and nothing left to update, and the flush issues its request
+   * eagerly, so calling it is the whole of the obligation here.
+   */
   public ngOnDestroy() {
-    this.flushPendingSnapshot();
+    // The one release that is deliberately not awaited, because there is nobody
+    // left to tell: the injector is going away and a failure has already been
+    // reported by the dispatch that attempted it. The write is enqueued by the
+    // call itself rather than by subscribing to what it returns, which is what
+    // makes ignoring the result safe here and only here.
+    //
+    // Enqueued through the same lane a signed-out departure uses rather than
+    // through a request of its own - one write path, no exceptions. Angular runs
+    // provider `ngOnDestroy` hooks before the `DestroyRef` callbacks that end the
+    // pipeline above, so the dispatcher is still listening at this point.
+    this.releasePendingSave();
+  }
+
+  /**
+   * Ends the quiet period early for the arrangement still inside it, and reports
+   * what became of it.
+   *
+   * Public because a departure the application itself drives cannot afford to wait
+   * the window out. Signing out is the case that matters: it replaces the whole
+   * document rather than routing within it, so nothing downstream of that call
+   * runs and a change made in the last {@link SAVE_DEBOUNCE_IN_MS} milliseconds
+   * would be dropped with no request, no error and no retry. That is NOT the loss
+   * window this design accepts - the accepted one is a viewer closing the tab,
+   * which the application neither drives nor can observe reliably.
+   *
+   * It is emphatically NOT a write path, and that is structural rather than
+   * asserted. It builds no request body, calls no facade method and reaches no
+   * HTTP client; it hands the arrangement the grid already produced to
+   * {@link immediateSnapshot$}, which joins the ordinary channel BEFORE the one
+   * dispatcher. Everything after that is the pipeline every other write travels:
+   * the same projection, the same identity check, the same single call to
+   * `patchUserDashboardLayout`. The four grid callbacks therefore remain the only
+   * origin an arrangement can come from.
+   *
+   * The pending snapshot is deliberately NOT cleared here. It is retired only by
+   * an acknowledgement, exactly as an ordinary write's is, so a departure whose
+   * write fails leaves the arrangement recoverable - through the retry the canvas
+   * offers - instead of discarding the viewer's last change on the way out.
+   *
+   * @returns a stream that completes once the released arrangement has settled and
+   * errors if its write failed or did not answer within {@link FLUSH_TIMEOUT}.
+   * Awaiting it is what lets a caller hold a departure open until the write is
+   * done; ignoring it is safe, because the arrangement is enqueued either way.
+   * Asking twice for the same arrangement joins the release already under way
+   * rather than queueing a duplicate request. Completes at once when nothing is
+   * outstanding, which makes it safe to call from a teardown that follows a
+   * control which already released.
+   */
+  public releasePendingSave(): Observable<void> {
+    // Closing the browser tab inside the debounce remains an accepted loss
+    // window; every in-application exit now releases instead.
+    return this.enqueueImmediateWrite().pipe(timeout({ each: FLUSH_TIMEOUT }));
   }
 
   /**
@@ -336,6 +459,10 @@ export class GfDashboardLayoutService
    * identity check the dispatch applies is applied to a retry too. Does nothing
    * when there is nothing outstanding, which makes it safe to call from a retry
    * affordance that may be pressed twice.
+   *
+   * Deliberately does not release the debounce. A retry is a considered act rather
+   * than a departure, so it waits out the ordinary quiet period like every other
+   * write - which is also what coalesces a viewer who presses it twice.
    */
   public retryFailedSave() {
     if (!this.pendingSnapshot) {
@@ -371,10 +498,10 @@ export class GfDashboardLayoutService
   /**
    * Forgets the outstanding snapshot, and with it the failure warning.
    *
-   * The dispatch, the retry and the teardown flush all read the same member, so
-   * clearing it in one place is what keeps "already written", "discarded on an
-   * identity change" and "never scheduled" indistinguishable to everything
-   * downstream - each of them means there is nothing left to flush.
+   * The dispatch, the retry and the release before a departure all read the same
+   * member, so clearing it in one place is what keeps "already written",
+   * "discarded on an identity change" and "never scheduled" indistinguishable to
+   * everything downstream - each of them means there is nothing left to send.
    */
   private clearPendingSnapshot() {
     this.pendingSnapshot = null;
@@ -422,23 +549,30 @@ export class GfDashboardLayoutService
    * longer on screen - which is also what stops it being offered to
    * {@link retryFailedSave} afterwards.
    *
-   * A skip returns `null` rather than completing empty, because the subscriber
+   * A skip still emits a result, carrying neither a layout nor an error, because
+   * two different readers depend on hearing about it: the subscriber
    * distinguishes "nothing was sent" from "a write succeeded" and must not retire
-   * a snapshot it never wrote.
+   * a snapshot it never wrote, and a flush waiting on this snapshot has to be
+   * released rather than left waiting for a request that was never going to be
+   * made.
    */
   private dispatchSnapshot(
     aSnapshot: DashboardLayoutSnapshot
-  ): Observable<DashboardLayoutWriteResult | null> {
+  ): Observable<DashboardLayoutWriteResult> {
     if (aSnapshot !== this.pendingSnapshot) {
-      return of(null);
+      return of({ snapshot: aSnapshot });
     }
 
     if (!this.isAuthorizedIdentity(aSnapshot.userId)) {
       this.discardSnapshot(aSnapshot);
 
-      return of(null);
+      return of({ snapshot: aSnapshot });
     }
 
+    // The ONE place a layout is written. Every trigger - the four grid callbacks
+    // through the debounce, an explicit retry, and a flush through the immediate
+    // lane - arrives here, one snapshot at a time, so the last document the server
+    // commits is by construction the last one the viewer reported.
     return this.dataService.patchUserDashboardLayout(aSnapshot.layout).pipe(
       // Paired with the snapshot that produced it, so the subscriber can tell
       // whether the write that just succeeded is the one still outstanding or a
@@ -448,7 +582,7 @@ export class GfDashboardLayoutService
       // reach the outer pipe would terminate it, and a terminated pipe silently
       // stops saving for the rest of the session, so a single transient failure
       // would cost the viewer every later change they made.
-      catchError((error) => {
+      catchError((error: unknown) => {
         reportSanitizedError('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', error);
 
         // Published, not merely logged. The snapshot is left exactly where it is
@@ -458,7 +592,10 @@ export class GfDashboardLayoutService
         // stored.
         this.hasSaveError$.next(true);
 
-        return of(null);
+        // Carried on the result rather than rethrown, so the failure reaches a
+        // caller awaiting this particular snapshot without terminating the
+        // dispatcher every other write depends on.
+        return of({ error, snapshot: aSnapshot });
       })
     );
   }
@@ -474,6 +611,73 @@ export class GfDashboardLayoutService
     if (this.pendingSnapshot === snapshot) {
       this.clearPendingSnapshot();
     }
+  }
+
+  /**
+   * Puts the outstanding arrangement at the front of the one write queue and
+   * hands back its outcome.
+   *
+   * The enqueue is eager and independent of the returned stream: the arrangement
+   * leaves whether or not anybody subscribes, which is what lets the teardown
+   * ignore the result while signing out awaits it.
+   *
+   * The outcome subscription is established BEFORE the arrangement is enqueued,
+   * deliberately. The dispatcher can settle a snapshot synchronously - it does so
+   * for one it declines to send, and it does so under test - and an outcome
+   * announced before anything was listening would leave the caller waiting on a
+   * snapshot that had already been dealt with.
+   *
+   * @returns a stream that completes when the arrangement settles and errors when
+   * its write failed. Completes immediately when there is nothing outstanding, so
+   * a caller need not ask first.
+   */
+  private enqueueImmediateWrite(): Observable<void> {
+    const snapshot = this.pendingSnapshot;
+
+    // Nothing outstanding: already written, discarded on an identity change, or
+    // never scheduled. All three mean the caller may proceed at once.
+    if (!snapshot) {
+      return of(undefined);
+    }
+
+    // The same arrangement is already on its way. Joining that flush rather than
+    // enqueueing a second one is what makes asking twice - a control pressed
+    // twice, or a control followed by the teardown it causes - cost one request.
+    if (this.pendingFlush?.snapshot === snapshot) {
+      return this.pendingFlush.completion.asObservable();
+    }
+
+    const completion = new AsyncSubject<void>();
+    const flush: DashboardLayoutFlush = { completion, snapshot };
+
+    this.pendingFlush = flush;
+
+    this.writeOutcome$
+      .pipe(
+        // By identity, so an outcome belonging to some other arrangement - one
+        // scheduled before this flush and still queued - cannot release it.
+        filter((result) => result.snapshot === snapshot),
+        take(1)
+      )
+      .subscribe(({ error }) => {
+        if (this.pendingFlush === flush) {
+          this.pendingFlush = null;
+        }
+
+        if (error === undefined) {
+          // `AsyncSubject`, so the outcome is replayed to a caller that subscribes
+          // after it arrived rather than being lost to a race with its own
+          // enqueue.
+          completion.next();
+          completion.complete();
+        } else {
+          completion.error(error);
+        }
+      });
+
+    this.immediateSnapshot$.next(snapshot);
+
+    return completion.asObservable();
   }
 
   private fetchLayout(): Observable<UserDashboardLayout | null> {
@@ -510,5 +714,41 @@ export class GfDashboardLayoutService
    */
   private isAuthorizedIdentity(userId: string): boolean {
     return !!userId && userId === this.activeUserId;
+  }
+
+  /**
+   * Records what the dispatcher decided about one snapshot.
+   *
+   * Split out of the subscription so that settling the state and announcing the
+   * outcome are visibly two steps in a fixed order: everything here has happened
+   * before any caller awaiting the flush is released.
+   */
+  private settleWriteResult(aResult: DashboardLayoutWriteResult) {
+    // Checked again, after the response. An identity can change while a write is
+    // in flight, so a reply that belongs to the previous viewer can still arrive
+    // afterwards - and caching it would serve one viewer's arrangement to another
+    // out of this store.
+    if (!this.isAuthorizedIdentity(aResult.snapshot.userId)) {
+      return;
+    }
+
+    // Only an ACKNOWLEDGED snapshot is retired, and it is compared by identity: a
+    // newer one scheduled while this write was in flight is a different object, so
+    // clearing on anything else would discard an arrangement the server has never
+    // seen. A failed write leaves it exactly where it is, which is what keeps the
+    // arrangement recoverable by the retry and by any later flush.
+    if (
+      aResult.error === undefined &&
+      this.pendingSnapshot === aResult.snapshot
+    ) {
+      this.clearPendingSnapshot();
+    }
+
+    if (aResult.layout) {
+      this.setState(
+        { layout: aResult.layout },
+        DashboardLayoutStoreActions.UpdateDashboardLayout
+      );
+    }
   }
 }

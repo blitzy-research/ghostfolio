@@ -1,5 +1,6 @@
 import { ActivitiesModule } from '@ghostfolio/api/app/activities/activities.module';
 import { SubscriptionModule } from '@ghostfolio/api/app/subscription/subscription.module';
+import { PerformanceLoggingModule } from '@ghostfolio/api/interceptors/performance-logging/performance-logging.module';
 import { RedactValuesInResponseModule } from '@ghostfolio/api/interceptors/redact-values-in-response/redact-values-in-response.module';
 import { ConfigurationModule } from '@ghostfolio/api/services/configuration/configuration.module';
 import { I18nModule } from '@ghostfolio/api/services/i18n/i18n.module';
@@ -28,6 +29,11 @@ import { UserService } from './user.service';
       secret: process.env.JWT_SECRET_KEY,
       signOptions: { expiresIn: '30 days' }
     }),
+    // Supplies the `PerformanceLoggingInterceptor` the layout read is decorated
+    // with, and therefore the `PerformanceLoggingService` it reports through.
+    // Without it the enhancer cannot be resolved from this module's context and
+    // the endpoint fails at request time rather than at boot.
+    PerformanceLoggingModule,
     PrismaModule,
     PropertyModule,
     RedactValuesInResponseModule,

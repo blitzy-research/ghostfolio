@@ -6,6 +6,7 @@ import { Logger } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Request, Response } from 'express';
+import { inspect } from 'node:util';
 
 import { SubscriptionController } from './subscription.controller';
 import { SubscriptionService } from './subscription.service';
@@ -127,20 +128,35 @@ describe('SubscriptionController', () => {
       ).toBeLessThan(redirect.mock.invocationCallOrder[0]);
     });
 
-    it('records the created subscription against the user it was created for', async () => {
+    it('records that a subscription was created, without naming who it was created for', async () => {
       await subscriptionController.stripeCallback(
         createRequest(),
         createResponse()
       );
 
-      // The identity comes from the subscription that was just created, not from
-      // the request: the Stripe callback is unauthenticated, so there is no request
-      // user to read.
+      // The distinction this line carries is provisioned versus not provisioned,
+      // which is what makes the warning below meaningful by contrast. Who it was
+      // provisioned for is deliberately absent: a subscriber identifier in a log
+      // line is readable by everyone who can read the log and outlives the payment
+      // it describes, and the subscription record already holds it.
       expect(loggerLog).toHaveBeenCalledWith(
-        `Subscription for user '${userId}' has been created via Stripe`,
+        'A Stripe checkout session has been turned into a subscription',
         'SubscriptionController'
       );
       expect(loggerWarn).not.toHaveBeenCalled();
+
+      const emitted = (loggerLog.mock.calls as unknown[][])
+        .map((call) =>
+          call
+            .map((argument) =>
+              typeof argument === 'string' ? argument : inspect(argument)
+            )
+            .join(' ')
+        )
+        .join('\n');
+
+      expect(emitted).not.toContain(userId);
+      expect(emitted).not.toContain(checkoutSessionId);
     });
 
     /**

@@ -1,4 +1,8 @@
-import { getCssVariable, isKnownDataSource } from '@ghostfolio/common/helper';
+import {
+  getCssVariable,
+  isKnownDataSource,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
 import { InfoItem, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { ColorScheme } from '@ghostfolio/common/types';
@@ -32,6 +36,7 @@ import type {
   HoldingDetailDialogResult
 } from './components/holding-detail-dialog/interfaces/interfaces';
 import type { UserAccountRegistrationDialogParams } from './components/user-account-registration-dialog/interfaces/interfaces';
+import { LazyDialogService } from './core/lazy-dialog.service';
 import { GfDashboardLayoutService } from './dashboard/services/dashboard-layout.service';
 import { GfAppQueryParams } from './interfaces/interfaces';
 import { ImpersonationStorageService } from './services/impersonation-storage.service';
@@ -52,6 +57,18 @@ export class GfAppComponent implements OnInit {
   public hasInfoMessage: boolean;
   public hasPermissionForSubscription: boolean;
   public info: InfoItem;
+
+  /**
+   * Whether the registration dialog's chunk is currently being resolved.
+   *
+   * Bound to the one control that starts it, so a slow load cannot be clicked
+   * twice into opening two dialogs, and so the visitor can see that their press was
+   * received. Held here rather than read from the loader because it is this
+   * component's rendering state; the loader's own deduplication covers the case of
+   * two different components asking at once.
+   */
+  public isCreatingAccount = false;
+
   public user: User | undefined;
 
   /**
@@ -80,6 +97,7 @@ export class GfAppComponent implements OnInit {
   private readonly impersonationStorageService = inject(
     ImpersonationStorageService
   );
+  private readonly lazyDialogService = inject(LazyDialogService);
   private readonly notificationService = inject(NotificationService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -138,9 +156,11 @@ export class GfAppComponent implements OnInit {
 
               // Voided rather than awaited: the handler resolves the dialog's own
               // chunk before opening it, so it is asynchronous, and nothing here
-              // depends on the dialog having opened. Its failure path is handled
-              // inside, where the address is released again.
+              // depends on the dialog having opened. The address travels with the
+              // request so the handler can tell its own request apart from a newer
+              // one, and can hand the address back if its chunk never arrives.
               void this.openHoldingDetailDialog({
+                address,
                 dataSource,
                 symbol
               });
@@ -249,13 +269,47 @@ export class GfAppComponent implements OnInit {
    * reason, as switching the impersonated identity.
    */
   public async onCreateAccount() {
-    // Resolved here rather than imported at the top of the file. This dialog
+    // Resolved on demand rather than imported at the top of the file. This dialog
     // reaches a large graph of its own and is opened only when a visitor asks to
     // create an account, so a static reference would place all of it in the
     // initial bundle for every visitor - the canvas is the one screen the
     // application has, so there is no longer a route boundary to do this for us.
-    const { GfUserAccountRegistrationDialogComponent } =
-      await import('./components/user-account-registration-dialog/user-account-registration-dialog.component');
+    //
+    // Routed through the shared loader, which is what makes the load safe as well
+    // as lazy: concurrent activations share one chunk request, a rejected one is
+    // reported and shown to the visitor rather than left as an unhandled
+    // rejection, and the pending entry is released either way so the control keeps
+    // working. `isCreatingAccount` is this component's own share of that - it is
+    // what disables the banner control, so a slow chunk cannot be clicked into
+    // opening two dialogs.
+    if (this.isCreatingAccount) {
+      return;
+    }
+
+    this.isCreatingAccount = true;
+
+    this.changeDetectorRef.markForCheck();
+
+    const GfUserAccountRegistrationDialogComponent =
+      await this.lazyDialogService.load(
+        'user-account-registration-dialog',
+        () =>
+          import('./components/user-account-registration-dialog/user-account-registration-dialog.component').then(
+            (chunk) => {
+              return chunk.GfUserAccountRegistrationDialogComponent;
+            }
+          )
+      );
+
+    this.isCreatingAccount = false;
+
+    this.changeDetectorRef.markForCheck();
+
+    // Nothing to open, and nothing to say: the loader has already reported the
+    // failure and told the visitor about it.
+    if (!GfUserAccountRegistrationDialogComponent) {
+      return;
+    }
 
     // The third type argument is the token the dialog resolves with, or nothing
     // when it is cancelled - its template closes on `authToken` and on
@@ -295,11 +349,18 @@ export class GfAppComponent implements OnInit {
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe({
             error: (error) => {
-              console.error(
-                'Failed to read the newly created user account',
-                error
-              );
+              // Reported through the sanitized channel rather than logged raw. This
+              // is the continuation of creating an account, so the failure is
+              // credential-adjacent: an `HttpErrorResponse` carries the request URL
+              // and whatever the server put in the body, and the console is readable
+              // by every script on the page, captured verbatim by session-replay
+              // tooling and outlives the session in a saved log. A fixed event
+              // identifier and the numeric status are what an operator can act on.
+              reportSanitizedError('GF-APP-USER-CREATE-READ-FAILED', error);
 
+              // Reloading is what recovers it: the token is already stored, so
+              // resolution restarts from it - which is precisely the step that
+              // failed.
               window.location.reload();
             }
           });
@@ -307,16 +368,66 @@ export class GfAppComponent implements OnInit {
   }
 
   /**
-   * The flush comes first, and the ordering is load-bearing twice over: a
+   * Signs the viewer out, but not before whatever they last arranged has been
+   * stored.
+   *
+   * The release comes first, and the ordering is load-bearing twice over: a
    * document-level navigation replaces the document rather than routing within it,
    * so no teardown downstream of this line ever runs and an arrangement still
    * inside its 500ms debounce would be dropped in silence; and `signOut()` clears
-   * the token the write is authorised with, so flushing after it would send a
+   * the token the write is authorised with, so releasing after it would send a
    * request that cannot succeed.
+   *
+   * It adds no write origin. The arrangement was produced by the grid and is
+   * already travelling the layout service's one persistence pipeline; this only
+   * asks that pipeline to stop waiting out its debounce.
+   *
+   * Releasing it first is not sufficient on its own, which is why the departure now
+   * WAITS for it. An `HttpClient` request is not guaranteed to survive the
+   * document being replaced, so a write merely started before the assignment could
+   * still be abandoned in flight - the same silent loss, moved a few microseconds
+   * later. Holding the departure until the layout service reports the write
+   * settled is what closes that window, and the wait is bounded by the service so
+   * a request that never answers cannot strand the control.
+   *
+   * A failure is answered rather than absorbed. Signing out anyway is right - a
+   * viewer who asks to leave must always be able to, and an arrangement that
+   * cannot be stored would otherwise trap them here indefinitely - but leaving
+   * silently would let them believe an arrangement they can still see had been
+   * saved. So they are told, and the departure completes when they acknowledge it.
    */
   public onSignOut() {
-    this.dashboardLayoutService.flushPendingSnapshot();
+    this.dashboardLayoutService.releasePendingSave().subscribe({
+      complete: () => {
+        this.leaveForLocaleRoot();
+      },
+      error: (error: unknown) => {
+        reportSanitizedError(
+          'GF-DASHBOARD-LAYOUT-SIGN-OUT-FLUSH-FAILED',
+          error
+        );
 
+        this.notificationService.alert({
+          discardFn: () => {
+            this.leaveForLocaleRoot();
+          },
+          message: $localize`Your most recent dashboard changes could not be saved.`,
+          title: $localize`Oops! Something went wrong.`
+        });
+      }
+    });
+  }
+
+  /**
+   * Discards the session and reloads the application at the locale root.
+   *
+   * Shared by both endings of {@link onSignOut} so that the order the sign-out
+   * depends on - credentials cleared, then the document replaced - is written
+   * once. A document-level assignment rather than a router navigation, deliberately:
+   * it is what discards every in-memory cache belonging to the identity that just
+   * left.
+   */
+  private leaveForLocaleRoot() {
     this.userService.signOut();
 
     document.location.href = `/${document.documentElement.lang}`;
@@ -337,9 +448,9 @@ export class GfAppComponent implements OnInit {
    * expresses none of their own.
    *
    * Subscribed exactly once, which is the whole point of it being separate from
-   * applying the theme. This runs on every emission of the viewer's record - and
-   * now on every use of the toolbar's theme control, each of which refreshes that
-   * record - so registering the listener alongside the theme it applies added one
+   * applying the theme. Applying it runs on every emission of the viewer's record,
+   * and a great many things refresh that record - a date range, a filter, adopting
+   * a token - so registering the listener alongside the theme it applies added one
    * more listener every time. They were never removed and each one re-ran the same
    * work, so the cost grew for the lifetime of the session.
    *
@@ -385,19 +496,61 @@ export class GfAppComponent implements OnInit {
     return typeof aValue === 'string' && aValue.trim().length > 0;
   }
 
+  /**
+   * @param address the `dataSource:symbol` pair this request was made for, as it
+   * was recorded on {@link openedHoldingDetailAddress} before the chunk was asked
+   * for. Passed in rather than recomposed, because the recorded address is what the
+   * two checks below compare against: the chunk resolves on a later tick, and by
+   * then the address may have moved on or the request may have failed.
+   */
   private async openHoldingDetailDialog({
+    address,
     dataSource,
     symbol
   }: {
+    address: string;
     dataSource: DataSource;
     symbol: string;
   }) {
     // Resolved on demand for the same reason as the registration dialog above:
     // this dialog pulls in a chart, an activities table and a market-data editor,
-    // and it is opened only when a query parameter names a holding. Awaiting the
-    // import here keeps that graph out of every visitor's initial bundle.
-    const { GfHoldingDetailDialogComponent } =
-      await import('./components/holding-detail-dialog/holding-detail-dialog.component');
+    // and it is opened only when a query parameter names a holding. Loading it here
+    // keeps that graph out of every visitor's initial bundle, and routing the load
+    // through the shared loader is what makes a slow or failed load safe: one chunk
+    // request is shared, a rejection is reported and shown, and the pending entry is
+    // released either way.
+    const GfHoldingDetailDialogComponent = await this.lazyDialogService.load(
+      'holding-detail-dialog',
+      () =>
+        import('./components/holding-detail-dialog/holding-detail-dialog.component').then(
+          (chunk) => {
+            return chunk.GfHoldingDetailDialogComponent;
+          }
+        )
+    );
+
+    // The address is RELEASED on failure, and that is the point of holding it at
+    // all. It is recorded before the chunk is asked for - it has to be, or two
+    // emissions of the same parameters would both start a load - so a rejected load
+    // that left it standing made this application permanently unable to open that
+    // holding again: every later request for it matched the recorded address and was
+    // guarded away, with no dialog ever having opened. Released only if it is still
+    // this request's address, so a newer request's record is not taken with it.
+    if (!GfHoldingDetailDialogComponent) {
+      if (this.openedHoldingDetailAddress === address) {
+        this.openedHoldingDetailAddress = null;
+      }
+
+      return;
+    }
+
+    // Superseded while the chunk was resolving: the viewer asked for a different
+    // holding, and that request has recorded its own address and is opening its own
+    // dialog. Opening this one as well would leave two dialogs stacked, with the
+    // older asset on top.
+    if (this.openedHoldingDetailAddress !== address) {
+      return;
+    }
 
     this.userService
       .get()

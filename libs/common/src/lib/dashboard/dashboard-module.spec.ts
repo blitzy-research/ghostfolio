@@ -1,4 +1,5 @@
 import {
+  DashboardModule,
   dashboardModules,
   getDashboardModule,
   isDashboardModulePermitted
@@ -39,6 +40,27 @@ describe('dashboardModules', () => {
     for (const dashboardModule of Object.values(dashboardModules)) {
       expect(typeof dashboardModule.name).toBe('string');
       expect(dashboardModule.name.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('resolves the qualifiers it declares through the same tag', () => {
+    // The qualifier is tagged at module scope exactly as the name is, so it
+    // depends on the same fallback. An empty one would leave two same-named rows
+    // reading identically in the catalog - which is the one thing it exists to
+    // prevent - and would do so silently.
+    //
+    // Read through the declared contract rather than through the map's inferred
+    // literal type: `satisfies` keeps each entry's own shape, so an optional
+    // member is absent from - rather than optional on - the entries that omit it.
+    for (const { context } of Object.values<DashboardModule>(
+      dashboardModules
+    )) {
+      if (context === undefined) {
+        continue;
+      }
+
+      expect(typeof context).toBe('string');
+      expect(context.length).toBeGreaterThan(0);
     }
   });
 

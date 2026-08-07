@@ -5,12 +5,14 @@ import { GfDashboardLayoutService } from '@ghostfolio/client/dashboard/services/
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import type { UpdateUserSettingDto } from '@ghostfolio/common/dtos';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { Filter, InfoItem, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { publicRoutes } from '@ghostfolio/common/routes/routes';
-import { ColorScheme, DateRange } from '@ghostfolio/common/types';
+import { DateRange } from '@ghostfolio/common/types';
 import { GfAssistantComponent } from '@ghostfolio/ui/assistant/assistant.component';
 import { GfLogoComponent } from '@ghostfolio/ui/logo';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
 import { DataService } from '@ghostfolio/ui/services';
 
@@ -21,9 +23,7 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
-  DOCUMENT,
   HostListener,
-  Inject,
   OnInit,
   ViewChild
 } from '@angular/core';
@@ -37,12 +37,10 @@ import { addIcons } from 'ionicons';
 import {
   closeOutline,
   menuOutline,
-  moonOutline,
   optionsOutline,
   personCircleOutline,
   radioButtonOffOutline,
-  radioButtonOnOutline,
-  sunnyOutline
+  radioButtonOnOutline
 } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
 
@@ -74,7 +72,19 @@ import { DeviceDetectorService } from 'ngx-device-detector';
  * branch only; on the canvas that branch is a sibling component mounted instead
  * of the canvas body, and the flow lives there in full. A second copy on a bar
  * that renders only once a viewer has resolved would be unreachable, so this
- * class holds no sign-in dialog, no token storage and no notification surface.
+ * class holds no sign-in dialog and no token storage. The one dialog it does open
+ * belongs to signing out: it reports, on the way out, that the arrangement the
+ * viewer last made could not be stored.
+ *
+ * The appearance is likewise not this bar's to change, and that is a deliberate
+ * omission rather than an oversight. The chrome this component replaces carried no
+ * such control, and the preference it would write is not a boolean: `colorScheme`
+ * has three states, the third being "follow the operating system", which the shell
+ * implements with a live media query and the account settings module exposes as a
+ * three-way selector. A single toolbar icon can only ever offer two of those
+ * three, so it would quietly take the system-following state away from anyone who
+ * pressed it. Applying the theme stays the shell's job and choosing it stays the
+ * account settings module's, which leaves exactly one owner for each.
  *
  * It takes no inputs and emits no outputs - every value is resolved here from the
  * service that owns it - and holds no layout state: cell coordinates, cell sizes
@@ -148,36 +158,8 @@ export class GfDashboardToolbarComponent implements OnInit {
    */
   public readonly accountLabel = $localize`Account`;
 
-  /**
-   * The two names the appearance control takes, one per direction.
-   *
-   * Held here rather than declared on the element because `i18n-aria-label`
-   * localizes only a STATIC attribute; the name has to change with the current
-   * appearance, so it is bound, and a bound attribute has to be localized in code.
-   *
-   * Both name the action rather than the state, so the control reads as a command
-   * in either direction. They are separate messages rather than one with an
-   * interpolated word, because a translator needs the whole sentence to inflect it.
-   */
-  public readonly darkAppearanceLabel = $localize`Switch to dark appearance`;
-
   public deviceType: string;
   public hasFilters: boolean;
-  /**
-   * Whether the dark appearance is the one currently painted.
-   *
-   * Read from the class the shell maintains on `<body>`, deliberately, because that
-   * class IS the effective answer. The setting alone cannot give it: `colorScheme`
-   * is allowed to be unset, and an unset one means "follow the operating system" -
-   * so deciding from the setting would require this component to repeat the shell's
-   * media-query fallback and then keep the copy in step with it. Reading what the
-   * shell decided instead leaves exactly one place that resolves the appearance.
-   *
-   * Refreshed on every emission of the viewer's record, which is precisely when the
-   * shell re-applies the theme, so the icon and the label can never describe a
-   * previous appearance.
-   */
-  public isDarkTheme: boolean;
 
   /**
    * What the identity marker says, and what names the identity trigger, while
@@ -196,8 +178,6 @@ export class GfDashboardToolbarComponent implements OnInit {
    */
   public readonly impersonationStatusLabel = $localize`Viewing another account`;
 
-  /** Companion of {@link darkAppearanceLabel} for the other direction. */
-  public readonly lightAppearanceLabel = $localize`Switch to light appearance`;
   public hasImpersonationId: boolean;
   public hasPermissionForSubscription: boolean;
   public hasPermissionToAccessAdminControl: boolean;
@@ -227,9 +207,12 @@ export class GfDashboardToolbarComponent implements OnInit {
     private dataService: DataService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
-    @Inject(DOCUMENT) private document: Document,
     private impersonationStorageService: ImpersonationStorageService,
     private layoutService: LayoutService,
+    // Injected for exactly one purpose: telling the viewer, on the way out, that
+    // the arrangement they last made could not be stored. Nothing else here opens
+    // a dialog.
+    private notificationService: NotificationService,
     private userService: UserService
   ) {
     this.impersonationStorageService
@@ -243,12 +226,10 @@ export class GfDashboardToolbarComponent implements OnInit {
     addIcons({
       closeOutline,
       menuOutline,
-      moonOutline,
       optionsOutline,
       personCircleOutline,
       radioButtonOffOutline,
-      radioButtonOnOutline,
-      sunnyOutline
+      radioButtonOnOutline
     });
 
     // Subscribed here rather than in `ngOnInit` because both streams emit
@@ -278,10 +259,6 @@ export class GfDashboardToolbarComponent implements OnInit {
 
         this.hasPermissionToChangeDateRange = !!this.user;
         this.hasPermissionToChangeFilters = !!this.user;
-
-        // Read after the shell has applied the theme for this same emission, so
-        // the control describes the appearance that is actually painted.
-        this.isDarkTheme = this.document.body.classList.contains('theme-dark');
 
         this.hasPromotion = this.user
           ? !!this.user.subscription?.offer?.coupon ||
@@ -396,40 +373,6 @@ export class GfDashboardToolbarComponent implements OnInit {
   }
 
   /**
-   * Switches the viewer between the light and dark appearance.
-   *
-   * Written through the viewer's own `colorScheme` setting - the very setting the
-   * account-settings appearance control writes - rather than by touching the theme
-   * directly. That is what makes this a toolbar affordance for an existing
-   * preference instead of a second, competing theme mechanism: the two controls
-   * cannot disagree, the choice survives a reload, and it follows the viewer to
-   * another browser.
-   *
-   * Applying it stays the shell's job. Re-reading the viewer is what hands the new
-   * value to the shell, which re-applies the theme on every emission of that
-   * record; nothing here adds or removes a class.
-   *
-   * Note what this deliberately cannot do: return to "follow the system", which is
-   * the third state the setting supports and which the account-settings control
-   * keeps. A toolbar toggle answers one question - light or dark - and offering a
-   * tri-state cycle from a single icon would leave the viewer guessing which of
-   * three states one more press lands on.
-   */
-  public onToggleTheme() {
-    const colorScheme: ColorScheme = this.isDarkTheme ? 'LIGHT' : 'DARK';
-
-    this.dataService
-      .putUserSetting({ colorScheme })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.userService
-          .get(true)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe();
-      });
-  }
-
-  /**
    * Persists the selected portfolio filters, then forces a re-read of the
    * viewer.
    *
@@ -510,7 +453,7 @@ export class GfDashboardToolbarComponent implements OnInit {
    * deliberate: it discards every in-memory cache belonging to the identity that just
    * left.
    *
-   * The flush comes FIRST, and the order is the whole point. A document-level
+   * The release comes FIRST, and the order is the whole point. A document-level
    * navigation replaces the document rather than routing within it, so nothing
    * downstream of this line runs - not the canvas's teardown, not the layout
    * service's - and an arrangement still inside its 500ms debounce was simply
@@ -521,10 +464,54 @@ export class GfDashboardToolbarComponent implements OnInit {
    *
    * It must also precede `signOut()`, because that clears the token the write is
    * authorised with.
+   *
+   * This toolbar originates no write and holds no arrangement. The arrangement in
+   * question was produced by the grid and is already inside the layout service's
+   * one persistence pipeline; all this does is ask that pipeline not to wait.
+   *
+   * Releasing it first is not enough on its own, which is why the departure now
+   * WAITS for it. An `HttpClient` request is not guaranteed to survive the document
+   * being replaced, so a write merely started before the assignment could still be
+   * abandoned in flight - the same silent loss, a few microseconds later. Waiting
+   * for the layout service to report the write settled closes that window, and the
+   * wait is bounded there so a request that never answers cannot leave this control
+   * looking dead.
+   *
+   * A failure is answered rather than absorbed. The viewer still leaves - anyone
+   * who asks to sign out must be able to, and an arrangement that cannot be stored
+   * would otherwise hold them here indefinitely - but they are told first, because
+   * leaving in silence would let them believe an arrangement they can still see had
+   * been saved. The departure completes when they acknowledge it.
    */
   public onSignOut() {
-    this.dashboardLayoutService.flushPendingSnapshot();
+    this.dashboardLayoutService.releasePendingSave().subscribe({
+      complete: () => {
+        this.leaveForLocaleRoot();
+      },
+      error: (error: unknown) => {
+        reportSanitizedError(
+          'GF-DASHBOARD-LAYOUT-SIGN-OUT-FLUSH-FAILED',
+          error
+        );
 
+        this.notificationService.alert({
+          discardFn: () => {
+            this.leaveForLocaleRoot();
+          },
+          message: $localize`Your most recent dashboard changes could not be saved.`,
+          title: $localize`Oops! Something went wrong.`
+        });
+      }
+    });
+  }
+
+  /**
+   * Discards the session and reloads the application at the locale root.
+   *
+   * Shared by both endings of {@link onSignOut} so the order the sign-out depends
+   * on - credentials cleared, then the document replaced - is written once.
+   */
+  private leaveForLocaleRoot() {
     this.userService.signOut();
 
     document.location.href = `/${document.documentElement.lang}`;

@@ -45,7 +45,7 @@ Ghostfolio is for you if you are...
 
 ## Features
 
-- ✅ Customizable dashboard: add the features you need as modules from a searchable catalog by click or drag and drop, then move and resize them on a single canvas, with your layout saved per user
+- ✅ Customizable dashboard: add the features you need as modules from a searchable catalog by click or drag and drop, move them by their drag handle, resize them from their bottom and right edges on a single 12-column grid with a fixed row height, and remove them again from the actions menu in each module header, with your layout saved per user and the catalog opening automatically while no layout has been saved yet
 - ✅ Create, update and delete transactions
 - ✅ Multi account management
 - ✅ Portfolio performance: Return on Average Investment (ROAI) for `Today`, `WTD`, `MTD`, `YTD`, `1Y`, `5Y`, `Max`
@@ -72,7 +72,7 @@ The backend is based on [NestJS](https://nestjs.com) using [PostgreSQL](https://
 
 ### Frontend
 
-The frontend is built with [Angular](https://angular.dev) and uses [Angular Material](https://material.angular.io) with utility classes from [Bootstrap](https://getbootstrap.com). The dashboard canvas is served from a single root route, laid out by [angular-gridster2](https://github.com/tiberiuzuld/angular-gridster2) on a 12-column grid with a fixed row height, and its chrome is composed of Angular Material components.
+The frontend is built with [Angular](https://angular.dev) and uses [Angular Material](https://material.angular.io) with utility classes from [Bootstrap](https://getbootstrap.com). The dashboard canvas is served from a single root route, laid out by [angular-gridster2](https://github.com/tiberiuzuld/angular-gridster2) version `21.0.1` on a 12-column grid with a fixed row height, and its chrome is composed of Angular Material components.
 
 ## Self-hosting
 
@@ -341,7 +341,7 @@ Required for `PATCH` only. Each module is placed via `x` and `y` and sized via `
 
 `200 OK`
 
-Both endpoints respond with the layout document shown above. `GET` responds with `null` if the current user has not saved a layout yet.
+Both endpoints respond with the layout document of the current user. The current client always writes `version` `1`, so a document it saved is shaped exactly as shown above; a document saved by an earlier client may omit `version`, and that absence is preserved on read rather than filled in. `GET` responds with `null` if the current user has not saved a layout yet.
 
 ##### Error
 

@@ -5,7 +5,9 @@ import { DataService } from '@ghostfolio/ui/services';
 import { TestBed } from '@angular/core/testing';
 import { ObservableStore } from '@codewithdan/observable-store';
 import type { StateHistory } from '@codewithdan/observable-store';
-import { Observable, of, throwError } from 'rxjs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { DashboardModuleType } from '../enums/dashboard-module-type';
 import { DashboardLayoutItem } from '../interfaces/interfaces';
@@ -15,13 +17,13 @@ import { GfDashboardLayoutService } from './dashboard-layout.service';
 
 /**
  * A burst of triggers inside the debounce window must collapse to one request
- * carrying the newest *complete* snapshot, and two snapshots that escape the same
- * window must reach the server in the order they were reported. The second half is
- * what an in-flight cancellation cannot deliver: unsubscribing from a response does
- * not withdraw a request the server has already accepted, and because the endpoint
- * upserts a whole document, two requests in flight leave the stored arrangement
- * decided by commit order. The writes are therefore serialised, and a snapshot a
- * newer one has already superseded is dropped rather than replayed.
+ * carrying the newest *complete* snapshot, and an arrangement reported after that
+ * must supersede whatever is still in flight. Superseding is what `switchMap`
+ * delivers and it is sound here for one specific reason: every body is a complete
+ * layout document rather than a delta, so the newest request describes everything
+ * its predecessors did and the stored arrangement converges on it whether or not an
+ * abandoned request was acknowledged. A delta payload would make cancellation a
+ * defect, which is why the operator is documented at the pipeline itself.
  *
  * 1. The wire projection. `DashboardLayoutItem` extends the grid engine's
  *    own item configuration type, which declares fourteen optional members
@@ -41,7 +43,12 @@ import { GfDashboardLayoutService } from './dashboard-layout.service';
  *    placement.
  * 4. Trigger exclusivity. Every one of the four grid callbacks feeds one
  *    subject, and a burst inside the debounce window must collapse to a single
- *    request carrying the newest complete snapshot.
+ *    request carrying the newest complete snapshot. Nothing else may originate an
+ *    arrangement: the release before a departure and the retry after a failure both
+ *    re-enter that same subject with the snapshot the grid already produced, and
+ *    neither builds a body or reaches the facade. `the single write origin` below
+ *    pins that structurally, because behaviour alone cannot express "there is only
+ *    one call site".
  * 5. Viewer isolation. The service is provided in the root injector, so it
  *    outlives every individual viewer, while the canvas that feeds it is never
  *    rebuilt across a change of identity. A snapshot therefore has to be bound
@@ -109,6 +116,106 @@ describe('GfDashboardLayoutService', () => {
     'resizableHandles',
     'resizeEnabled'
   ];
+
+  /**
+   * Everything a failed layout request carries that must never reach a log.
+   *
+   * Each of these sits somewhere on a real `HttpErrorResponse`: the token is in
+   * the URL and in the body the server answered with, the address is in the URL
+   * and in the message Angular composes from it, and the viewer's own identifier
+   * is in the request body echoed back. `console.error(error)` prints all of it;
+   * `reportSanitizedError` prints none of it. The two are indistinguishable to an
+   * assertion that only checks *that* something was logged, which is why these
+   * markers exist and why every failure below is built out of them.
+   */
+  const SECRET_TOKEN = 'SECRET-BEARER-TOKEN-9f3e2b6d';
+
+  const SECRET_URL = `https://ghostfolio.test/api/v1/user/layout?access=${SECRET_TOKEN}`;
+
+  const SENSITIVE_MARKERS = [
+    SECRET_TOKEN,
+    SECRET_URL,
+    'ghostfolio.test',
+    'Http failure',
+    'viewer@example.test',
+    'at GfDashboardLayoutService'
+  ];
+
+  /**
+   * A failure shaped like the one the data facade really rejects with.
+   *
+   * `HttpErrorResponse`-like rather than the real class: what the reporting
+   * contract reads is a numeric `status`, and what a leak would expose is the
+   * URL, the body, the composed message and the stack. All five are present here,
+   * so this object is a faithful stand-in for the thing being protected against
+   * without dragging `HttpClient` into a spec that has no HTTP in it.
+   */
+  const createRequestFailure = ({
+    status = 500
+  }: { status?: number } = {}) => ({
+    error: { detail: `rejected for ${SECRET_TOKEN}` },
+    message: `Http failure response for ${SECRET_URL}: ${status} Internal Server Error`,
+    name: 'HttpErrorResponse',
+    stack: `at GfDashboardLayoutService (${SECRET_URL})`,
+    status,
+    statusText: 'Internal Server Error',
+    url: SECRET_URL,
+    viewer: 'viewer@example.test'
+  });
+
+  /** Every logged argument rendered as text, whatever shape it arrived in. */
+  const loggedArgumentsAsText = () => {
+    return consoleErrorSpy.mock.calls.flat().map((argument: unknown) => {
+      if (typeof argument === 'string') {
+        return argument;
+      }
+
+      if (argument instanceof Error) {
+        return [argument.name, argument.message, argument.stack].join(' ');
+      }
+
+      if (argument && typeof argument === 'object') {
+        const record = argument as Record<string, unknown>;
+
+        // The revealing members are read one by one as well as serialised,
+        // because a member reached through the prototype chain - which is where
+        // `HttpErrorResponse` keeps `message` - does not appear in
+        // `JSON.stringify`.
+        const members = ['message', 'stack', 'statusText', 'url']
+          .map((key) => (typeof record[key] === 'string' ? record[key] : ''))
+          .join(' ');
+
+        return `${members} ${JSON.stringify(record)}`;
+      }
+
+      return JSON.stringify(argument) ?? '';
+    });
+  };
+
+  /**
+   * Asserts the exact report a failing path is allowed to emit.
+   *
+   * Deep-equality on `mock.calls` rather than a containment check, because the
+   * defect being guarded against - `console.error(error)`, or
+   * `console.error(eventId, error)` - satisfies containment in full while
+   * printing the whole failure. The marker sweep that follows is the second half:
+   * it catches a report that is a single string and still built out of the
+   * failure's own message.
+   */
+  const expectSanitizedReport = (aEventId: string, aStatus?: number) => {
+    const expected =
+      typeof aStatus === 'number'
+        ? `${aEventId} (status ${aStatus})`
+        : aEventId;
+
+    expect(consoleErrorSpy.mock.calls).toEqual([[expected]]);
+
+    for (const text of loggedArgumentsAsText()) {
+      for (const marker of SENSITIVE_MARKERS) {
+        expect(text).not.toContain(marker);
+      }
+    }
+  };
 
   const createGridItem = (
     overrides: Partial<DashboardLayoutItem> = {}
@@ -504,18 +611,10 @@ describe('GfDashboardLayoutService', () => {
       });
     });
 
-    it('holds a newer snapshot back until the in-flight PATCH settles, instead of cancelling it', () => {
+    it('abandons an in-flight PATCH the moment a newer arrangement supersedes it', () => {
       const firstTeardown = jest.fn();
-      let completeFirst: () => void;
 
-      const first$ = new Observable<UserDashboardLayout>((subscriber) => {
-        completeFirst = () => {
-          subscriber.next({ modules: [], version: 1 });
-          subscriber.complete();
-        };
-
-        return firstTeardown;
-      });
+      const first$ = new Observable<UserDashboardLayout>(() => firstTeardown);
 
       dataServiceMock.patchUserDashboardLayout
         .mockReturnValueOnce(first$)
@@ -534,37 +633,29 @@ describe('GfDashboardLayoutService', () => {
 
       jest.advanceTimersByTime(500);
 
-      // The older request is deliberately NOT unsubscribed, and the newer one is
-      // deliberately NOT sent yet. Unsubscribing is only ever a cancellation on
-      // this side of the wire: by now the first request has very likely been
-      // accepted by the server, and dropping the response does not withdraw it.
-      // Because the endpoint upserts a whole document, two requests in flight
-      // leave the stored arrangement decided by which one the database commits
-      // last rather than by the order the viewer made the changes in - a drag
-      // whose result silently reverts. Serialising removes the possibility.
-      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-      expect(firstTeardown).not.toHaveBeenCalled();
-
-      completeFirst();
-
-      // Only once the first write has settled does the second go out, so the last
-      // document the server sees is by construction the last one reported.
+      // The older request is unsubscribed and the newer one goes out at once, which
+      // is safe for one specific reason: every body is a COMPLETE arrangement rather
+      // than a delta, so the newest request describes everything its predecessor did
+      // and the stored document converges on it whether or not the abandoned request
+      // was ever acknowledged. What it buys is latency - the viewer's newest
+      // arrangement does not queue behind a body that has already been superseded.
+      // A delta payload would make this a defect and would have to serialise
+      // instead, which is why the operator is documented at the pipeline.
+      expect(firstTeardown).toHaveBeenCalledTimes(1);
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
       expect(readPatchedDto(1).modules[0].cols).toBe(8);
     });
 
-    it('sends only the newest arrangement when several queue behind an in-flight PATCH', () => {
-      let completeFirst: () => void;
-
-      const first$ = new Observable<UserDashboardLayout>((subscriber) => {
-        completeFirst = () => {
-          subscriber.next({ modules: [], version: 1 });
-          subscriber.complete();
-        };
-      });
+    it('lets each debounced arrangement supersede the one before it, newest last', () => {
+      const teardowns = [jest.fn(), jest.fn()];
 
       dataServiceMock.patchUserDashboardLayout
-        .mockReturnValueOnce(first$)
+        .mockReturnValueOnce(
+          new Observable<UserDashboardLayout>(() => teardowns[0])
+        )
+        .mockReturnValueOnce(
+          new Observable<UserDashboardLayout>(() => teardowns[1])
+        )
         .mockReturnValue(of({ modules: [], version: 1 }));
 
       jest.useFakeTimers();
@@ -581,17 +672,36 @@ describe('GfDashboardLayoutService', () => {
 
       jest.advanceTimersByTime(500);
 
+      // Three quiet periods elapsed, so three arrangements were reported and each
+      // one replaced the request before it. The last document the server is left
+      // with is by construction the last one the viewer reported, because the only
+      // request still outstanding is the newest.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(3);
+      expect(teardowns[0]).toHaveBeenCalledTimes(1);
+      expect(teardowns[1]).toHaveBeenCalledTimes(1);
+      expect(readPatchedDto(2).modules[0].cols).toBe(8);
+    });
+
+    it('spends one request on a burst inside a single quiet period', () => {
+      jest.useFakeTimers();
+
+      // What a drag actually looks like: the grid reports every cell it crosses.
+      service.scheduleSave(VIEWER_ID, [createGridItem({ x: 1 })]);
+
+      jest.advanceTimersByTime(100);
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ x: 2 })]);
+
+      jest.advanceTimersByTime(100);
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ x: 3 })]);
+
+      jest.advanceTimersByTime(500);
+
+      // Coalesced by the debounce rather than by the operator that follows it, so
+      // the intermediate positions never reach the wire at all.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-
-      completeFirst();
-
-      // Serialising must not mean replaying. Every snapshot is a complete
-      // arrangement, so the intermediate one describes nothing the newest one
-      // does not - sending it would spend a round trip writing a document the very
-      // next request contradicts. Exactly two requests therefore leave: the one
-      // that was already in flight, and the newest.
-      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
-      expect(readPatchedDto(1).modules[0].cols).toBe(8);
+      expect(readPatchedDto(0).modules[0].x).toBe(3);
     });
 
     it('updates store state from a successful PATCH response', () => {
@@ -701,7 +811,7 @@ describe('GfDashboardLayoutService', () => {
   describe('error handling', () => {
     it('keeps the save stream alive after a PATCH failure', () => {
       dataServiceMock.patchUserDashboardLayout
-        .mockReturnValueOnce(throwError(() => new Error('PATCH failed')))
+        .mockReturnValueOnce(throwError(() => createRequestFailure()))
         .mockReturnValueOnce(of({ modules: [], version: 1 }));
 
       jest.useFakeTimers();
@@ -710,7 +820,7 @@ describe('GfDashboardLayoutService', () => {
 
       expect(() => jest.advanceTimersByTime(500)).not.toThrow();
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', 500);
 
       service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
 
@@ -722,7 +832,7 @@ describe('GfDashboardLayoutService', () => {
 
     it('does not update store state when a PATCH fails', () => {
       dataServiceMock.patchUserDashboardLayout.mockReturnValue(
-        throwError(() => new Error('PATCH failed'))
+        throwError(() => createRequestFailure())
       );
 
       jest.useFakeTimers();
@@ -740,7 +850,7 @@ describe('GfDashboardLayoutService', () => {
       expect(readStoreAction()).not.toBe(
         DashboardLayoutStoreActions.UpdateDashboardLayout
       );
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', 500);
     });
 
     it('publishes the failure so the canvas can report an unsaved arrangement', () => {
@@ -765,7 +875,7 @@ describe('GfDashboardLayoutService', () => {
       expect(observed).toEqual([false, true]);
     });
 
-    it('retains the failed snapshot so it can still be flushed on destroy', () => {
+    it('retains the failed snapshot so it can still be released on destroy', () => {
       dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
         throwError(() => new Error('PATCH failed'))
       );
@@ -781,7 +891,7 @@ describe('GfDashboardLayoutService', () => {
       service.ngOnDestroy();
 
       // Discarding the snapshot before the write was acknowledged would lose the
-      // newest arrangement permanently, with nothing left to flush.
+      // newest arrangement permanently, with nothing left to release.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
       expect(readPatchedDto(1)).toEqual(readPatchedDto(0));
       expect(readPatchedDto(1).modules[0]).toEqual({
@@ -867,7 +977,7 @@ describe('GfDashboardLayoutService', () => {
     });
 
     it('propagates a fetch failure to the caller', () => {
-      const failure = new Error('GET failed');
+      const failure = createRequestFailure();
 
       dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
         throwError(() => failure)
@@ -886,7 +996,9 @@ describe('GfDashboardLayoutService', () => {
       });
 
       expect(receivedError).toBe(failure);
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      // Rethrown to the caller in full and reported to the log sanitized: the
+      // subscriber needs the failure, the log must not have it.
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-FETCH-FAILED', 500);
       expect(emissions).toBe(0);
       expect(emitted).toBeUndefined();
       expect(emitted).not.toEqual({ modules: [] });
@@ -896,8 +1008,8 @@ describe('GfDashboardLayoutService', () => {
     });
   });
 
-  describe('teardown flush', () => {
-    it('flushes a still-debounced snapshot on destroy', () => {
+  describe('the release on teardown', () => {
+    it('releases a still-debounced snapshot on destroy', () => {
       jest.useFakeTimers();
 
       service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
@@ -908,12 +1020,13 @@ describe('GfDashboardLayoutService', () => {
 
       service.ngOnDestroy();
 
-      // The flush travels the same projection path as a debounced save — it is a
-      // shortcut through the timer, not a second way of building a request. It
-      // also uses the same data service facade, because the layout endpoint
-      // takes PATCH and no fire-and-forget transport can issue one; closing the
-      // browser tab inside the debounce window therefore remains an accepted
-      // loss window rather than an excuse to invent a transport.
+      // The release travels the one pipeline a debounced save travels — it ends the
+      // quiet period, and nothing else. There is no second projection, no second
+      // request builder and no second call to the facade; the single `switchMap` is
+      // what issues this request too. Closing the browser tab inside the window
+      // therefore remains an accepted loss window rather than an excuse to invent a
+      // transport, because the endpoint takes PATCH and no fire-and-forget
+      // transport can issue one.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
       expect(Object.keys(readPatchedDto(0).modules[0]).sort()).toEqual(
         wireFields
@@ -922,7 +1035,7 @@ describe('GfDashboardLayoutService', () => {
       expect(readPatchedDto(0).version).toBe(1);
     });
 
-    it('does not flush twice when destroyed repeatedly', () => {
+    it('does not write twice when destroyed repeatedly', () => {
       jest.useFakeTimers();
 
       service.scheduleSave(VIEWER_ID, [createGridItem()]);
@@ -935,7 +1048,7 @@ describe('GfDashboardLayoutService', () => {
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
-    it('does not flush after the debounced save already dispatched', () => {
+    it('sends nothing when the debounced save already dispatched', () => {
       jest.useFakeTimers();
 
       service.scheduleSave(VIEWER_ID, [createGridItem()]);
@@ -949,16 +1062,16 @@ describe('GfDashboardLayoutService', () => {
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
-    it('does not flush when nothing was ever scheduled', () => {
+    it('sends nothing when nothing was ever scheduled', () => {
       service.ngOnDestroy();
 
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
       expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
 
-    it('reports a failed flush without throwing', () => {
+    it('reports a failed release without throwing', () => {
       dataServiceMock.patchUserDashboardLayout.mockReturnValue(
-        throwError(() => new Error('flush failed'))
+        throwError(() => createRequestFailure())
       );
 
       jest.useFakeTimers();
@@ -968,11 +1081,14 @@ describe('GfDashboardLayoutService', () => {
       jest.advanceTimersByTime(200);
 
       // A failure while the page is going away has nowhere to surface, so it is
-      // logged and contained: an unhandled error here would break teardown for
-      // every consumer of the service.
+      // contained by the same inner `catchError` every other write is contained by:
+      // an unhandled error here would break teardown for every consumer of the
+      // service. It is reported through the sanitized channel, under the identifier
+      // every persistence failure uses, because a released write is not a different
+      // kind of write.
       expect(() => service.ngOnDestroy()).not.toThrow();
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', 500);
     });
   });
 
@@ -983,10 +1099,15 @@ describe('GfDashboardLayoutService', () => {
    * inside the debounce window. Signing out replaces the whole document, and it
    * does so on the application's own initiative rather than the browser's - so
    * unlike a closed tab it CAN carry the pending write out with it, and therefore
-   * must. That makes the same flush reachable from outside the lifecycle hook,
-   * which is the whole of the change these tests cover.
+   * must. That makes the same release reachable from outside the lifecycle hook.
+   *
+   * What these tests are really pinning is that reachability costs nothing
+   * architecturally: the release carries no arrangement, builds no body and calls
+   * no facade method. It re-enters the one subject the grid's own callbacks feed
+   * and then ends the quiet period, so the grid remains the only place an
+   * arrangement can originate.
    */
-  describe('a flush asked for before leaving the document', () => {
+  describe('a save released before leaving the document', () => {
     it('issues a still-debounced snapshot on request', () => {
       jest.useFakeTimers();
 
@@ -996,9 +1117,9 @@ describe('GfDashboardLayoutService', () => {
 
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
 
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
 
-      // Same projection, same facade, same version - a shortcut through the timer
+      // Same projection, same facade, same version - the quiet period ended early
       // rather than a second way of building a request, which is what keeps the
       // single write origin single.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
@@ -1010,7 +1131,7 @@ describe('GfDashboardLayoutService', () => {
     });
 
     it('issues nothing when no arrangement is pending', () => {
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
 
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
       expect(consoleErrorSpy).not.toHaveBeenCalled();
@@ -1025,7 +1146,7 @@ describe('GfDashboardLayoutService', () => {
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
 
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
 
       // Idempotent, because the caller cannot know whether the window had already
       // elapsed - and a second write of the same arrangement would be a wasted
@@ -1040,49 +1161,49 @@ describe('GfDashboardLayoutService', () => {
 
       jest.advanceTimersByTime(200);
 
-      service.flushPendingSnapshot();
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
+      service.releasePendingSave();
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
-    it('leaves the debounce it short-circuited with nothing to send', () => {
+    it('leaves the quiet period it ended with nothing to send', () => {
       jest.useFakeTimers();
 
       service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(200);
 
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
 
-      // The timer is still running - the flush jumps the queue, it does not cancel
-      // it - so the window has to elapse here and produce nothing. In the browser
-      // the document is usually gone before it fires, but "usually" is not a
-      // guarantee, and a duplicate write of an arrangement nobody changed would be
-      // the visible cost.
+      // The release ends the quiet period rather than running alongside it, so the
+      // buffered arrangement has already left and letting the full window elapse
+      // here produces nothing. In the browser the document is usually gone by now,
+      // but "usually" is not a guarantee, and a duplicate write of an arrangement
+      // nobody changed would be the visible cost.
       jest.advanceTimersByTime(500);
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
-    it('leaves nothing for the teardown to flush again', () => {
+    it('leaves nothing for the teardown to release again', () => {
       jest.useFakeTimers();
 
       service.scheduleSave(VIEWER_ID, [createGridItem()]);
 
       jest.advanceTimersByTime(200);
 
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
       service.ngOnDestroy();
 
-      // The two paths share one pending snapshot, so signing out and then being
-      // torn down - which is exactly what happens - must not write twice.
+      // Both callers share one pending snapshot, so signing out and then being torn
+      // down - which is exactly what happens - must not write twice.
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
     it('contains a failure rather than raising it at the caller', () => {
       dataServiceMock.patchUserDashboardLayout.mockReturnValue(
-        throwError(() => new Error('flush failed'))
+        throwError(() => createRequestFailure())
       );
 
       jest.useFakeTimers();
@@ -1094,9 +1215,9 @@ describe('GfDashboardLayoutService', () => {
       // The caller is about to leave the document; an error thrown back at it
       // would abandon the sign-out itself, which is far worse than a lost
       // arrangement.
-      expect(() => service.flushPendingSnapshot()).not.toThrow();
+      expect(() => service.releasePendingSave()).not.toThrow();
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-PERSIST-FAILED', 500);
     });
 
     it('refuses a snapshot belonging to an identity that has since left', () => {
@@ -1108,12 +1229,265 @@ describe('GfDashboardLayoutService', () => {
 
       service.beginIdentityTransition();
 
-      service.flushPendingSnapshot();
+      service.releasePendingSave();
 
-      // The identity guard is not bypassed by taking the shortcut. Signing out
-      // begins exactly such a transition, so a flush that ignored it would write
+      // The identity guard is not bypassed by ending the window early. Signing out
+      // begins exactly such a transition, so a release that ignored it would write
       // the departing viewer's arrangement with whatever token had replaced theirs.
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('supersedes a write still in flight rather than queueing behind it', () => {
+      const firstWrite = new Subject<UserDashboardLayout>();
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
+        firstWrite.asObservable()
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 4 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(readPatchedDto(0).modules[0].cols).toBe(4);
+
+      // A newer arrangement, then a release of it - while the first request is
+      // still unanswered.
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+      service.releasePendingSave();
+
+      // The newer arrangement leaves AT ONCE and the superseded request is
+      // abandoned, which is the whole assertion. That is `switchMap`, and it is
+      // sound here for one specific reason: every body is a COMPLETE layout
+      // document rather than a delta, so the newest request describes everything
+      // its predecessor did and the stored arrangement converges on it whether or
+      // not the older one was ever acknowledged. It also means there is never more
+      // than one request outstanding, so no two replies can commit out of order.
+      // A delta payload would make this a defect and would require `concatMap`
+      // instead - which is why the operator is pinned by the architecture suite.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1).modules[0].cols).toBe(8);
+
+      // The abandoned reply arriving late changes nothing: it belongs to a
+      // subscription that no longer exists, so it cannot restore the geometry the
+      // viewer has already moved away from.
+      firstWrite.next({ modules: [], version: 1 });
+      firstWrite.complete();
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports completion to a caller that waits for it', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      let hasCompleted = false;
+      let raised: unknown = null;
+
+      service.releasePendingSave().subscribe({
+        complete: () => {
+          hasCompleted = true;
+        },
+        error: (error: unknown) => {
+          raised = error;
+        }
+      });
+
+      // The awaitable half of the contract. Signing out holds the document open
+      // until it hears this, so a flush that reported nothing would leave the
+      // caller either navigating too early or waiting for ever.
+      expect(hasCompleted).toBe(true);
+      expect(raised).toBeNull();
+    });
+
+    it('reports a failure to a caller that waits for it', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      let hasCompleted = false;
+      let raised: Error = null;
+
+      service.releasePendingSave().subscribe({
+        complete: () => {
+          hasCompleted = true;
+        },
+        error: (error: Error) => {
+          raised = error;
+        }
+      });
+
+      // Raised at the caller rather than swallowed, so the departure it precedes
+      // can say so instead of leaving silently while the viewer believes the
+      // arrangement in front of them was stored.
+      expect(hasCompleted).toBe(false);
+      expect(raised?.message).toBe('flush failed');
+    });
+
+    it('completes at once when there is nothing to flush', () => {
+      let hasCompleted = false;
+
+      service.releasePendingSave().subscribe({
+        complete: () => {
+          hasCompleted = true;
+        }
+      });
+
+      expect(hasCompleted).toBe(true);
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('keeps a failed arrangement recoverable', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
+        throwError(() => new Error('flush failed'))
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 7 })]);
+
+      jest.advanceTimersByTime(200);
+
+      service.releasePendingSave().subscribe({
+        error: () => {
+          return undefined;
+        }
+      });
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      // The snapshot survives the failure. It used to be discarded before the
+      // request was even made, which left the viewer's last arrangement
+      // unrecoverable: no retry could reach it and no later flush could send it.
+      service.retryFailedSave();
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1).modules[0].cols).toBe(7);
+    });
+
+    it('warns the canvas that the flushed arrangement is unsaved', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      jest.useFakeTimers();
+
+      const failures: boolean[] = [];
+
+      service.getHasSaveError().subscribe((hasSaveError) => {
+        failures.push(hasSaveError);
+      });
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.releasePendingSave().subscribe({
+        error: () => {
+          return undefined;
+        }
+      });
+
+      // A flush is now an ordinary write in every respect, so its failure raises
+      // the same notice any other failed write raises - which is what offers the
+      // retry that recovers the snapshot above.
+      expect(failures).toEqual([false, true]);
+    });
+
+    /**
+     * Two properties of the release that only appear when it is asked for twice, or
+     * when the quiet period it jumped ahead of finally elapses.
+     */
+    describe('when a release overlaps the window it jumped', () => {
+      /** Records how the returned report settled, in order. */
+      const observeRelease = () => {
+        const settlements: string[] = [];
+
+        service.releasePendingSave().subscribe({
+          complete: () => settlements.push('complete'),
+          error: () => settlements.push('error'),
+          next: () => settlements.push('next')
+        });
+
+        return settlements;
+      };
+
+      it('sends one request when a release is asked for twice while in flight', () => {
+        let answer: (layout: UserDashboardLayout) => void;
+
+        dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+          new Observable<UserDashboardLayout>((subscriber) => {
+            answer = (layout) => {
+              subscriber.next(layout);
+              subscriber.complete();
+            };
+
+            return undefined;
+          })
+        );
+
+        jest.useFakeTimers();
+
+        service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+        jest.advanceTimersByTime(200);
+
+        const first = observeRelease();
+        const second = observeRelease();
+
+        // One request between them, and both callers are told about the same one.
+        // A control that releases and the teardown that follows it must not cost two
+        // unconditional upserts of the same document.
+        expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(
+          1
+        );
+
+        answer({ modules: [], version: 1 });
+
+        // `AsyncSubject`-backed, so each report emits once and then completes. The
+        // value carries nothing; the settlement is the contract, which is why both
+        // sign-out callers depart on `complete` rather than on `next` - and why the
+        // toolbar suite pins that they depart exactly once.
+        expect(first).toEqual(['next', 'complete']);
+        expect(second).toEqual(['next', 'complete']);
+      });
+
+      it('does not let the window it jumped send the same snapshot again', () => {
+        jest.useFakeTimers();
+
+        service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+        // Released while its quiet period is still running, so the debounced copy of
+        // the very same snapshot is still on its way.
+        jest.advanceTimersByTime(200);
+
+        observeRelease();
+
+        expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(
+          1
+        );
+
+        // The window elapses. Without the guard on the debounced lane this would be
+        // a second unconditional upsert of a document the server already has.
+        jest.advanceTimersByTime(500);
+
+        expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(
+          1
+        );
+      });
     });
   });
 
@@ -1288,5 +1662,216 @@ describe('GfDashboardLayoutService', () => {
       // hydrating.
       expect(announcements).toBe(1);
     });
+  });
+
+  /**
+   * The single write origin, asserted as an architectural fact rather than
+   * trusted as a convention.
+   *
+   * Every other test in this file describes what the service does; these describe
+   * how many ways it can do it, which is a property no amount of behaviour can
+   * express. "One dispatcher and one request expression" is satisfied by a service
+   * with two call sites whose second one merely happens not to be reached by any
+   * test - so the count is read off the source, exactly as the global theme suite
+   * reads its stylesheet.
+   *
+   * A second call site would compile, would pass every test above whenever its
+   * request happened to answer first, and would only misbehave under a timing
+   * nobody can arrange on demand. Reading the source is the only way to observe
+   * the thing being forbidden.
+   */
+  describe('the single write origin', () => {
+    /** Resolved from this spec's own location, so the walk cannot drift. */
+    const clientAppDirectory = join(__dirname, '..', '..');
+
+    /** Every non-spec TypeScript source under the client application tree. */
+    const collectSources = (directory: string): string[] => {
+      return readdirSync(directory, { withFileTypes: true }).flatMap(
+        (entry) => {
+          const path = join(directory, entry.name);
+
+          if (entry.isDirectory()) {
+            return collectSources(path);
+          }
+
+          return entry.name.endsWith('.ts') && !entry.name.endsWith('.spec.ts')
+            ? [path]
+            : [];
+        }
+      );
+    };
+
+    const source = readFileSync(
+      join(__dirname, 'dashboard-layout.service.ts'),
+      'utf8'
+    );
+
+    it('builds a layout request in exactly one place', () => {
+      // A second call site is how a release, a retry or a teardown quietly becomes
+      // its own write origin, bypassing the debounce, the identity check or the
+      // supersession rule that the one place applies.
+      expect(source.match(/patchUserDashboardLayout\(/g)).toHaveLength(1);
+    });
+
+    it('is the only file in the client application that writes a layout', () => {
+      const writers = collectSources(clientAppDirectory).filter((path) => {
+        return readFileSync(path, 'utf8').includes('patchUserDashboardLayout(');
+      });
+
+      expect(writers).toEqual([join(__dirname, 'dashboard-layout.service.ts')]);
+    });
+
+    it('feeds that place from one dispatcher fed by two merged lanes', () => {
+      // The debounced lane carries every ordinary change and the immediate lane
+      // carries a released one. They are merged BEFORE the dispatcher, so a
+      // release takes its turn in the same queue instead of opening a second one.
+      expect(source.match(/^ {4}merge\($/gm)).toHaveLength(1);
+      expect(source.match(/debounceTime\(/g)).toHaveLength(1);
+      expect(source.match(/switchMap\(/g)).toHaveLength(1);
+      expect(source).toContain('debounceTime(SAVE_DEBOUNCE_IN_MS)');
+    });
+
+    it('serialises nothing and cancels instead, deliberately', () => {
+      // The operator choice is load-bearing rather than incidental: the AAP mandates
+      // it, and it is only sound because the body is a complete snapshot. Matched as
+      // calls rather than as words, because the pipeline's own comment names the
+      // alternative it rejects and why - which is worth keeping.
+      expect(source).not.toMatch(/concatMap\(/);
+      expect(source).not.toMatch(/mergeMap\(/);
+      expect(source).not.toMatch(/exhaustMap\(/);
+
+      // And not imported either, so a future edit cannot reach for one without the
+      // import line making it obvious.
+      const operatorImport = /from 'rxjs\/operators';/.exec(source);
+
+      expect(operatorImport).not.toBeNull();
+      expect(source.slice(0, operatorImport.index)).not.toMatch(
+        /concatMap|mergeMap|exhaustMap/
+      );
+    });
+
+    it('exposes no method that subscribes to a request of its own', () => {
+      // The two public entry points that re-send an arrangement - the release before
+      // a departure and the retry after a failure - both hand the pending snapshot
+      // back to a subject the one dispatcher drains, and stop there.
+      expect(source).toContain('public releasePendingSave(): Observable<void>');
+      expect(source).toContain('public retryFailedSave()');
+      expect(source.match(/this\.snapshot\$\.next\(/g)).toHaveLength(2);
+      expect(source.match(/this\.immediateSnapshot\$\.next\(/g)).toHaveLength(
+        1
+      );
+
+      // Two subscriptions, both internal and neither of them to the facade: the
+      // dispatcher itself, and the one that reports a released snapshot's outcome
+      // back to the caller awaiting it.
+      expect(source.match(/\.subscribe\(/g)).toHaveLength(2);
+    });
+  });
+
+  /**
+   * What a failure is allowed to say, as distinct from whether one is reported.
+   *
+   * Each of the three failing paths above now asserts its report exactly, and
+   * this group covers what those assertions rest on: that the failure they are
+   * given genuinely carries the things that must not leak, that the identifier
+   * belongs to the path that emitted it, and that the statusless shape is
+   * handled too. Without the first of these the marker sweep would pass over a
+   * failure that never contained a marker, and every one of those assertions
+   * would be decoration.
+   */
+  describe('the shape of a reported failure', () => {
+    it('builds a failure that really does carry everything that must not leak', () => {
+      // The positive control. If this ever stops holding, the sweeps elsewhere in
+      // this file stop meaning anything, and they would go on passing.
+      const failure = createRequestFailure();
+
+      const serialised = [
+        failure.message,
+        failure.stack,
+        failure.url,
+        failure.viewer,
+        JSON.stringify(failure.error)
+      ].join(' ');
+
+      for (const marker of SENSITIVE_MARKERS) {
+        expect(serialised).toContain(marker);
+      }
+
+      expect(failure.status).toBe(500);
+    });
+
+    it('reports a failure that carries no status as the bare identifier', () => {
+      // Not every rejection is an HTTP response: an interceptor, a serialisation
+      // fault or an offline browser rejects with a plain error, and the report has
+      // to stay a single sanitized string for those too.
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        throwError(() => new Error(`viewer@example.test lost ${SECRET_TOKEN}`))
+      );
+
+      service.get(true).subscribe({ error: () => undefined });
+
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-FETCH-FAILED');
+    });
+
+    it.each([
+      {
+        act: () => {
+          service.get(true).subscribe({ error: () => undefined });
+        },
+        arrange: () => {
+          dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+            throwError(() => createRequestFailure({ status: 503 }))
+          );
+        },
+        eventId: 'GF-DASHBOARD-LAYOUT-FETCH-FAILED',
+        path: 'a read'
+      },
+      {
+        act: () => {
+          service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+          jest.advanceTimersByTime(500);
+        },
+        arrange: () => {
+          jest.useFakeTimers();
+
+          dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+            throwError(() => createRequestFailure({ status: 503 }))
+          );
+        },
+        eventId: 'GF-DASHBOARD-LAYOUT-PERSIST-FAILED',
+        path: 'a debounced write'
+      },
+      {
+        act: () => {
+          service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+          jest.advanceTimersByTime(200);
+
+          service.releasePendingSave();
+        },
+        arrange: () => {
+          jest.useFakeTimers();
+
+          dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+            throwError(() => createRequestFailure({ status: 503 }))
+          );
+        },
+        eventId: 'GF-DASHBOARD-LAYOUT-PERSIST-FAILED',
+        path: 'a flush'
+      }
+    ])(
+      'reports $path under its own identifier and nothing else',
+      ({ act, arrange, eventId }) => {
+        arrange();
+
+        act();
+
+        // Pinned per path, so a copied handler that kept a neighbour's identifier
+        // is caught: the identifier is the only thing a reader of the log has to
+        // tell the three apart with.
+        expectSanitizedReport(eventId, 503);
+      }
+    );
   });
 });

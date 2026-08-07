@@ -210,12 +210,34 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
     // revealed by its row no matter how full the grid is, so it is never reported
     // as having nowhere to go.
     if (this.isPlaced) {
-      return $localize`Reveal ${this.definition?.name}:moduleName: module`;
+      return $localize`Reveal ${this.qualifiedName}:moduleName: module`;
     }
 
     return this.isUnavailable
-      ? $localize`Add ${this.definition?.name}:moduleName: module, no room on the dashboard`
-      : $localize`Add ${this.definition?.name}:moduleName: module`;
+      ? $localize`Add ${this.qualifiedName}:moduleName: module, no room on the dashboard`
+      : $localize`Add ${this.qualifiedName}:moduleName: module`;
+  }
+
+  /**
+   * The module's name, followed by its qualifier where it has one.
+   *
+   * Two modules can legitimately share a name: the shared metadata reuses the
+   * route registry's title verbatim, and that registry titles both market screens
+   * `Markets` and both settings screens `Settings`. Behind a URL that was
+   * harmless; in a flat list it leaves two rows that are indistinguishable both by
+   * eye and to a screen reader, and this row's whole visible content is its name.
+   *
+   * Composed from the two already-translated values rather than from a new
+   * message, so the qualifier costs no locale an untranslated string: the name and
+   * the qualifier are interpolated data, and the sentence around them is still the
+   * one message every locale already carries. That is also why the separator lives
+   * here rather than in the metadata - the authoritative name must stay exactly the
+   * registry's title.
+   */
+  public get qualifiedName() {
+    return this.definition?.context
+      ? `${this.definition.name} · ${this.definition.context}`
+      : this.definition?.name;
   }
 
   /**

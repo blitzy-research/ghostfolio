@@ -3,10 +3,22 @@
     <mat-card-content class="align-items-center d-flex flex-column">
       <gf-logo class="mb-3" size="large" />
 
+      <!--
+        Both controls are disabled while either dialog's own chunk is being
+        resolved, and marked busy with it.
+
+        Each opens a dialog, the chunk is a network request, and there is only ever
+        one visitor pressing them - so a load slow enough to be pressed again used
+        to stack a second dialog on the first. `aria-busy` carries the same fact to
+        assistive technology, because a control that has gone quiet for a moment is
+        otherwise indistinguishable from one that did nothing.
+      -->
       <button
         class="sign-in-button w-100"
         color="primary"
         mat-flat-button
+        [attr.aria-busy]="isOpeningDialog ? 'true' : null"
+        [disabled]="isOpeningDialog"
         (click)="openLoginDialog()"
       >
         <ng-container i18n>Sign in</ng-container>
@@ -16,6 +28,8 @@
         <button
           class="d-inline-block mt-2"
           mat-button
+          [attr.aria-busy]="isOpeningDialog ? 'true' : null"
+          [disabled]="isOpeningDialog"
           (click)="openShowAccessTokenDialog()"
         >
           <ng-container i18n>Create Account</ng-container>

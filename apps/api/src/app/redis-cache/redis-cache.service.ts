@@ -8,10 +8,113 @@ import Keyv from 'keyv';
 import ms from 'ms';
 import { createHash, randomUUID } from 'node:crypto';
 
+/**
+ * The stable event identifiers this service reports faults under.
+ *
+ * Fixed strings, because a log line is read by everyone who can read the log,
+ * is captured verbatim by log shipping and outlives the incident that produced
+ * it. An identifier is what makes a fault searchable and correlatable; the
+ * category beside it is what makes it actionable. Neither describes the
+ * deployment.
+ */
+const REDIS_CLIENT_ERROR_EVENT = 'GF-REDIS-CLIENT-ERROR';
+
+const REDIS_HEALTH_CHECK_FAILED_EVENT = 'GF-REDIS-HEALTH-CHECK-FAILED';
+
+/**
+ * The internal fault vocabulary every store fault is reduced to before it is
+ * reported.
+ *
+ * This exists because the alternative - reporting what the store client said -
+ * cannot be made safe. A store client's error text routinely carries the host,
+ * the port, the resolved address, the failing command and, on an authentication
+ * fault, a hint about the credential; its stack additionally maps out the
+ * application. None of that helps an operator decide what to do, and all of it
+ * is disclosure. A closed vocabulary carries the whole of the decision - is the
+ * store refusing, unreachable, rejecting the credential, read-only, out of
+ * memory, still loading - and none of the detail.
+ *
+ * `UNCLASSIFIED` is a real answer rather than a gap: it says the store failed in
+ * a way this build has no category for, which is a signal to look at the store's
+ * own logs, where the detail belongs and is protected.
+ */
+const REDIS_FAULT_CATEGORIES = {
+  authenticationRejected: 'AUTHENTICATION_REJECTED',
+  authenticationRequired: 'AUTHENTICATION_REQUIRED',
+  connectionRefused: 'CONNECTION_REFUSED',
+  connectionReset: 'CONNECTION_RESET',
+  connectionTimedOut: 'CONNECTION_TIMED_OUT',
+  hostNotFound: 'HOST_NOT_FOUND',
+  hostUnreachable: 'HOST_UNREACHABLE',
+  loadingDataset: 'LOADING_DATASET',
+  maxClientsReached: 'MAX_CLIENTS_REACHED',
+  outOfMemory: 'OUT_OF_MEMORY',
+  probeTimedOut: 'PROBE_TIMED_OUT',
+  readOnlyReplica: 'READ_ONLY_REPLICA',
+  socketClosed: 'SOCKET_CLOSED',
+  unclassified: 'UNCLASSIFIED',
+  valueMismatch: 'VALUE_MISMATCH'
+} as const;
+
+type RedisFaultCategory =
+  (typeof REDIS_FAULT_CATEGORIES)[keyof typeof REDIS_FAULT_CATEGORIES];
+
+/**
+ * How a store fault is recognised, in the order it is tried.
+ *
+ * Matched against the fault's own code first and its text second, because a
+ * connection fault carries an errno code while a server reply carries only a
+ * leading error word - and both have to reach a category or two genuinely
+ * different faults would collapse into one and the second would be reported as a
+ * repeat of the first. The matched text is used to CHOOSE a category and is
+ * never emitted, which is the whole point of matching rather than forwarding.
+ */
+const REDIS_FAULT_PATTERNS: {
+  category: RedisFaultCategory;
+  pattern: RegExp;
+}[] = [
+  {
+    category: REDIS_FAULT_CATEGORIES.connectionRefused,
+    pattern: /ECONNREFUSED/
+  },
+  { category: REDIS_FAULT_CATEGORIES.connectionReset, pattern: /ECONNRESET/ },
+  {
+    category: REDIS_FAULT_CATEGORIES.connectionTimedOut,
+    pattern: /ETIMEDOUT|ESOCKETTIMEDOUT/
+  },
+  {
+    category: REDIS_FAULT_CATEGORIES.hostUnreachable,
+    pattern: /EHOSTUNREACH|ENETUNREACH/
+  },
+  {
+    category: REDIS_FAULT_CATEGORIES.hostNotFound,
+    pattern: /ENOTFOUND|EAI_AGAIN/
+  },
+  {
+    category: REDIS_FAULT_CATEGORIES.socketClosed,
+    pattern: /EPIPE|ECONNABORTED|socket closed|closed unexpectedly/i
+  },
+  {
+    category: REDIS_FAULT_CATEGORIES.authenticationRequired,
+    pattern: /NOAUTH/
+  },
+  {
+    category: REDIS_FAULT_CATEGORIES.authenticationRejected,
+    pattern: /WRONGPASS|invalid password|without any password/i
+  },
+  { category: REDIS_FAULT_CATEGORIES.readOnlyReplica, pattern: /READONLY/ },
+  { category: REDIS_FAULT_CATEGORIES.outOfMemory, pattern: /\bOOM\b/ },
+  { category: REDIS_FAULT_CATEGORIES.loadingDataset, pattern: /\bLOADING\b/ },
+  {
+    category: REDIS_FAULT_CATEGORIES.maxClientsReached,
+    pattern: /max number of clients/i
+  }
+];
+
 @Injectable()
 export class RedisCacheService {
   /**
-   * Shortest interval between two log entries for one store-client error that
+   * Shortest interval between two log entries for one store-client fault that
    * keeps repeating. Long enough that a multi-minute outage leaves a handful of
    * lines instead of thousands, short enough that an operator watching the log
    * can still see the fault is ongoing.
@@ -19,8 +122,8 @@ export class RedisCacheService {
   private static readonly CLIENT_ERROR_LOG_INTERVAL = ms('1 minute');
 
   private client: Keyv;
+  private lastClientErrorCategory: RedisFaultCategory;
   private lastClientErrorLoggedAt = 0;
-  private lastClientErrorMessage: string;
   private suppressedClientErrorCount = 0;
 
   public constructor(
@@ -102,6 +205,12 @@ export class RedisCacheService {
 
     let healthCheckTimeout: NodeJS.Timeout;
 
+    // Set at the two points this probe diagnoses itself, so the outcome is
+    // reported from what happened rather than from what the failure was called.
+    // Anything else that surfaces here came out of the store and is categorised
+    // through the shared vocabulary instead.
+    let probeCategory: RedisFaultCategory;
+
     try {
       await Promise.race([
         (async () => {
@@ -110,20 +219,31 @@ export class RedisCacheService {
           const result = await this.get(testKey);
 
           if (result !== testValue) {
+            probeCategory = REDIS_FAULT_CATEGORIES.valueMismatch;
+
             throw new Error('Redis health check failed: value mismatch');
           }
         })(),
         new Promise((_, reject) => {
-          healthCheckTimeout = setTimeout(
-            () => reject(new Error('Redis health check failed: timeout')),
-            HEALTH_CHECK_TIMEOUT
-          );
+          healthCheckTimeout = setTimeout(() => {
+            probeCategory = REDIS_FAULT_CATEGORIES.probeTimedOut;
+
+            reject(new Error('Redis health check failed: timeout'));
+          }, HEALTH_CHECK_TIMEOUT);
         })
       ]);
 
       return true;
     } catch (error) {
-      Logger.error(error?.message, 'RedisCacheService');
+      // The category and nothing else. The store's own message would name the
+      // host and port it could not reach, and the answer an operator needs -
+      // which way this probe failed - is exactly what the category carries.
+      Logger.error(
+        `${REDIS_HEALTH_CHECK_FAILED_EVENT} (category ${
+          probeCategory ?? this.categorizeFault(error)
+        })`,
+        'RedisCacheService'
+      );
 
       return false;
     } finally {
@@ -178,32 +298,72 @@ export class RedisCacheService {
   }
 
   /**
-   * Records a store-client error without letting one persistent fault flood the
-   * log.
+   * Reduces a store fault to one of the internal categories.
    *
-   * A message that has not just been seen is always reported immediately, so a
-   * new failure mode is never masked by an ongoing one. Repeats of the message
-   * already reported are counted instead, and released as a single summary at
-   * most once per `CLIENT_ERROR_LOG_INTERVAL` - which keeps the fact that the
-   * dependency is still down visible while leaving the surrounding entries, such
-   * as the health check's own diagnosis, readable.
+   * The fault's own code is preferred, because a connection fault carries a
+   * stable errno there, and its text is consulted only to select a category for
+   * the faults that have no code - a server reply such as `READONLY` or
+   * `NOAUTH`. In neither case does the text leave this method: it is matched, and
+   * what is returned is a member of a closed vocabulary declared in this file.
+   *
+   * A fault this build has no pattern for is `UNCLASSIFIED` rather than
+   * described, so an unfamiliar failure mode is still reported, still grouped
+   * separately from the ones that are recognised, and still carries nothing.
+   */
+  private categorizeFault(aFault: unknown): RedisFaultCategory {
+    const { code, message } = (aFault ?? {}) as {
+      code?: unknown;
+      message?: unknown;
+    };
+
+    const candidate = [
+      typeof code === 'string' ? code : '',
+      typeof message === 'string' ? message : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
+
+    if (!candidate) {
+      return REDIS_FAULT_CATEGORIES.unclassified;
+    }
+
+    return (
+      REDIS_FAULT_PATTERNS.find(({ pattern }) => pattern.test(candidate))
+        ?.category ?? REDIS_FAULT_CATEGORIES.unclassified
+    );
+  }
+
+  /**
+   * Records a store-client fault without letting one persistent fault flood the
+   * log, and without letting the store describe the deployment in it.
+   *
+   * Grouping is by internal category rather than by the client's message, and
+   * that is deliberate on both counts: the message is never emitted, so it cannot
+   * be what an operator reads a repeat count against, and a category is the
+   * stable key a reconnect loop re-emitting slightly different text still groups
+   * under. A category that has not just been seen is always reported
+   * immediately, so a new failure mode is never masked by an ongoing one.
+   * Repeats of the category already reported are counted instead, and released as
+   * a single summary at most once per `CLIENT_ERROR_LOG_INTERVAL` - which keeps
+   * the fact that the dependency is still down visible while leaving the
+   * surrounding entries, such as the health check's own diagnosis, readable.
    */
   private logClientError(error: Error) {
-    // The same defensive read `isHealthy()` uses: an emitted value without a
-    // message must still group with its own repeats rather than with every other
-    // messageless one, so it falls back to a fixed label instead of `undefined`.
-    const message = error?.message ?? 'Unknown Redis client error';
+    const category = this.categorizeFault(error);
     const now = Date.now();
 
-    if (message !== this.lastClientErrorMessage) {
+    if (category !== this.lastClientErrorCategory) {
+      this.lastClientErrorCategory = category;
       this.lastClientErrorLoggedAt = now;
-      this.lastClientErrorMessage = message;
       this.suppressedClientErrorCount = 0;
 
-      // The error object rather than its message, so the first report of a fault
-      // still carries the stack - exactly what the unconditional handler this
-      // replaced used to log.
-      Logger.error(error, 'RedisCacheService');
+      // The event and the category, and nothing the client handed over. A raw
+      // `Error` here would carry its stack and its message - and a store client's
+      // message is where the host, the port and the failing command live.
+      Logger.error(
+        `${REDIS_CLIENT_ERROR_EVENT} (category ${category})`,
+        'RedisCacheService'
+      );
 
       return;
     }
@@ -225,8 +385,11 @@ export class RedisCacheService {
     this.lastClientErrorLoggedAt = now;
     this.suppressedClientErrorCount = 0;
 
+    // A count and an elapsed time are measures rather than values: together they
+    // tell an operator the dependency is still down and how hard it is failing,
+    // which is the reason suppression is not simply silence.
     Logger.error(
-      `${message} (repeated ${suppressedCount} times in the last ${elapsedSeconds} seconds)`,
+      `${REDIS_CLIENT_ERROR_EVENT} (category ${category}, repeated ${suppressedCount} times in the last ${elapsedSeconds} seconds)`,
       'RedisCacheService'
     );
   }

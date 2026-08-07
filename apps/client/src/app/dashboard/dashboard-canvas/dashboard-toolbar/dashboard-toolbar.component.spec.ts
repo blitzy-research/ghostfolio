@@ -13,6 +13,8 @@ import { permissions } from '@ghostfolio/common/permissions';
 import { DateRange } from '@ghostfolio/common/types';
 import { GfAssistantComponent } from '@ghostfolio/ui/assistant/assistant.component';
 import { QuickLinkSearchResultItem } from '@ghostfolio/ui/assistant/interfaces/interfaces';
+import type { AlertParams } from '@ghostfolio/ui/notifications';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 
 import { reflectComponentType } from '@angular/core';
@@ -25,7 +27,7 @@ import '@angular/localize/init';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
-import { BehaviorSubject, of, Subject } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 
 import { DashboardModuleType } from '../../enums/dashboard-module-type';
 import { GfDashboardToolbarComponent } from './dashboard-toolbar.component';
@@ -153,8 +155,13 @@ describe('GfDashboardToolbarComponent', () => {
   // Only the one member this bar reaches for. Signing out is an application-driven
   // departure, so the debounce window that is acceptable to lose when a tab is
   // closed is NOT acceptable here - the bar has to force the pending write out
-  // before it leaves the document.
-  let dashboardLayoutServiceMock: { flushPendingSnapshot: jest.Mock<void, []> };
+  // before it leaves the document, and now has to WAIT for it, because a request
+  // merely started is not a request the replaced document will let finish. It
+  // releases and nothing more: the arrangement was produced by the grid and the
+  // request is the layout service's to issue.
+  let dashboardLayoutServiceMock: {
+    releasePendingSave: jest.Mock<Observable<void>, []>;
+  };
   let deviceDetectorServiceMock: { getDeviceInfo: jest.Mock };
   let impersonationStorageServiceMock: {
     getId: jest.Mock;
@@ -163,6 +170,13 @@ describe('GfDashboardToolbarComponent', () => {
     setId: jest.Mock;
   };
   let layoutServiceMock: { getShouldReloadSubject: jest.Mock };
+  /**
+   * The one dialog surface this bar has. It is reached only when the arrangement
+   * the viewer last made could not be stored on the way out, which is why the
+   * stand-in records the parameters rather than rendering anything: what matters
+   * is that the viewer was told, and that the departure waits for them.
+   */
+  let notificationServiceMock: { alert: jest.Mock<void, [AlertParams]> };
   let routerMock: { navigate: jest.Mock };
   let userServiceMock: {
     get: jest.Mock;
@@ -326,11 +340,18 @@ describe('GfDashboardToolbarComponent', () => {
     };
 
     // Records into the same ordering list the sign-out and navigation reports use,
-    // because WHEN the flush happens is the whole of this fix: after the document
+    // because WHEN the release happens is the whole of this fix: after the document
     // has been left, the write would never be issued.
+    //
+    // Completes synchronously by default, which is what the ordering assertions
+    // below depend on: the bar leaves only once the flush reports the write
+    // settled, so a stand-in that never reported would leave it here for ever. The
+    // tests that assert the wait override it with a subject of their own.
     dashboardLayoutServiceMock = {
-      flushPendingSnapshot: jest.fn<void, []>(() => {
-        callOrder.push('flushPendingSnapshot');
+      releasePendingSave: jest.fn<Observable<void>, []>(() => {
+        callOrder.push('releasePendingSave');
+
+        return of(undefined);
       })
     };
 
@@ -355,6 +376,8 @@ describe('GfDashboardToolbarComponent', () => {
     layoutServiceMock = {
       getShouldReloadSubject: jest.fn().mockReturnValue(shouldReloadSubject)
     };
+
+    notificationServiceMock = { alert: jest.fn<void, [AlertParams]>() };
 
     routerMock = { navigate: jest.fn() };
 
@@ -398,6 +421,10 @@ describe('GfDashboardToolbarComponent', () => {
           useValue: {} as ActivatedRoute
         },
         { provide: LayoutService, useValue: layoutServiceMock },
+        {
+          provide: NotificationService,
+          useValue: notificationServiceMock
+        },
         { provide: Router, useValue: routerMock },
         { provide: UserService, useValue: userServiceMock }
       ]
@@ -859,138 +886,6 @@ describe('GfDashboardToolbarComponent', () => {
   });
 
   /**
-   * The appearance control. It is the one capability the deleted page chrome never
-   * had - the appearance could only be reached through the account-settings screen -
-   * so it is new surface rather than rehomed surface, and this is what pins it.
-   */
-  describe('the appearance control', () => {
-    const themeButton = () => {
-      return host().querySelector<HTMLButtonElement>(
-        `button[aria-label="${component.darkAppearanceLabel}"], button[aria-label="${component.lightAppearanceLabel}"]`
-      );
-    };
-
-    afterEach(() => {
-      document.body.classList.remove('theme-dark');
-    });
-
-    it('offers the control to a resolved viewer', () => {
-      renderWithUser();
-
-      expect(themeButton()).toBeTruthy();
-    });
-
-    // The bar renders nothing at all without a viewer, and persisting an appearance
-    // needs one, so the control goes with it.
-    it('offers nothing while no viewer is resolved', () => {
-      stateChangedSubject.next({ user: null });
-
-      fixture.detectChanges();
-
-      expect(themeButton()).toBeNull();
-    });
-
-    // Read from the class the shell maintains, because that is the effective
-    // appearance: `colorScheme` is allowed to be unset, and unset means "follow the
-    // operating system", which only the shell resolves.
-    it('reads the appearance actually painted rather than the stored setting', () => {
-      document.body.classList.add('theme-dark');
-
-      renderWithUser();
-
-      expect(component.isDarkTheme).toBe(true);
-
-      document.body.classList.remove('theme-dark');
-
-      renderWithUser();
-
-      expect(component.isDarkTheme).toBe(false);
-    });
-
-    // Named for the ACTION, not the state. A control named after its state leaves a
-    // screen-reader user unable to tell whether it reports where they are or where
-    // the press will take them.
-    it('names the direction the press will take, in both directions', () => {
-      renderWithUser();
-
-      expect(themeButton().getAttribute('aria-label')).toBe(
-        'Switch to dark appearance'
-      );
-      expect(themeButton().getAttribute('title')).toBe(
-        'Switch to dark appearance'
-      );
-
-      document.body.classList.add('theme-dark');
-
-      renderWithUser();
-
-      expect(themeButton().getAttribute('aria-label')).toBe(
-        'Switch to light appearance'
-      );
-    });
-
-    it('shows the glyph of the appearance it switches to', () => {
-      // Read as a PROPERTY: `ion-icon` is matched by `CUSTOM_ELEMENTS_SCHEMA`, so
-      // Angular assigns `[name]` to the element instead of writing an attribute, and
-      // nothing defines the custom element here to reflect it back.
-      const glyphName = () => {
-        return (
-          themeButton().querySelector('ion-icon') as unknown as { name: string }
-        ).name;
-      };
-
-      renderWithUser();
-
-      expect(glyphName()).toBe('moon-outline');
-
-      document.body.classList.add('theme-dark');
-
-      renderWithUser();
-
-      expect(glyphName()).toBe('sunny-outline');
-    });
-
-    // Written through the viewer's own setting - the same one the account-settings
-    // appearance control writes - so the two can never disagree and the choice
-    // survives a reload. This is what makes it a control for an existing preference
-    // rather than a second, competing theme mechanism.
-    it('stores the opposite appearance as the viewer own setting', () => {
-      renderWithUser();
-
-      themeButton().click();
-
-      expect(dataServiceMock.putUserSetting).toHaveBeenCalledTimes(1);
-      expect(dataServiceMock.putUserSetting).toHaveBeenCalledWith({
-        colorScheme: 'DARK'
-      });
-
-      dataServiceMock.putUserSetting.mockClear();
-      document.body.classList.add('theme-dark');
-
-      renderWithUser();
-
-      themeButton().click();
-
-      expect(dataServiceMock.putUserSetting).toHaveBeenCalledWith({
-        colorScheme: 'LIGHT'
-      });
-    });
-
-    // Applying the theme stays the shell's job; re-reading the viewer is what hands
-    // it the new value. Nothing here adds or removes a class.
-    it('forces a re-read of the viewer and touches no class itself', () => {
-      renderWithUser();
-
-      const classesBefore = document.body.className;
-
-      component.onToggleTheme();
-
-      expect(userServiceMock.get).toHaveBeenCalledWith(true);
-      expect(document.body.className).toBe(classesBefore);
-    });
-  });
-
-  /**
    * The bar as an operable surface rather than as a set of handlers.
    *
    * Every finding this group covers shipped because `strictTemplates` is off in
@@ -1033,6 +928,14 @@ describe('GfDashboardToolbarComponent', () => {
       );
     };
 
+    /**
+     * Controls that would switch the appearance, found by the glyphs such a
+     * control has to use.
+     *
+     * Kept as a helper even though the expectation is that it finds nothing: the
+     * assertion below is about absence, and absence is only meaningful if the
+     * search for the thing is real.
+     */
     const appearanceControls = () => {
       return controls().filter((control) => {
         const glyph = control.querySelector('ion-icon') as unknown as {
@@ -1049,22 +952,43 @@ describe('GfDashboardToolbarComponent', () => {
       document.body.classList.remove('theme-dark');
     });
 
-    // The finding, stated as an invariant. The bar carried the control twice: one
-    // copy bound to members that were never defined, so it rendered an empty,
-    // unnamed 40x24 button flush against the working one - two adjacent identical
-    // glyphs, one of them inert.
-    it('offers the appearance control exactly once', () => {
+    // The bar offers no appearance control, in either appearance, and that is the
+    // invariant rather than an omission waiting to be filled.
+    //
+    // The chrome this bar replaces had none - the appearance was reached through
+    // the account settings screen - so a control here would be new surface, not
+    // rescued surface. It would also be the wrong shape for the preference: the
+    // stored `colorScheme` has three states, the third being "follow the operating
+    // system", and a single icon can offer only two of them, so pressing it would
+    // silently discard the system-following state. Choosing the appearance belongs
+    // to the account settings module and applying it to the shell.
+    it('offers no appearance control at all', () => {
       renderWithUser();
 
-      expect(appearanceControls()).toHaveLength(1);
+      expect(appearanceControls()).toEqual([]);
 
       document.body.classList.add('theme-dark');
 
       renderWithUser();
 
-      // Once in each appearance, because the duplicate was distinguishable only by
-      // the glyph it happened to be showing at the time.
-      expect(appearanceControls()).toHaveLength(1);
+      expect(appearanceControls()).toEqual([]);
+    });
+
+    // The absence is asserted at the write as well as at the control, because a
+    // handler with no affordance would still be reachable from a template edit and
+    // would still take the third state away.
+    it('writes no appearance setting of its own', () => {
+      renderWithUser();
+
+      for (const control of controls()) {
+        control.click();
+      }
+
+      expect(
+        dataServiceMock.putUserSetting.mock.calls.filter(([userSetting]) => {
+          return 'colorScheme' in (userSetting as Record<string, unknown>);
+        })
+      ).toEqual([]);
     });
 
     it('names every control it renders', () => {
@@ -1557,19 +1481,29 @@ describe('GfDashboardToolbarComponent', () => {
   });
 
   describe('onSignOut', () => {
+    /**
+     * Signs out the way a viewer does, and lets the release settle.
+     *
+     * Every assertion about the departure has to run AFTER the release settles,
+     * because settling it is what frees the departure - which is the whole of the
+     * fix. The default stand-in completes synchronously, so calling this is enough;
+     * kept as one helper so no test can accidentally assert against the
+     * half-finished state, and so a test that wants to hold the release open
+     * overrides the stand-in instead of reaching past this.
+     */
+    const signOutAndSettleFlush = () => {
+      component.onSignOut();
+    };
+
     it('signs the viewer out and then leaves for the locale root', () => {
       document.documentElement.lang = 'de';
 
-      component.onSignOut();
+      signOutAndSettleFlush();
 
       expect(userServiceMock.signOut).toHaveBeenCalledTimes(1);
       expect(navigationAttempts).toHaveLength(1);
 
-      expect(callOrder).toEqual([
-        'flushPendingSnapshot',
-        'signOut',
-        'navigate'
-      ]);
+      expect(callOrder).toEqual(['releasePendingSave', 'signOut', 'navigate']);
     });
 
     // The finding this addresses: an arrangement change made inside the debounce
@@ -1578,36 +1512,58 @@ describe('GfDashboardToolbarComponent', () => {
     // document that is going away on its own - but signing out is the application's
     // own doing, so it is the one departure that can and must carry the write with
     // it.
-    it('forces the pending arrangement out before anything else happens', () => {
+    it('releases the pending arrangement before anything else happens', () => {
       document.documentElement.lang = 'de';
 
-      component.onSignOut();
+      signOutAndSettleFlush();
 
       expect(
-        dashboardLayoutServiceMock.flushPendingSnapshot
+        dashboardLayoutServiceMock.releasePendingSave
       ).toHaveBeenCalledTimes(1);
 
       // Ordering, not merely presence. After the identity is discarded the write
       // would be issued for nobody, and after the document is left it would never
       // be issued at all.
-      expect(callOrder.indexOf('flushPendingSnapshot')).toBeLessThan(
+      expect(callOrder.indexOf('releasePendingSave')).toBeLessThan(
         callOrder.indexOf('signOut')
       );
-      expect(callOrder.indexOf('flushPendingSnapshot')).toBeLessThan(
+      expect(callOrder.indexOf('releasePendingSave')).toBeLessThan(
         callOrder.indexOf('navigate')
       );
     });
 
-    it('flushes even when the departure itself goes nowhere', () => {
-      // The locale is what the destination is composed from, and an absent one
-      // means no address is assigned at all. The flush must not be conditional on
-      // that: the arrangement is pending either way.
-      document.documentElement.lang = '';
+    // A value emission is not a settlement. `AsyncSubject`-backed completion emits
+    // before it completes, so a departure driven by `next` rather than by `complete`
+    // would leave twice - and the second attempt would run after the credential had
+    // already been discarded.
+    it('departs exactly once however the release settles', () => {
+      const release = new Subject<void>();
+
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        release.asObservable()
+      );
+
+      document.documentElement.lang = 'de';
 
       component.onSignOut();
 
+      release.next();
+      release.complete();
+
+      expect(userServiceMock.signOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(1);
+    });
+
+    it('releases even when the departure itself goes nowhere', () => {
+      // The locale is what the destination is composed from, and an absent one
+      // means no address is assigned at all. The release must not be conditional on
+      // that: the arrangement is pending either way.
+      document.documentElement.lang = '';
+
+      signOutAndSettleFlush();
+
       expect(
-        dashboardLayoutServiceMock.flushPendingSnapshot
+        dashboardLayoutServiceMock.releasePendingSave
       ).toHaveBeenCalledTimes(1);
       expect(navigationAttempts).toHaveLength(0);
     });
@@ -1615,7 +1571,7 @@ describe('GfDashboardToolbarComponent', () => {
     it('targets the document language and nothing else', () => {
       document.documentElement.lang = '';
 
-      component.onSignOut();
+      signOutAndSettleFlush();
 
       expect(userServiceMock.signOut).toHaveBeenCalledTimes(1);
 
@@ -1626,13 +1582,80 @@ describe('GfDashboardToolbarComponent', () => {
     it('leaves the document rather than routing within it', () => {
       document.documentElement.lang = 'de';
 
-      component.onSignOut();
+      signOutAndSettleFlush();
 
       // A full load, deliberately: it discards every in-memory cache belonging
       // to the identity that has just left. Routing within the application would
       // not, which is why the distinction is asserted rather than assumed.
       expect(navigationAttempts).toHaveLength(1);
       expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+
+    // The second half of the same finding. Issuing the flush first is not enough:
+    // an `HttpClient` request is not guaranteed to survive the document being
+    // replaced, so a write merely started before the assignment could still be
+    // abandoned in flight - the same silent loss, moved a few microseconds later.
+    it('waits for the flush to settle before discarding the session', () => {
+      const flush = new Subject<void>();
+
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        flush.asObservable()
+      );
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      // Still here: the write has not answered, so neither the credentials nor
+      // the document have been touched.
+      expect(userServiceMock.signOut).not.toHaveBeenCalled();
+      expect(navigationAttempts).toHaveLength(0);
+
+      flush.complete();
+
+      expect(userServiceMock.signOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(1);
+    });
+
+    it('tells the viewer when the arrangement could not be stored', () => {
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      // Told, not left to guess. Leaving in silence would let the viewer believe
+      // an arrangement they can still see had been saved, and the failure is
+      // reported through the sanitized channel as well so it is diagnosable.
+      expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'GF-DASHBOARD-LAYOUT-SIGN-OUT-FLUSH-FAILED'
+      );
+
+      // Nothing has happened yet: the departure waits on the acknowledgement.
+      expect(userServiceMock.signOut).not.toHaveBeenCalled();
+      expect(navigationAttempts).toHaveLength(0);
+    });
+
+    it('still lets the viewer leave once they acknowledge the failure', () => {
+      dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      notificationServiceMock.alert.mock.calls[0][0].discardFn();
+
+      // A viewer who asks to sign out must always be able to. An arrangement that
+      // cannot be stored - a document this build cannot write, say - would
+      // otherwise hold them in the session indefinitely, which is a worse failure
+      // than the one being reported.
+      expect(userServiceMock.signOut).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(1);
     });
   });
 
