@@ -7,9 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Added a module registry as the single mechanism to register the modules of the dashboard canvas
+- Added a searchable module catalog which supports adding a module by click or by drag and drop, opening automatically when no layout has been saved yet
+- Added a single-canvas modular dashboard at the application root, rendering every feature as a grid module which can be individually positioned and resized
+- Added an _AI_ chat module as a first-class module of the dashboard canvas
+- Added `angular-gridster2` version `21.0.1` as the grid engine of the dashboard canvas
+- Added the ability to remove a module from the dashboard canvas via the module chrome
+- Added the endpoint `GET api/v1/user/layout` to load the dashboard layout of the current user
+- Added the endpoint `PATCH api/v1/user/layout` to save the dashboard layout of the current user
+- Added the `UserDashboardLayout` database model to persist the dashboard layout per user
+
 ### Changed
 
+- Reduced the routes of the client to a single root route rendering the dashboard canvas, keeping `RouterModule.forRoot`, the service worker navigation handling, `PageTitleStrategy` and `ModulePreloadService` in place
+- Replaced the header navigation, the footer and the tab navigation of the pages with the chrome of the dashboard canvas, consisting of a non-navigational toolbar and a card per module
 - Upgraded `prettier` from version `3.8.2` to `3.8.3`
+
+### Removed
+
+- Removed the deep links to the individual screens, since every unmatched url now resolves to the dashboard canvas
+- Removed the public pages: about, blog, features, Frequently Asked Questions (FAQ), landing, _Open Startup_, pricing and resources
+- Removed _Zen Mode_ as a separate navigation mode, while keeping its setting persisted and readable
+
+### Todo
+
+- **Breaking Change**: The share link of a public portfolio changed from `/<language>/p/<accessId>` to `/<language>/?accessId=<accessId>`. Please share the updated links, since previously issued links no longer resolve.
 
 ## 3.0.0 - 2026-04-23
 
