@@ -132,8 +132,21 @@
       @if (resolvedComponent) {
         <ng-container [ngComponentOutlet]="resolvedComponent" />
       } @else if (hasLoadError) {
-        <div class="secondary-text text-center" i18n role="alert">
-          Oops! Something went wrong.
+        <!--
+          Held against its tags inside `<ng-container i18n>` rather than given a
+          line of its own, so that the extracted text is exactly `Oops! Something
+          went wrong.` and reuses the already-translated id this sentence carries
+          in `dashboard-canvas.html` and `ai-chat.module.html`. Angular hashes an
+          i18n message together with the whitespace around it, collapsing a wrapped
+          text node's indentation into a single leading and trailing space, and
+          `role="alert"` pushes this opening tag past the 80-column print width -
+          so leaving the marker on the `div` would let the formatter move the text
+          onto its own line and mint a second, untranslated id for the very same
+          sentence in all twelve locales while its twin stays translated.
+          `ng-container` renders no DOM, so nothing about the layout changes.
+        -->
+        <div class="secondary-text text-center" role="alert">
+          <ng-container i18n>Oops! Something went wrong.</ng-container>
         </div>
       } @else {
         <ngx-skeleton-loader

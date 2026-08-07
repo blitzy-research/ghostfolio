@@ -1,8 +1,31 @@
 <div class="overflow-x-auto">
+  <!--
+    Every header label below sits inside `<ng-container i18n>` instead of the
+    `<th>` carrying `i18n` itself, and that is a translation fix rather than a
+    stylistic preference.
+
+    Angular derives a message id from the message text together with the
+    whitespace surrounding it, and it runs here with `preserveWhitespaces: false`,
+    which collapses a wrapped text node's newline and indentation into a single
+    leading and trailing space - so `Alias` and ` Alias ` hash to two distinct ids.
+    Adding `scope="col"` pushed these `<th>` tags past the 80-column print width,
+    the formatter then moved each label onto a line of its own, and the labels
+    silently lost the twelve community translations keyed to their original ids -
+    the catalogs ended up holding two entries per label, one translated and one
+    not.
+
+    Holding the text hard against an `<ng-container>` short enough never to wrap
+    pins the id however the surrounding attributes grow later on, and the
+    container emits no element, so the rendered table is byte-for-byte what it
+    was. `Alias` and `Permission` end up sharing one id - and one set of
+    translations - with the create-or-update-access dialog that declares the same
+    two labels, which is what the wrapped ids had broken. `admin-jobs.html` marks
+    its own header cells this way for the same reason.
+  -->
   <table class="gf-table w-100" mat-table [dataSource]="dataSource">
     <ng-container matColumnDef="alias">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
-        Alias
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Alias</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
         {{ element.alias }}
@@ -10,8 +33,8 @@
     </ng-container>
 
     <ng-container matColumnDef="grantee">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
-        Grantee
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Grantee</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
         {{ element.grantee }}
@@ -19,8 +42,8 @@
     </ng-container>
 
     <ng-container matColumnDef="type">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
-        Permission
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Permission</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1 text-nowrap" mat-cell>
         <div class="align-items-center d-flex">
@@ -44,8 +67,8 @@
     </ng-container>
 
     <ng-container matColumnDef="details">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
-        Details
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Details</ng-container>
       </th>
       <!--
         Both addresses below are capped and ellipsized rather than rendered in

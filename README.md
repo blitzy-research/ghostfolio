@@ -45,6 +45,7 @@ Ghostfolio is for you if you are...
 
 ## Features
 
+- ✅ Customizable dashboard: add the features you need as modules from a searchable catalog by click or drag and drop, then move and resize them on a single canvas, with your layout saved per user
 - ✅ Create, update and delete transactions
 - ✅ Multi account management
 - ✅ Portfolio performance: Return on Average Investment (ROAI) for `Today`, `WTD`, `MTD`, `YTD`, `1Y`, `5Y`, `Max`
@@ -52,8 +53,8 @@ Ghostfolio is for you if you are...
 - ✅ Static analysis to identify potential risks in your portfolio
 - ✅ Import and export transactions
 - ✅ Dark Mode
-- ✅ Zen Mode
-- ✅ Progressive Web App (PWA) with a mobile-first design
+- ✅ Distraction-free view: place only the modules you want to focus on
+- ✅ Progressive Web App (PWA) designed for the desktop
 
 <div align="center">
 
@@ -71,7 +72,7 @@ The backend is based on [NestJS](https://nestjs.com) using [PostgreSQL](https://
 
 ### Frontend
 
-The frontend is built with [Angular](https://angular.dev) and uses [Angular Material](https://material.angular.io) with utility classes from [Bootstrap](https://getbootstrap.com).
+The frontend is built with [Angular](https://angular.dev) and uses [Angular Material](https://material.angular.io) with utility classes from [Bootstrap](https://getbootstrap.com). The dashboard canvas is served from a single root route, laid out by [angular-gridster2](https://github.com/tiberiuzuld/angular-gridster2) on a 12-column grid with a fixed row height, and its chrome is composed of Angular Material components.
 
 ## Self-hosting
 
@@ -300,6 +301,51 @@ Grant access of type _Public_ in the _Access_ tab of _My Ghostfolio_.
   }
 }
 ```
+
+### Dashboard Layout (experimental)
+
+#### Prerequisites
+
+[Bearer Token](#authorization-bearer-token) for authorization
+
+#### Request
+
+`GET http://localhost:3333/api/v1/user/layout` to load the dashboard layout of the current user
+
+`PATCH http://localhost:3333/api/v1/user/layout` to save the dashboard layout of the current user
+
+**Info:** Both endpoints are protected by the _JSON Web Token_ (JWT) authentication of the application and are not accessible anonymously
+
+#### Body
+
+Required for `PATCH` only. Each module is placed via `x` and `y` and sized via `cols` and `rows`, expressed in cells of the 12-column grid.
+
+```
+{
+  "modules": [
+    {
+      "cols": 6,
+      "moduleType": "portfolio-overview",
+      "rows": 4,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "version": 1
+}
+```
+
+#### Response
+
+##### Success
+
+`200 OK`
+
+Both endpoints respond with the layout document shown above. `GET` responds with `null` if the current user has not saved a layout yet.
+
+##### Error
+
+`401 Unauthorized`
 
 ## Community Projects
 

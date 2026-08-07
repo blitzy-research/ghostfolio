@@ -92,12 +92,19 @@
             -->
             <button
               class="mt-3"
-              i18n
               mat-stroked-button
               type="button"
               (click)="onManageActivities()"
             >
-              Manage Activities
+              <!--
+                The `i18n` marker hugs the label on an inner `ng-container`: this
+                tag carries too many attributes to keep its content inline, and
+                Angular folds the surrounding whitespace of a marked element into
+                the message it hashes into an id. Hugging the label keeps the id
+                the anchor this button replaced already had, and with it the
+                twelve existing translations.
+              -->
+              <ng-container i18n>Manage Activities</ng-container>
             </button>
           </div>
         }

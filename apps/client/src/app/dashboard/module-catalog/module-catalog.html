@@ -96,8 +96,17 @@
     region rather than leaving it standing empty also keeps `role="list"` from
     existing with no row to own it, and the notice is announced politely because
     the list it replaces changes without moving focus.
+
+    The notice sits inside `<ng-container i18n>` so that its message id stays
+    tied to the text alone: Angular hashes the surrounding whitespace along with
+    it, so the same words spread over three lines are a different message from
+    the same words held against their tags, and only the latter shares an id
+    with - and therefore the twelve translations of - the identical notice the
+    assistant already shows. Leaving the marker on the `div` would guarantee that
+    break, because `role="status"` pushes the opening tag past the 80-column print
+    width and the formatter then moves the text onto a line of its own.
   -->
-  <div class="flex-grow-1 no-results px-3 py-2" i18n role="status">
-    No results found...
+  <div class="flex-grow-1 no-results px-3 py-2" role="status">
+    <ng-container i18n>No results found...</ng-container>
   </div>
 }
