@@ -47,17 +47,51 @@
       <th *matHeaderCellDef class="px-1" i18n mat-header-cell scope="col">
         Details
       </th>
+      <!--
+        Both addresses below are capped and ellipsized rather than rendered in
+        full, and that is a sizing fix rather than a cosmetic one.
+
+        This cell holds an unbreakable 70-character URL and the row forbids
+        wrapping, so its own text set the table's MINIMUM width: the column
+        measured 536px of a 858px table, and because a nowrap cell cannot give
+        any of that back, the figure was identical at every viewport from 375px
+        to 1748px. On this component's former full-width page that never showed.
+        Inside a dashboard module a few hundred pixels wide it pushed the
+        trailing actions column - the per-grant edit and revoke menu - clean off
+        the visible area at every ordinary desktop width, reachable only by
+        discovering a horizontal scroll.
+
+        Capping the two addresses is what lowers that floor, and nothing is lost
+        by it: the anchor still carries the complete address as its `href`, the
+        `title` reveals it on hover and to assistive technology, and the actions
+        menu beside it already offers "Copy link to clipboard" for the case where
+        the viewer actually needs the characters. The cap is on the inline boxes
+        rather than on the cell, because CSS leaves the effect of `max-width` on
+        a table cell explicitly undefined.
+      -->
       <td *matCellDef="let element" class="px-1 text-nowrap" mat-cell>
         @if (element.type === 'PUBLIC') {
           <div class="align-items-center d-flex">
             <ion-icon aria-hidden="true" class="mr-1" name="link-outline" />
-            <a target="_blank" [href]="getPublicUrl(element.id)">{{
-              getPublicUrl(element.id)
-            }}</a>
+            <a
+              class="gf-access-detail-value"
+              target="_blank"
+              [href]="getPublicUrl(element.id)"
+              [title]="getPublicUrl(element.id)"
+              >{{ getPublicUrl(element.id) }}</a
+            >
           </div>
           @if (user()?.settings?.isExperimentalFeatures) {
             <div>
               <code
+                class="gf-access-detail-value"
+                [title]="
+                  'GET ' +
+                  baseUrl +
+                  '/api/v1/public/' +
+                  element.id +
+                  '/portfolio'
+                "
                 >GET {{ baseUrl }}/api/v1/public/{{
                   element.id
                 }}/portfolio</code

@@ -977,6 +977,147 @@ describe('GfDashboardLayoutService', () => {
   });
 
   /**
+   * A departure the application itself performs.
+   *
+   * Destroying this service is not the only way an arrangement can be stranded
+   * inside the debounce window. Signing out replaces the whole document, and it
+   * does so on the application's own initiative rather than the browser's - so
+   * unlike a closed tab it CAN carry the pending write out with it, and therefore
+   * must. That makes the same flush reachable from outside the lifecycle hook,
+   * which is the whole of the change these tests cover.
+   */
+  describe('a flush asked for before leaving the document', () => {
+    it('issues a still-debounced snapshot on request', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 9 })]);
+
+      jest.advanceTimersByTime(200);
+
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+
+      service.flushPendingSnapshot();
+
+      // Same projection, same facade, same version - a shortcut through the timer
+      // rather than a second way of building a request, which is what keeps the
+      // single write origin single.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(Object.keys(readPatchedDto(0).modules[0]).sort()).toEqual(
+        wireFields
+      );
+      expect(readPatchedDto(0).modules[0].cols).toBe(9);
+      expect(readPatchedDto(0).version).toBe(1);
+    });
+
+    it('issues nothing when no arrangement is pending', () => {
+      service.flushPendingSnapshot();
+
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('issues nothing when the debounced save already went out', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      service.flushPendingSnapshot();
+
+      // Idempotent, because the caller cannot know whether the window had already
+      // elapsed - and a second write of the same arrangement would be a wasted
+      // request rather than a wrong one, which is not a reason to allow it.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+
+    it('issues once however many times it is asked', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.flushPendingSnapshot();
+      service.flushPendingSnapshot();
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the debounce it short-circuited with nothing to send', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.flushPendingSnapshot();
+
+      // The timer is still running - the flush jumps the queue, it does not cancel
+      // it - so the window has to elapse here and produce nothing. In the browser
+      // the document is usually gone before it fires, but "usually" is not a
+      // guarantee, and a duplicate write of an arrangement nobody changed would be
+      // the visible cost.
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves nothing for the teardown to flush again', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.flushPendingSnapshot();
+      service.ngOnDestroy();
+
+      // The two paths share one pending snapshot, so signing out and then being
+      // torn down - which is exactly what happens - must not write twice.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+
+    it('contains a failure rather than raising it at the caller', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => new Error('flush failed'))
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      // The caller is about to leave the document; an error thrown back at it
+      // would abandon the sign-out itself, which is far worse than a lost
+      // arrangement.
+      expect(() => service.flushPendingSnapshot()).not.toThrow();
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('refuses a snapshot belonging to an identity that has since left', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(200);
+
+      service.beginIdentityTransition();
+
+      service.flushPendingSnapshot();
+
+      // The identity guard is not bypassed by taking the shortcut. Signing out
+      // begins exactly such a transition, so a flush that ignored it would write
+      // the departing viewer's arrangement with whatever token had replaced theirs.
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
    * The identity boundary.
    *
    * A layout write is authorised by whichever bearer token is in storage when the

@@ -83,6 +83,7 @@
   .gf-dashboard-module-drag-handle {
     background: transparent;
     border: 0;
+    border-radius: var(--mat-sys-corner-small, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     cursor: move;
     display: inline-flex;
@@ -90,6 +91,39 @@
 
     ion-icon {
       font-size: var(--mat-sys-title-medium-size, 1rem);
+    }
+
+    // Pointer feedback on the ONLY element that can move a module.
+    //
+    // Its absence was not a missing flourish. This handle is the single entry
+    // point for dragging - the grid matches its class and `ignoreContent` keeps
+    // every other press inside the module inert - yet hovering it changed nothing
+    // measurable at all: tone, background, opacity, transform, shadow, radius and
+    // the glyph itself were identical before and after, so a hovered handle was
+    // pixel-indistinguishable from an untouched one. Every sibling control this
+    // refactor introduced already answers a pointer, which made this handle the
+    // odd one out rather than a consistent choice.
+    //
+    // The treatment is deliberately the catalog row's, not a new invention: a
+    // filled surface one step above the card plus a stronger tone, from the same
+    // two tokens with the same repository-traceable fallbacks. So the two
+    // grab-to-move affordances on the canvas answer a pointer the same way, and a
+    // theme change moves both together.
+    //
+    // `cursor: move` above is retained rather than replaced. It is what the
+    // gesture actually is, it is already correct, and it is the one part of the
+    // affordance that never depended on this rule.
+    &:hover {
+      background-color: var(--mat-sys-surface-container-high, #f5f5f5);
+      color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    }
+
+    // Held, not merely hovered. Separating the two is what tells a viewer the
+    // press registered before the module has moved anywhere, which matters most
+    // for a drag that is about to be refused.
+    &:active {
+      background-color: var(--mat-sys-surface-container-highest, #e0e0e0);
+      color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     }
 
     &:focus-visible {
@@ -415,6 +449,22 @@
   // the fallback differs and the fallback is what paints.
   .gf-dashboard-module-drag-handle {
     color: var(--mat-sys-on-surface, #ffffff);
+
+    // Restated for the same reason, and it is not optional here: the light
+    // fallbacks are a near-white fill and a near-black ink, which on a dark card
+    // would draw a bright block under the pointer and then hide the glyph inside
+    // it - a worse outcome than having no hover state at all. Each dark state
+    // takes the value that is correct against its own surface, exactly as the
+    // catalog row's dark states do.
+    &:hover {
+      background-color: var(--mat-sys-surface-container-high, #2f2f2f);
+      color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+    }
+
+    &:active {
+      background-color: var(--mat-sys-surface-container-highest, #3a3a3a);
+      color: var(--mat-sys-on-surface, #ffffff);
+    }
 
     &:focus-visible {
       outline-color: var(--mat-sys-on-surface, #ffffff);

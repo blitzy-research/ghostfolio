@@ -1,13 +1,16 @@
 import { GfPublicPortfolioComponent } from '@ghostfolio/client/components/public-portfolio/public-portfolio.component';
 import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
+import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import {
   DashboardModuleLayoutItem,
   User,
   UserDashboardLayout
 } from '@ghostfolio/common/interfaces';
 import { hasPermission } from '@ghostfolio/common/permissions';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 
 import { HttpErrorResponse } from '@angular/common/http';
 import {
@@ -16,8 +19,12 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
+  ElementRef,
   OnDestroy,
-  OnInit
+  OnInit,
+  QueryList,
+  ViewChild,
+  ViewChildren
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
@@ -44,6 +51,8 @@ import { GfModuleRegistryService } from '../module-registry.service';
 import { GfDashboardLayoutService } from '../services/dashboard-layout.service';
 import {
   createDashboardCanvasConfig,
+  DEFAULT_DROP_PREVIEW_COLS,
+  DEFAULT_DROP_PREVIEW_ROWS,
   GRID_COLUMNS,
   GRID_ROWS
 } from './dashboard-canvas.config';
@@ -148,6 +157,33 @@ const SUPPORTED_LAYOUT_VERSION = 1;
   templateUrl: './dashboard-canvas.html'
 })
 export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
+  /**
+   * Every module chrome currently drawn on the canvas.
+   *
+   * Queried rather than tracked, so it is the grid's own rendering that decides
+   * what is on screen rather than a second list this component would have to keep
+   * in step. It is used for two things and nothing else: refreshing every mounted
+   * module in place, and moving keyboard focus to a surviving neighbour after one
+   * is removed. Neither reads or writes a coordinate or a size.
+   */
+  @ViewChildren(GfDashboardModuleHostComponent)
+  public moduleHosts: QueryList<GfDashboardModuleHostComponent>;
+
+  /**
+   * The floating catalog trigger, held as the last resort for focus after a
+   * removal.
+   *
+   * Optional by construction: it is not drawn for a shared portfolio, for a signed
+   * out viewer or for an arrangement that failed to read, and none of those states
+   * can produce a removal anyway.
+   *
+   * Read as an `ElementRef` explicitly. The reference names a Material button, so
+   * the default read would hand back that component instance - which has no
+   * `focus()` of the kind wanted here - rather than the element focus is placed on.
+   */
+  @ViewChild('catalogTrigger', { read: ElementRef })
+  private catalogTrigger: ElementRef<HTMLElement>;
+
   /**
    * Whether the grid engine has just refused to place a module because the
    * arrangement has no room left for it.
@@ -293,7 +329,29 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    */
   private gridsterResizeObserver: ResizeObserver | null = null;
 
+  /**
+   * The pending focus restoration after a removal, held only so it can be
+   * cancelled.
+   *
+   * A task rather than an inline call for the reasons set out on
+   * {@link restoreFocusAfterRemoval}, and cancellable because it reaches into the
+   * view: a component torn down inside that one task would otherwise be asked to
+   * focus chrome that no longer exists.
+   */
+  private focusRestorationHandle: number | undefined;
+
   private hasHydratedLayout = false;
+
+  /**
+   * Raised only while a runaway placement is being corrected.
+   *
+   * The correction travels through the grid engine, which reports it back through
+   * the same handler that requested it. Without this the handler would inspect the
+   * corrected arrangement and consider correcting it again; with it, the inner pass
+   * simply records and schedules what the outer pass asked for. See
+   * {@link clampRunawayPlacement}.
+   */
+  private isClampingPlacement = false;
 
   /**
    * The viewer's arrangement in full, including the modules that are not on the
@@ -393,7 +451,12 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     private dashboardIntentService: DashboardIntentService,
     private dashboardLayoutService: GfDashboardLayoutService,
     private destroyRef: DestroyRef,
+    // The shell-wide "reload the content" bus, consumed here so that the control
+    // which asks for it refreshes whatever the viewer has placed rather than the
+    // one feature component that happened to subscribe to it directly.
+    private layoutService: LayoutService,
     private moduleRegistryService: GfModuleRegistryService,
+    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
@@ -429,6 +492,25 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((moduleType) => {
         this.revealOrPlaceModule(moduleType);
+      });
+
+    // A refresh of the whole dashboard, delivered by re-mounting what is placed.
+    //
+    // The bus itself predates the canvas and had exactly one subscriber - inside a
+    // single feature component - so the control that asks for a refresh did nothing
+    // whatsoever unless the viewer happened to have that one module on their
+    // canvas. Answering it here makes the refresh a property of the arrangement
+    // instead: every mounted module is re-created, so every module re-reads what it
+    // draws from, and no module has to know the control exists.
+    //
+    // Deliberately NOT a layout concern. No cell is moved, resized, added or
+    // removed, so no grid callback fires and no write is reported - which is
+    // exactly right, because refreshing content is not a change to the
+    // arrangement.
+    this.layoutService.shouldReloadContent$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.reloadPlacedModules();
       });
 
     // An identity change that begins somewhere other than here - the shell
@@ -497,6 +579,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     // the next reflow.
     this.gridsterResizeObserver?.disconnect();
     this.gridsterResizeObserver = null;
+
+    // A removal in this component's final moments leaves a task queued that would
+    // reach into a view that no longer exists.
+    window.clearTimeout(this.focusRestorationHandle);
+    this.focusRestorationHandle = undefined;
   }
 
   public ngOnInit() {
@@ -571,11 +658,123 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
+   * Returns the grid's drop indicator to the engine's own default footprint.
+   *
+   * Restoring it is not tidiness. The engine reads the default once per hovered
+   * cell, so an override left behind would size the NEXT module's indicator from
+   * the module dragged before it - and a drag that is cancelled or released
+   * outside the grid is the common case, which is exactly why the catalog raises
+   * its end event unconditionally.
+   */
+  public onCatalogDragEnd() {
+    this.applyDropPreviewFootprint(
+      DEFAULT_DROP_PREVIEW_COLS,
+      DEFAULT_DROP_PREVIEW_ROWS
+    );
+  }
+
+  /**
+   * Sizes the grid's drop indicator from the dragged module's own registered
+   * footprint, for as long as that drag lasts.
+   *
+   * The engine draws its indicator from exactly one place: while a drag hovers a
+   * free cell it mints a candidate as `{ x, y, cols: defaultItemCols, rows:
+   * defaultItemRows }` and previews that. Those two members are grid-wide, so
+   * every module was previewed at 4x4 while the item the canvas actually appends
+   * on drop carries the registry's own footprint - which for most modules is
+   * wider. The viewer was shown one shape and given another. Only the indicator
+   * was ever wrong; placement has always been correct.
+   *
+   * The override is applied by REPLACING the configuration object rather than
+   * mutating it, and that is a requirement rather than a style choice: the engine
+   * exposes its configuration as a required signal input and derives its effective
+   * options through a `computed` over it, so a new object identity is what makes
+   * that derivation re-run. Writing into the existing object changes nothing the
+   * engine will ever read again. The current object is spread into the new one so
+   * that the runtime bookkeeping the engine writes onto it survives the swap.
+   *
+   * Silent for a module type the registry does not know - the same treatment a
+   * stale persisted entry gets - because there is no footprint to preview and the
+   * engine's default is then the honest answer.
+   *
+   * @param aModuleType the module whose row is being dragged.
+   */
+  public onCatalogDragStart(aModuleType: DashboardModuleType) {
+    const definition = this.moduleRegistryService.get(aModuleType);
+
+    if (!definition) {
+      return;
+    }
+
+    this.applyDropPreviewFootprint(
+      definition.defaultItemCols,
+      definition.defaultItemRows
+    );
+  }
+
+  /**
    * Keeps the open flag in step with a drawer that closed itself - on Escape,
    * for instance - so the trigger never claims the catalog is still open.
    */
   public onCatalogOpenedChange(aIsOpened: boolean) {
     this.setCatalogOpen(aIsOpened);
+  }
+
+  /**
+   * Abandons a saved arrangement that cannot be read, and starts an empty one.
+   *
+   * The escape from the failed-read state, and the reason it has to exist: a
+   * stored document this build cannot interpret makes every read fail
+   * deterministically, so asking again can only ever fail again. Without this the
+   * only affordances left are a retry that cannot succeed and signing out, which
+   * returns to the same row - a viewer with an unreadable arrangement had no way
+   * back to a usable dashboard from inside the application at all.
+   *
+   * Destructive, so it is confirmed first, through the same warning dialog the
+   * application already uses for closing an account and for removing a sign-in
+   * method. The wording names the consequence rather than the mechanism, because
+   * what the viewer loses is the arrangement, not a row.
+   *
+   * The write is reported through {@link notifyLayoutChange} - the single handler
+   * all four grid callbacks feed - rather than by calling the layout service or
+   * the data façade directly. So this adds a TRIGGER into the existing funnel and
+   * not a second write origin: the debounce, the projection, the identity check
+   * and the one and only `patchUserDashboardLayout` call site are all unchanged,
+   * and no module can reach any of it. Clearing `lastReportedLayout` first is what
+   * makes the emptied arrangement count as a change; without it the fingerprint of
+   * an empty canvas could match what was last reported and the write would be
+   * skipped.
+   *
+   * The failed-read flag is lowered before the report, not after, because
+   * `notifyLayoutChange` refuses outright while it is up - that refusal is what
+   * protects an unread arrangement from being overwritten by an accidental edit,
+   * and this is the one operation that is meant to overwrite it deliberately.
+   */
+  public onDiscardLayout() {
+    this.notificationService.confirm({
+      confirmFn: () => {
+        this.modules.length = 0;
+        this.canonicalModules = [];
+        this.lastReportedLayout = null;
+
+        this.hasCapacityError = false;
+        this.hasLayoutError = false;
+        this.isInitialized = true;
+
+        // Same rule as everywhere else an arrangement ends up empty: the catalog
+        // is the way forward, so it comes to the viewer rather than leaving them
+        // on a blank canvas with one floating button.
+        this.isCatalogOpen = true;
+
+        this.canvasAnnouncement = $localize`The saved dashboard was discarded. Add a module to start a new one.`;
+
+        this.changeDetectorRef.markForCheck();
+
+        this.notifyLayoutChange();
+      },
+      confirmType: ConfirmationDialogType.Warn,
+      title: $localize`Do you really want to discard your saved dashboard and start over?`
+    });
   }
 
   public onOpenCatalog() {
@@ -668,8 +867,14 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       return;
     }
 
-    const name =
-      this.getModuleDefinition(aItem.moduleType)?.name ?? aItem.moduleType;
+    const definition = this.getModuleDefinition(aItem.moduleType);
+    const name = definition?.name ?? aItem.moduleType;
+
+    // Resolved BEFORE the array is touched, while the removed module's chrome is
+    // still in the query and its neighbours are still either side of it. After the
+    // splice the query is re-projected and every index past this one shifts, so
+    // the same lookup would then name a different module.
+    const focusTarget = this.resolveFocusTargetAfterRemoval(definition);
 
     this.modules.splice(index, 1);
 
@@ -690,6 +895,8 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     }
 
     this.changeDetectorRef.markForCheck();
+
+    this.restoreFocusAfterRemoval(focusTarget);
   }
 
   /**
@@ -781,6 +988,36 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     if (this.hasPermissionsChanged(previousPermissions, aUser?.permissions)) {
       this.applyPermittedModules();
     }
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Re-issues the grid configuration with a different drop-indicator footprint.
+   *
+   * A NEW object, spread from the current one, and both halves are deliberate.
+   * The engine takes its configuration as a required signal input and derives the
+   * options it actually reads through a `computed` over that input, so identity is
+   * what invalidates the derivation - mutating the object in place changes nothing
+   * the engine will consult again. Spreading the current object forward is what
+   * preserves the runtime bookkeeping the engine writes onto the configuration it
+   * was handed, which a freshly built configuration would discard.
+   *
+   * This is presentation only, and it touches no arrangement. No item is created,
+   * moved, resized or removed, so none of the four persistence callbacks fires and
+   * nothing is written; the two members changed are read solely for the engine's
+   * own preview, because every item this canvas mints carries an explicit `cols`
+   * and `rows` of its own.
+   *
+   * @param aCols column span the indicator should describe.
+   * @param aRows row span the indicator should describe.
+   */
+  private applyDropPreviewFootprint(aCols: number, aRows: number) {
+    this.options = {
+      ...this.options,
+      defaultItemCols: aCols,
+      defaultItemRows: aRows
+    };
 
     this.changeDetectorRef.markForCheck();
   }
@@ -1010,6 +1247,123 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
+   * Pulls back a module the grid engine has just committed absurdly far down the
+   * canvas, and reports whether it did.
+   *
+   * ## What this defends against
+   *
+   * Holding a dragged module against the bottom of the scrolling region starts the
+   * engine's auto-scroll, which then repeats for as long as the pointer is held and
+   * is bounded only by the grid's own scroll extent - `maxRows` rows deep. A hold
+   * of a couple of seconds is enough to carry a module past row ninety. The engine
+   * commits that as an ordinary drag result, and this canvas, which persists
+   * exactly what the engine commits, would faithfully store a module ninety rows
+   * below everything else: still present, still permitted, and effectively
+   * unreachable.
+   *
+   * The runaway itself is the library's behaviour and not this component's to fix.
+   * What *is* this component's is the commit: a placement no interaction could
+   * have deliberately expressed does not get to become the saved arrangement.
+   *
+   * ## Why not the engine's own boundary control
+   *
+   * `enableBoundaryControl` looks like the obvious answer and is not. It filters
+   * every drag position against the grid's outer edge and, in doing so, suppresses
+   * the auto-scroll path entirely - which also removes legitimate downward
+   * dragging on a canvas taller than its viewport. The guard here leaves dragging
+   * exactly as it is and only vets the result.
+   *
+   * ## The bound
+   *
+   * One viewport of rows below the deepest point every *other* module reaches. That
+   * is deliberately generous: it permits deliberately placing a module a whole
+   * screen clear of the arrangement, which a pointer drag can genuinely express,
+   * while a runaway overshoots it by an order of magnitude.
+   *
+   * It is additionally never allowed to pull a module *above* where it already sat.
+   * A saved arrangement may legitimately be sparse - or may predate this guard -
+   * and a module resting deep in one is not this method's business. Without that
+   * floor, editing any module would silently drag every deep neighbour upwards, and
+   * an unrequested rearrangement of somebody's dashboard is a worse defect than the
+   * one being fixed. `canonicalModules` is the right source for it because it still
+   * holds the *previously reported* arrangement at this point in the pass; it is
+   * refreshed afterwards.
+   *
+   * A bound computed from a grid that has not been measured is meaningless, so an
+   * unmeasured grid is left alone rather than guessed at.
+   *
+   * ## How the correction is applied
+   *
+   * Through {@link applyGeometryStep}, which is the same path a keyboard step
+   * takes: the engine is asked to accept the new cell, judges it with its own
+   * collision check, and on acceptance reports it through `itemChangeCallback` -
+   * `notifyLayoutChange`, the one write origin Rule 4 permits. No second write
+   * origin is created here, and nothing is validated twice.
+   *
+   * That report re-enters the method this one is called from, which is what the
+   * re-entrancy flag is for: the inner pass sees the corrected arrangement, records
+   * it and schedules the write, and the outer pass then has nothing left to say -
+   * which is what the return value tells it. The correction cannot collide, because
+   * the bound lies a full viewport below everything else; the floor case can, if a
+   * neighbour has swapped into the cell during the very drag being corrected, and a
+   * refusal there is reported as such so the caller persists what the engine
+   * actually holds rather than leaving the stored arrangement disagreeing with the
+   * canvas.
+   *
+   * One module is corrected per pass, which is all that is ever needed: a runaway
+   * is produced by a drag, and only one module can be dragged at a time.
+   */
+  private clampRunawayPlacement(): boolean {
+    if (this.isClampingPlacement || !this.gridster) {
+      return false;
+    }
+
+    const { curHeight, curRowHeight } = this.gridster;
+
+    if (!(curHeight > 0) || !(curRowHeight > 0)) {
+      return false;
+    }
+
+    const viewportRows = Math.max(1, Math.floor(curHeight / curRowHeight));
+
+    for (const item of this.modules) {
+      const extentOfOthers = this.modules.reduce(
+        (extent, other) =>
+          other === item ? extent : Math.max(extent, other.y + other.rows),
+        0
+      );
+      const reportedY = this.canonicalModules.find(
+        ({ moduleType }) => moduleType === item.moduleType
+      )?.y;
+      const deepestReachableY = Math.max(
+        extentOfOthers + viewportRows,
+        reportedY ?? 0
+      );
+
+      if (item.y <= deepestReachableY) {
+        continue;
+      }
+
+      this.isClampingPlacement = true;
+
+      try {
+        this.applyGeometryStep(item, {
+          cols: item.cols,
+          rows: item.rows,
+          x: item.x,
+          y: deepestReachableY
+        });
+      } finally {
+        this.isClampingPlacement = false;
+      }
+
+      return item.y === deepestReachableY;
+    }
+
+    return false;
+  }
+
+  /**
    * Removes a spent `jwt` from the address bar.
    *
    * The token itself was already adopted by the route guard, which owns that
@@ -1029,11 +1383,23 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * marking the redirect that produced this URL `no-store` and `no-referrer`;
    * neither half removes the token from a server access log that records
    * request targets, which only moving the hand-off out of the URL would.
+   *
+   * The guard is on the parameter being THERE, not on it carrying anything. Keyed
+   * on truthiness instead, `?jwt=` survived: an empty value is falsy, so the method
+   * returned having decided there was nothing to remove, while the address bar
+   * still advertised a token parameter. That is a straightforward contradiction of
+   * the contract stated above - which is that a spent `jwt` is always removed - and
+   * it leaves a URL that reads as though a hand-off were in progress when none is.
+   * Presence is also the only question worth asking, because the value is not this
+   * method's business: whatever it held has already been dealt with by the guard,
+   * so an empty one and a spent one are the same case.
+   *
+   * Absence still short-circuits, and that matters: every ordinary visit to the
+   * root route reaches this method, and navigating unconditionally would replace
+   * the history entry of a URL that never carried a token.
    */
   private clearJwtQueryParam() {
-    const { jwt }: GfAppQueryParams = this.route.snapshot.queryParams;
-
-    if (!jwt) {
+    if (!('jwt' in this.route.snapshot.queryParams)) {
       return;
     }
 
@@ -1602,6 +1968,17 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     this.lastReportedLayout = fingerprint;
 
+    // Vetted before anything is recorded or scheduled. A held drag can leave the
+    // engine's auto-scroll to carry a module tens of rows past the arrangement,
+    // and the engine commits that like any other drag; persisting it would store
+    // a module nobody can reach. A correction is pushed back through the engine
+    // and reported through this very method, so when one happens the pass that
+    // reported the runaway steps aside and lets the corrected pass have the last
+    // word - which is what the return value says.
+    if (this.clampRunawayPlacement()) {
+      return;
+    }
+
     // Refreshed here, and only here, so the arrangement that gets persisted is
     // always the current one. Holding the *fetched* document instead left it
     // stale from the first edit onwards, which mattered twice over: the snapshot
@@ -1867,6 +2244,24 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
+   * Re-mounts every module currently on the canvas, so each re-reads its own data.
+   *
+   * Delegated to the chrome that owns the mounting rather than done here: the host
+   * is the only thing that holds a resolved component, and re-creating it is how a
+   * module is made to fetch again without this component knowing what any module
+   * fetches. The arrangement is untouched - no cell is moved, resized, added or
+   * removed - so no grid callback fires and nothing is written.
+   *
+   * Silent when nothing is placed, which is correct rather than a guard against a
+   * crash: there is nothing to refresh, and the request is not an error.
+   */
+  private reloadPlacedModules() {
+    this.moduleHosts?.forEach((host) => {
+      host.reload();
+    });
+  }
+
+  /**
    * Returns the canvas to its pre-load state because a different viewer has
    * arrived.
    *
@@ -1974,6 +2369,91 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
           }
         }
       });
+  }
+
+  /**
+   * Moves keyboard focus onto the neighbour chosen before the removal, once the
+   * canvas has actually redrawn without the removed module.
+   *
+   * Deferred to a task rather than run inline, and the delay is doing real work in
+   * two directions. The removal is requested from a menu item, and the menu's own
+   * trigger - which lives inside the module about to disappear - is re-focused
+   * synchronously as the menu closes, right after this handler returns. And the
+   * module is still on screen at that point: the array has been spliced but the
+   * view has only been marked, so the cell is not gone until the next change
+   * detection pass takes it. Focusing now would therefore be overwritten by the
+   * menu a moment later, and then dropped to the document body when the element
+   * holding it was removed - which is exactly the reported defect. A task runs
+   * after both, so this is the last word on where focus sits.
+   *
+   * The target is not re-derived here on purpose: it was captured while the
+   * removed module was still in the query, and the element it names stays in the
+   * document throughout, so nothing about it goes stale.
+   *
+   * Every candidate reports whether focus landed, and the next one is tried when
+   * it did not, because `focus()` on a detached or hidden element is a silent
+   * no-op. The final fallback is the catalog trigger, which survives an emptied
+   * canvas when no module handle does.
+   */
+  private restoreFocusAfterRemoval(
+    aTarget: GfDashboardModuleHostComponent | null
+  ) {
+    // Cleared on teardown so a removal in the last moments of this component's
+    // life cannot reach into a destroyed view.
+    window.clearTimeout(this.focusRestorationHandle);
+
+    this.focusRestorationHandle = window.setTimeout(() => {
+      this.focusRestorationHandle = undefined;
+
+      if (aTarget?.focusDragHandle()) {
+        return;
+      }
+
+      this.catalogTrigger?.nativeElement.focus();
+    });
+  }
+
+  /**
+   * Chooses where keyboard focus should go once a module is removed.
+   *
+   * The next module in reading order, failing that the previous one, and failing
+   * both of those nothing - which leaves the caller with the catalog trigger. The
+   * next one first because that is where the eye already is: the modules after the
+   * removed one shift up into the space it leaves, so the module that takes its
+   * place is the one now under the cursor's former position.
+   *
+   * Located through the rendered chrome rather than through the placement array,
+   * because the two are not the same list. A module whose type the registry no
+   * longer knows, or whose permission the viewer no longer holds, keeps its saved
+   * placement and is deliberately not drawn - so an index into the array can name
+   * a module with no element to focus. The query only ever holds chrome that
+   * exists.
+   *
+   * Definitions are compared by reference, which is sound because the registry
+   * hands back one object per module type and the chrome is bound to that very
+   * object.
+   */
+  private resolveFocusTargetAfterRemoval(
+    aDefinition: DashboardModuleDefinition | undefined
+  ): GfDashboardModuleHostComponent | null {
+    const hosts = this.moduleHosts?.toArray() ?? [];
+
+    if (hosts.length <= 1) {
+      return null;
+    }
+
+    const index = aDefinition
+      ? hosts.findIndex(({ definition }) => definition === aDefinition)
+      : -1;
+
+    if (index === -1) {
+      // The removed module had no chrome of its own, so there is no "next" to
+      // speak of. The first drawn module is as good an anchor as any, and is
+      // certainly better than the document body.
+      return hosts[0] ?? null;
+    }
+
+    return hosts[index + 1] ?? hosts[index - 1] ?? null;
   }
 
   /**

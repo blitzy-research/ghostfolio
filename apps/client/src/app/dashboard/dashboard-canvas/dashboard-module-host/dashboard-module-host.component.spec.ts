@@ -294,6 +294,96 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(loadComponent).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * The refresh the control bar asks for, delivered where it can actually be
+   * delivered.
+   *
+   * Every module fetches on construction, so re-creating the mounted component is
+   * what makes a module re-read its data - and it is the only mechanism that works
+   * for ALL modules rather than for the one that happens to subscribe to a bus.
+   */
+  describe('reloading the mounted module', () => {
+    it('should resolve the module again and repaint it', async () => {
+      const loadComponent = jest.fn(() => {
+        return Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent);
+      });
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(loadComponent)
+      );
+
+      await settle();
+
+      expect(loadComponent).toHaveBeenCalledTimes(1);
+      expect(query('.gf-first-test-module-body')).toBeTruthy();
+
+      component.reload();
+
+      // The mounted component is gone the instant the reload is asked for, which
+      // is what makes the module genuinely re-created rather than merely re-bound:
+      // the outlet has to observe the absence, or it would see an unchanged type
+      // and keep the instance it already had.
+      expect(query('.gf-first-test-module-body')).toBeNull();
+
+      await settle();
+
+      expect(loadComponent).toHaveBeenCalledTimes(2);
+      expect(query('.gf-first-test-module-body')).toBeTruthy();
+    });
+
+    it('should mount a brand-new instance rather than reuse the previous one', async () => {
+      await bindResolvingDefinition();
+
+      const before = query('.gf-first-test-module-body');
+
+      component.reload();
+
+      await settle();
+
+      const after = query('.gf-first-test-module-body');
+
+      // Identity, not presence. A module that re-reads its data has to have been
+      // constructed again, and only a different element proves that.
+      expect(before).toBeTruthy();
+      expect(after).toBeTruthy();
+      expect(after).not.toBe(before);
+    });
+
+    it('should clear a previous load failure so a refresh can recover from it', async () => {
+      const loadComponent = jest
+        .fn<Promise<Type<unknown>>, []>()
+        .mockRejectedValueOnce(new Error('chunk unavailable'))
+        .mockResolvedValueOnce(GfFirstTestModuleComponent);
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(loadComponent)
+      );
+
+      await settle();
+
+      expect(component.hasLoadError).toBe(true);
+
+      component.reload();
+
+      await settle();
+
+      expect(component.hasLoadError).toBe(false);
+      expect(query('.gf-first-test-module-body')).toBeTruthy();
+    });
+
+    it('should do nothing at all when no module is bound', () => {
+      component.reload();
+
+      // Nothing to refresh is not a failure, so the host must not enter its error
+      // state over it - that state means a module was asked for and could not be
+      // produced.
+      expect(component.hasLoadError).toBe(false);
+      expect(component.resolvedComponent).toBeUndefined();
+    });
+  });
+
   it('should not reload when the same definition is bound again', async () => {
     const loadComponent = jest.fn(() => {
       return Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent);
@@ -410,6 +500,91 @@ describe('GfDashboardModuleHostComponent', () => {
         'aria-hidden'
       )
     ).toBe('true');
+  });
+
+  /**
+   * The chrome's half of the focus contract the canvas relies on after a removal.
+   *
+   * Removing a module destroys the control the removal was asked for from, so
+   * something has to catch focus or a keyboard-only viewer is dropped onto the
+   * document body. The canvas decides which module catches it; this component
+   * decides where within that module focus goes, and answers honestly when it
+   * cannot take it - which is what lets the canvas try the next candidate.
+   */
+  describe('handing focus to its drag handle', () => {
+    it('should focus the handle and report that focus landed', async () => {
+      await bindResolvingDefinition();
+
+      const handle = query<HTMLButtonElement>(
+        '.gf-dashboard-module-drag-handle'
+      );
+
+      expect(document.activeElement).not.toBe(handle);
+
+      expect(component.focusDragHandle()).toBe(true);
+
+      // The handle rather than the card, and rather than the menu trigger: it is the
+      // module's only always-present focusable element, and landing on it puts the
+      // arrow keys that move and resize the module straight back under the reader's
+      // fingers.
+      expect(document.activeElement).toBe(handle);
+    });
+
+    it('should be safe to ask twice', async () => {
+      await bindResolvingDefinition();
+
+      const handle = query<HTMLButtonElement>(
+        '.gf-dashboard-module-drag-handle'
+      );
+
+      expect(component.focusDragHandle()).toBe(true);
+      expect(component.focusDragHandle()).toBe(true);
+      expect(document.activeElement).toBe(handle);
+    });
+
+    it('should report that focus did not land before the view is rendered', () => {
+      // Deliberately unpainted. The view query is unresolved at this point, which is
+      // a reachable state for a host the canvas is holding, and the caller needs the
+      // honest answer rather than a silent success.
+      expect(component.focusDragHandle()).toBe(false);
+    });
+
+    it('should report that focus did not land when the handle cannot take it', async () => {
+      await bindResolvingDefinition();
+
+      const handle = query<HTMLButtonElement>(
+        '.gf-dashboard-module-drag-handle'
+      );
+
+      handle.remove();
+
+      // `focus()` on a detached element is a silent no-op in every browser, so the
+      // only truthful answer comes from reading back where focus actually ended up.
+      // Returning `true` here would strand the caller: it would stop walking its
+      // candidates believing focus was placed, and the document body would keep it.
+      expect(component.focusDragHandle()).toBe(false);
+      expect(document.activeElement).not.toBe(handle);
+    });
+
+    it('should place focus without reporting anything or touching its geometry', async () => {
+      await bindResolvingDefinition();
+
+      const moveSteps: unknown[] = [];
+      const removals: unknown[] = [];
+      const resizeSteps: unknown[] = [];
+
+      component.move.subscribe((step) => moveSteps.push(step));
+      component.remove.subscribe(() => removals.push(true));
+      component.resize.subscribe((step) => resizeSteps.push(step));
+
+      component.focusDragHandle();
+
+      // Focus is not an edit. Nothing about the cell changes, so this produces no
+      // grid callback and therefore no layout write.
+      expect(moveSteps).toEqual([]);
+      expect(removals).toEqual([]);
+      expect(resizeSteps).toEqual([]);
+    });
   });
 
   it('should request a one-cell move for each bare arrow key', async () => {

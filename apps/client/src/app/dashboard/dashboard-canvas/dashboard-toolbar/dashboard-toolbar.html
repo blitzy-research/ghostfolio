@@ -1,15 +1,19 @@
 <!--
-  COMPONENT CONTRACT - this template requires `user`, `deviceType`,
-  `hasFilters`, `hasImpersonationId`, `impersonationId`,
+  COMPONENT CONTRACT - this template requires `accountLabel`,
+  `darkAppearanceLabel`, `deviceType`, `hasFilters`, `hasImpersonationId`,
   `hasPermissionForSubscription`, `hasPermissionToAccessAdminControl`,
   `hasPermissionToAccessAssistant`, `hasPermissionToChangeDateRange`,
-  `hasPermissionToChangeFilters`, `hasPromotion`, `isDarkTheme`, `isMenuOpen`,
-  `isThemeUpdating`, `pricingUrl`, `themeToggleLabel` and `assistantElement`,
+  `hasPermissionToChangeFilters`, `hasPromotion`, `impersonationId`,
+  `impersonationStatusLabel`, `isDarkTheme`, `isMenuOpen`,
+  `lightAppearanceLabel`, `pricingUrl`, `user` and `assistantElement`,
   plus the handlers `closeAssistant()`,
   `impersonateAccount()`, `onDateRangeChange()`, `onFiltersChanged()`,
   `onLogoClick()`, `onMenuClosed()`, `onMenuOpened()`, `onOpenAssistant()`,
-  `onSelectModule()`, `onSignOut()` and `onToggleTheme()`. It imports
-  GfAssistantComponent,
+  `onSelectModule()`, `onSignOut()` and `onToggleTheme()`. Every one of them is
+  defined on the class - this list is verifiable rather than aspirational,
+  because `strictTemplates` is off in this project and a binding to a member
+  that does not exist compiles, lints and ships in silence.
+  It imports GfAssistantComponent,
   GfLogoComponent, GfPremiumIndicatorComponent, IonIcon, MatBadgeModule,
   MatButtonModule, MatMenuModule and MatToolbarModule alongside
   CUSTOM_ELEMENTS_SCHEMA, and registers the menu, identity, assistant and
@@ -45,15 +49,20 @@
 <mat-toolbar class="px-0">
   @if (user) {
     <!--
-      A button rather than a link, because activating the mark reloads the
-      complete canvas in place instead of going anywhere. Its explicit action
-      label tells sighted and non-sighted viewers that the product mark is a
-      control rather than a passive brand image.
+      A button rather than a link, because activating the mark reloads every
+      module on the canvas in place instead of going anywhere.
+
+      It deliberately carries NO `aria-label`. The mark renders the visible word
+      "Ghostfolio", and an `aria-label` of "Refresh dashboard" replaced that name
+      wholesale - so the accessible name no longer contained the visible label,
+      which is a WCAG 2.2 SC 2.5.3 (Label in Name) failure and leaves a
+      speech-input user unable to address the control by the word they can see.
+      Letting the name come from the mark's own text restores that, and the action
+      is carried by the tooltip instead, which is also exposed as the control's
+      accessible DESCRIPTION rather than competing with its name.
     -->
     <button
-      aria-label="Refresh dashboard"
       class="gf-dashboard-refresh"
-      i18n-aria-label
       i18n-title
       matButton
       title="Refresh dashboard"
@@ -125,23 +134,6 @@
           </mat-menu>
         </li>
       }
-      <li class="d-inline-flex list-inline-item">
-        <button
-          class="gf-theme-toggle h-100 no-min-width px-2"
-          matButton
-          type="button"
-          [attr.aria-label]="themeToggleLabel"
-          [attr.aria-pressed]="isDarkTheme"
-          [attr.title]="themeToggleLabel"
-          [disabled]="isThemeUpdating"
-          (click)="onToggleTheme()"
-        >
-          <ion-icon
-            aria-hidden="true"
-            [name]="isDarkTheme ? 'sunny-outline' : 'moon-outline'"
-          />
-        </button>
-      </li>
       @if (hasPromotion) {
         <li class="d-inline-flex list-inline-item">
           <!--
@@ -208,41 +200,70 @@
           />
         </button>
       </li>
+      @if (hasImpersonationId) {
+        <!--
+          A persistent marker that the viewer is looking at somebody else's
+          portfolio, and the only thing on screen that says so while the identity
+          menu is closed.
+
+          It is its own list item rather than the contents of the identity
+          trigger, and both halves of that matter. Rendered INSIDE the trigger it
+          replaced the trigger's glyph, leaving a blank 24x28 button as the only
+          way to reach the identity menu - and the app's single sign-out path with
+          it. And a live region is not something to nest inside a control: its
+          job is to announce a state change, whereas the control's job is to be
+          named and operated, and merging the two makes the announcement part of
+          the button's name.
+
+          The wording is held on the class rather than declared here because a
+          bound attribute cannot be localized with `i18n-`, and the element needs
+          real text content for a reason that is not cosmetic: the pill is a flex
+          box with no intrinsic height, so with nothing but whitespace inside it
+          it measured exactly 0px tall and painted nothing at all despite being
+          fully styled and reported as visible.
+        -->
+        <li class="d-inline-flex list-inline-item">
+          <span
+            class="align-items-center d-flex gf-impersonation-indicator px-2"
+            role="status"
+          >
+            {{ impersonationStatusLabel }}
+          </span>
+        </li>
+      }
       <li class="list-inline-item">
+        <!--
+          The identity menu, and the only route to signing out - so it must always
+          be both named and visibly present. The name states which identity state
+          the menu belongs to rather than what the menu contains, and it changes
+          with that state so a viewer who has borrowed another identity is told so
+          by the control itself and not only by the pill beside it.
+        -->
         <button
           class="no-min-width px-1"
           mat-button
           [attr.aria-label]="
-            hasImpersonationId ? impersonationTooltip : accountLabel
+            hasImpersonationId ? impersonationStatusLabel : accountLabel
           "
           [attr.title]="
-            hasImpersonationId ? impersonationTooltip : accountLabel
+            hasImpersonationId ? impersonationStatusLabel : accountLabel
           "
           [matMenuTriggerFor]="accountMenu"
           (menuClosed)="onMenuClosed()"
           (menuOpened)="onMenuOpened()"
         >
-          @if (hasImpersonationId) {
-            <span
-              class="align-items-center d-flex gf-impersonation-indicator px-2"
-              role="status"
-            >
-              {{ impersonationStatusLabel }}
-            </span>
-          } @else {
-            <ion-icon
-              aria-hidden="true"
-              class="d-none d-sm-block"
-              name="person-circle-outline"
-              size="large"
-            />
-            <ion-icon
-              aria-hidden="true"
-              class="d-block d-sm-none"
-              size="large"
-              [name]="isMenuOpen ? 'close-outline' : 'menu-outline'"
-            />
-          }
+          <ion-icon
+            aria-hidden="true"
+            class="d-none d-sm-block"
+            name="person-circle-outline"
+            size="large"
+          />
+          <ion-icon
+            aria-hidden="true"
+            class="d-block d-sm-none"
+            size="large"
+            [name]="isMenuOpen ? 'close-outline' : 'menu-outline'"
+          />
         </button>
         <mat-menu #accountMenu="matMenu" xPosition="before">
           @if (

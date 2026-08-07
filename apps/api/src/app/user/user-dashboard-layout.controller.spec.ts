@@ -456,6 +456,55 @@ describe('UserDashboardLayoutController', () => {
         expect(json).toEqual(payload);
       });
 
+      /**
+       * The write and the read have to agree on what a valid envelope is, and this
+       * is what pins that agreement end to end rather than at the boundary alone.
+       *
+       * Every version this endpoint accepts must still be readable afterwards. The
+       * defect this covers was precisely a disagreement: the writer admitted
+       * `version: null` and the reader - correctly - refused a declared version it
+       * does not support, leaving the row permanently unreadable with no way back
+       * from inside the application. Rejecting the write is what keeps the two in
+       * step, so the round trip is asserted for both accepted forms.
+       */
+      it.each([
+        { description: 'the supported version', version: 1 },
+        { description: 'no version at all', version: undefined }
+      ])(
+        'keeps a document written with $description readable afterwards',
+        async ({ version }) => {
+          const modules = [
+            { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }
+          ];
+          const payload =
+            version === undefined ? { modules } : { modules, version };
+
+          respondWithWrittenDocument();
+
+          const written = await request({
+            app,
+            method: 'PATCH',
+            path: layoutPath,
+            payload
+          });
+
+          expect(written.status).toBe(200);
+
+          // The row now holds exactly what the write persisted, which is what the
+          // read has to be able to interpret.
+          findUnique.mockResolvedValue({
+            layoutData: upsert.mock.calls[0][0].create.layoutData,
+            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+            userId: requestUserId
+          });
+
+          const read = await request({ app, method: 'GET', path: layoutPath });
+
+          expect(read.status).toBe(200);
+          expect(read.json).toEqual(payload);
+        }
+      );
+
       // `watchlist` is spelled at exactly its own declared minimum - four columns
       // by three rows - rather than at the grid-wide 2x2 floor, because the two
       // bounds are now both enforced and the narrower one wins. That makes each
@@ -748,6 +797,28 @@ describe('UserDashboardLayoutController', () => {
         {
           description: 'a document of an unsupported version',
           payload: { modules: [], version: 2 }
+        },
+        {
+          // The one bypass an `@IsOptional()` discriminator leaves open, and the
+          // reason this DTO gates on absence instead: `@IsOptional()` skips every
+          // remaining validator for `null` as well as for `undefined`, so an
+          // explicit `null` was accepted here, stored verbatim, and then refused
+          // by the reader on every subsequent request - a write that succeeded and
+          // a layout that could never be read again. It must be rejected exactly
+          // as `0`, `2` and `"1"` are.
+          description: 'a version declared as null',
+          payload: {
+            modules: [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+            version: null
+          }
+        },
+        {
+          description: 'a version declared as a string',
+          payload: { modules: [], version: '1' }
+        },
+        {
+          description: 'a version declared as zero',
+          payload: { modules: [], version: 0 }
         },
         {
           description: 'a payload that carries an identity of its own',

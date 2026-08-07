@@ -155,8 +155,7 @@
       first visit and let the next module added be written out as the viewer's
       whole dashboard, erasing what could not be fetched. So neither the grid nor
       the catalog trigger is drawn - there is nothing here that can mutate an
-      arrangement this component does not have - and the only affordance is to
-      read it again.
+      arrangement this component does not have.
     -->
     <div
       class="align-items-center d-flex flex-grow-1 justify-content-center p-3"
@@ -165,6 +164,21 @@
         <div class="p-3 text-center" role="alert">
           <div class="mb-1" i18n>Oops! Something went wrong.</div>
           <div class="mb-3 secondary-text" i18n>Please try again later.</div>
+          <!--
+            Two ways out, and both are needed because they answer different
+            failures. A read that failed for a transient reason - the request was
+            dropped, the service was briefly away - is fixed by asking again, and
+            that must stay first because it costs the viewer nothing.
+
+            A read that failed because the STORED document cannot be interpreted
+            fails identically every time, so asking again can never succeed. That
+            is what the second action is for, and it is the only affordance on
+            this notice that can end such a state from inside the application.
+            It is deliberately destructive and deliberately secondary: it is
+            confirmed before anything happens, it is named for what it does to
+            the arrangement rather than for the mechanism, and it sits after the
+            harmless action so it is never the first thing reached.
+          -->
           <div class="d-flex justify-content-center">
             <button
               color="primary"
@@ -173,6 +187,9 @@
               (click)="onRetryLayout()"
             >
               <span i18n>Try again</span>
+            </button>
+            <button mat-button type="button" (click)="onDiscardLayout()">
+              <span i18n>Start over with a blank dashboard</span>
             </button>
           </div>
         </div>
@@ -258,6 +275,8 @@
         <gf-module-catalog
           [placedModuleTypes]="placedModuleTypes"
           [unavailableModuleTypes]="unavailableModuleTypes"
+          (dragEnded)="onCatalogDragEnd()"
+          (dragStarted)="onCatalogDragStart($event)"
           (moduleAdded)="onAddModule($event)"
         />
       </mat-sidenav>
@@ -368,7 +387,15 @@
         comes from the theme's own fab override keyed on the theme class rather
         than on the palette class.
       -->
+      <!--
+        Referenced so it can be the last resort for focus after a module is
+        removed by keyboard. It earns that role by being the only control on this
+        surface that is always drawn and never removed by anything the viewer does
+        to the arrangement - including emptying it completely, which is exactly the
+        case where no module handle is left to receive focus.
+      -->
       <button
+        #catalogTrigger
         aria-controls="gfDashboardModuleCatalog"
         aria-label="Browse modules"
         i18n-aria-label

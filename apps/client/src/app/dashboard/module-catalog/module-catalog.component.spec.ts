@@ -58,11 +58,23 @@ interface DataTransferStub {
   template: `<gf-module-catalog
     [placedModuleTypes]="placedModuleTypes"
     [unavailableModuleTypes]="unavailableModuleTypes"
+    (dragEnded)="onDragEnded()"
+    (dragStarted)="onDragStarted($event)"
     (moduleAdded)="onModuleAdded($event)"
   />`
 })
 class GfTestModuleCatalogHostComponent {
   public readonly addedModuleTypes: DashboardModuleType[] = [];
+
+  /**
+   * Every drag announcement, in the order it arrived.
+   *
+   * One list rather than two, because the ORDER of the two events is the contract
+   * that matters: an end that arrived before its own start, or a start left
+   * without an end, would leave the canvas previewing the wrong footprint for the
+   * next drag - and two separate counters could not tell either case apart.
+   */
+  public readonly dragEvents: string[] = [];
 
   /**
    * Stands in for what the canvas passes down: the types currently on the grid.
@@ -77,6 +89,14 @@ class GfTestModuleCatalogHostComponent {
    * catalog as a viewer with room to spare would.
    */
   public unavailableModuleTypes: DashboardModuleType[] = [];
+
+  public onDragEnded() {
+    this.dragEvents.push('end');
+  }
+
+  public onDragStarted(moduleType: DashboardModuleType) {
+    this.dragEvents.push(`start:${moduleType}`);
+  }
 
   public onModuleAdded(moduleType: DashboardModuleType) {
     this.addedModuleTypes.push(moduleType);
@@ -451,6 +471,106 @@ describe('GfModuleCatalogComponent', () => {
       expect(queryElement('mat-form-field')).toBeTruthy();
       expect(searchField).toBeTruthy();
       expect(searchField.value).toBe('');
+    });
+
+    /**
+     * The visible hint above the list, and whether the search field actually
+     * points at it.
+     *
+     * The sentence explaining that a row can be dragged as well as clicked used to
+     * sit in a sibling element associated with nothing, so the field announced its
+     * label and stopped there - and the catalog opens by itself for exactly the
+     * viewer who has not yet learned that a row is draggable.
+     */
+    describe('the search field description', () => {
+      it('should point the search field at the visible hint', () => {
+        advance();
+
+        const searchField = queryElement<HTMLInputElement>('input[matInput]');
+        const describedBy = searchField.getAttribute('aria-describedby');
+
+        expect(describedBy).toBeTruthy();
+
+        // Read as a list, not compared as a string: Material merges its own hint
+        // and error ids into this attribute, so the assertion is that ours is
+        // among them rather than that ours is the only one.
+        const ids = describedBy.split(' ').filter(Boolean);
+
+        expect(ids).toContain('gfDashboardCatalogHint');
+      });
+
+      it('should resolve that description to the hint sentence itself', () => {
+        advance();
+
+        const hint = queryElement('#gfDashboardCatalogHint');
+
+        expect(hint).toBeTruthy();
+        expect(hint.textContent.trim()).toBe(
+          'Click a module to add it, or drag it onto the canvas.'
+        );
+
+        // The whole point of the association: every id the field advertises has to
+        // resolve to something, or the description is a dangling reference that
+        // announces nothing.
+        const ids = queryElement<HTMLInputElement>('input[matInput]')
+          .getAttribute('aria-describedby')
+          .split(' ')
+          .filter(Boolean);
+
+        for (const id of ids) {
+          expect(queryElement(`#${id}`)).toBeTruthy();
+        }
+      });
+
+      it('should keep the description on the element that carries the sentence', () => {
+        advance();
+
+        const hint = queryElement('#gfDashboardCatalogHint');
+
+        // On the text element rather than its wrapper, so the announced description
+        // is the sentence and not the wrapper's spacing utilities plus whatever else
+        // it might later contain.
+        expect(hint.tagName).toBe('SMALL');
+        expect(hint.closest('.catalog-hint')).toBeTruthy();
+      });
+
+      it('should survive the field being typed into', () => {
+        advance();
+
+        setSearchTerm('Markets');
+        advance();
+
+        // Material re-synchronises this attribute on every state change of the
+        // control, and its own pass rebuilds the list from scratch. If the static
+        // attribute were being replaced rather than merged, the association would
+        // silently disappear on the first keystroke.
+        const ids = queryElement<HTMLInputElement>('input[matInput]')
+          .getAttribute('aria-describedby')
+          .split(' ')
+          .filter(Boolean);
+
+        expect(ids).toContain('gfDashboardCatalogHint');
+      });
+
+      it('should name the field from its label rather than from the hint', () => {
+        advance();
+
+        const searchField = queryElement<HTMLInputElement>('input[matInput]');
+
+        // A description supplements a name; it must not become one. This field is
+        // named by its `<label for>` and carries no `aria-labelledby` at all, so
+        // the assertion is that the hint has not been wired in as a name by either
+        // route.
+        expect(searchField.getAttribute('aria-labelledby') ?? '').not.toContain(
+          'gfDashboardCatalogHint'
+        );
+        expect(searchField.getAttribute('aria-label')).toBeNull();
+
+        const label = queryElement<HTMLLabelElement>('label');
+
+        expect(label.getAttribute('for')).toBe(searchField.id);
+        expect(label.textContent.trim()).toBe('Search modules');
+      });
     });
   });
 
@@ -1221,6 +1341,91 @@ describe('GfModuleCatalogComponent', () => {
     });
   });
 
+  /**
+   * The announcements the grid engine's drop indicator depends on.
+   *
+   * The engine sizes that indicator from a single grid-wide default and has no way
+   * to learn a module's own footprint, so it drew a 4x4 box for every module while
+   * the item committed on drop carried the registry's own size - up to twelve
+   * columns. Closing that gap needs the canvas to know WHICH module is in flight
+   * before any drop happens, and this panel is the only thing that knows. It says
+   * so and nothing more: no geometry is read here and none is emitted.
+   */
+  describe('announcing a drag to the canvas', () => {
+    it('should name the dragged module as the drag begins', () => {
+      advance();
+
+      dispatchDragStart(rowElements()[0], createDataTransferStub());
+
+      expect(host.dragEvents).toEqual([
+        `start:${DashboardModuleType.HOLDINGS}`
+      ]);
+    });
+
+    it('should name whichever row is dragged', () => {
+      advance();
+
+      dispatchDragStart(rowElements()[2], createDataTransferStub());
+
+      expect(host.dragEvents).toEqual([
+        `start:${DashboardModuleType.WATCHLIST}`
+      ]);
+    });
+
+    it('should announce the end after the start', () => {
+      advance();
+
+      const row = rowElements()[0];
+
+      dispatchDragStart(row, createDataTransferStub());
+
+      row.dispatchEvent(new Event('dragend', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host.dragEvents).toEqual([
+        `start:${DashboardModuleType.HOLDINGS}`,
+        'end'
+      ]);
+    });
+
+    it('should announce the end of a drag that dropped nothing', () => {
+      advance();
+
+      const row = rowElements()[0];
+
+      dispatchDragStart(row, createDataTransferStub());
+
+      // A cancelled drag, or one released outside the grid, raises `dragend` and
+      // no drop at all. The end has to arrive anyway, or the canvas would keep
+      // previewing this module's footprint for the next one.
+      row.dispatchEvent(new Event('dragend', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host.dragEvents[host.dragEvents.length - 1]).toBe('end');
+      expect(host.addedModuleTypes).toEqual([]);
+    });
+
+    it('should announce nothing when the drag carries no transfer object', () => {
+      advance();
+
+      dispatchDragStart(rowElements()[0]);
+
+      // The row returns before it has a payload to offer, so there is no drag for
+      // the canvas to prepare for either.
+      expect(host.dragEvents).toEqual([]);
+    });
+
+    it('should announce nothing when a row is merely clicked', () => {
+      advance();
+
+      rowElements()[0].click();
+      fixture.detectChanges();
+
+      expect(host.dragEvents).toEqual([]);
+      expect(host.addedModuleTypes).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+  });
+
   // A row whose click reveals a module already on the canvas used to be
   // indistinguishable from one that adds a new module, so the same gesture did
   // two different things with no way to tell which. The distinction is carried
@@ -1433,7 +1638,7 @@ describe('GfModuleCatalogComponent', () => {
     // the grid - answers it, and only the answer crosses the boundary. Weigh any
     // further input the same way: the catalog is meant to know WHAT exists, never
     // where it sits.
-    it('should expose one output, two inputs and the selector the canvas binds', () => {
+    it('should expose three outputs, two inputs and the selector the canvas binds', () => {
       const mirror = reflectComponentType(GfModuleCatalogComponent);
 
       expect(mirror.selector).toBe('gf-module-catalog');
@@ -1441,8 +1646,17 @@ describe('GfModuleCatalogComponent', () => {
         'placedModuleTypes',
         'unavailableModuleTypes'
       ]);
+
+      // All three are announcements, and none of them carries geometry. Two of
+      // them exist because the grid engine sizes its own drop indicator from a
+      // single grid-wide default and knows nothing about per-module metadata, so
+      // the panel has to say WHICH module is being dragged and WHEN that drag
+      // ends; what to do about it stays with the canvas, which is the only thing
+      // that owns grid policy.
       expect(mirror.outputs.map(({ propName }) => propName)).toEqual([
-        'moduleAdded'
+        'moduleAdded',
+        'dragStarted',
+        'dragEnded'
       ]);
     });
 

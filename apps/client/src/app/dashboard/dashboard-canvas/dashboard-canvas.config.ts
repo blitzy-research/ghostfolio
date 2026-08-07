@@ -103,6 +103,28 @@ export const GRID_COLUMNS = 12;
 export const GRID_ROWS = 100;
 
 /**
+ * The footprint the grid's own drop indicator falls back to.
+ *
+ * These are the `defaultItemCols` / `defaultItemRows` the configuration below
+ * ships, named here because the canvas has to restore exactly them when a
+ * catalog drag ends: while a drag hovers a free cell the engine mints its preview
+ * candidate as `{ x, y, cols: defaultItemCols, rows: defaultItemRows }`, so the
+ * canvas raises them to the dragged module's registered footprint for the
+ * duration of the drag and puts them back afterwards. Declaring them once is what
+ * keeps the value it restores and the value this configuration ships from
+ * drifting apart.
+ *
+ * They are a fallback rather than a policy. Every item the canvas actually mints -
+ * hydrating a saved arrangement, catalog click-to-add, and the item appended on
+ * drop - carries an explicit `cols` and `rows` taken from the registry, so the
+ * engine reads these only for its own preview and for the two degenerate cases it
+ * handles internally (an item added with no `cols` at all, and `cols === -1`).
+ */
+export const DEFAULT_DROP_PREVIEW_COLS = 4;
+
+export const DEFAULT_DROP_PREVIEW_ROWS = 4;
+
+/**
  * Rejects any placement whose footprint is smaller than the minimum its module
  * declared in the registry.
  *
@@ -190,8 +212,10 @@ export function createDashboardCanvasConfig(
 ): GridsterConfig {
   return {
     compactType: CompactType.None,
-    defaultItemCols: 4,
-    defaultItemRows: 4,
+    // Read from the shared constants so that the value the canvas restores after a
+    // catalog drag and the value shipped here can never disagree.
+    defaultItemCols: DEFAULT_DROP_PREVIEW_COLS,
+    defaultItemRows: DEFAULT_DROP_PREVIEW_ROWS,
     displayGrid: DisplayGrid.OnDragAndResize,
     draggable: {
       // Frozen contract with `gf-dashboard-module-host`, whose handle element

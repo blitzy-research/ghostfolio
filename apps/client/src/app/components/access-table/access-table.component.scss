@@ -20,6 +20,35 @@
       text-decoration: underline;
     }
   }
+
+  // Stops the share address from dictating how wide this table has to be.
+  //
+  // The mechanism is the clamp, not the ellipsis. A box's min-content
+  // contribution is its own min-content size clamped by `max-width`, and the
+  // address is a single unbreakable token inside a `white-space: nowrap` cell -
+  // so without a clamp its min-content contribution was the full 70-character
+  // string, 536px of an 858px table floor that no viewport width could reduce.
+  // With the clamp the column can be squeezed like any other, and the ellipsis is
+  // what keeps the result legible rather than sliced.
+  //
+  // 14rem is chosen against a measurement rather than by eye: it leaves the table
+  // a floor of roughly 574px, which fits inside the content box of a six-column
+  // module at a 1280px viewport (591px) - the narrowest arrangement a viewer can
+  // arrive at from a saved layout written before this module's default was
+  // widened. Larger values reintroduce the clipping at exactly that width.
+  //
+  // `inline-block` is required for the clamp to apply at all: `max-inline-size`
+  // has no effect on a non-replaced inline box. The `overflow` is what enables
+  // `text-overflow`, and `white-space` is declared rather than inherited so the
+  // rule holds wherever this component is placed.
+  .gf-access-detail-value {
+    display: inline-block;
+    max-inline-size: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+    white-space: nowrap;
+  }
 }
 
 :host-context(.theme-dark) {

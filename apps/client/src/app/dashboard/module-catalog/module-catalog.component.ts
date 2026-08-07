@@ -182,6 +182,20 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
   protected readonly moduleAdded = output<DashboardModuleType>();
 
   /**
+   * Forwarded from whichever row is being dragged, so the canvas can size the
+   * grid's drop indicator from that module's own registered footprint instead of
+   * the engine's single global default.
+   *
+   * Relayed rather than acted on. This panel holds no geometry, resolves no
+   * component and reads nothing but `name` and `moduleType`; the module type is
+   * simply passed through to the one component that owns grid policy.
+   */
+  protected readonly dragStarted = output<DashboardModuleType>();
+
+  /** Forwarded from the dragged row so the canvas can undo that adjustment. */
+  protected readonly dragEnded = output<void>();
+
+  /**
    * Every registered module the current viewer is allowed to see, in registry order.
    * Searched rather than rendered directly.
    *
@@ -354,6 +368,16 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
 
   public onAddModule(moduleType: DashboardModuleType) {
     this.moduleAdded.emit(moduleType);
+  }
+
+  /** Relays a row's drag end upward; see {@link dragEnded}. */
+  public onModuleDragEnd() {
+    this.dragEnded.emit();
+  }
+
+  /** Relays a row's drag start upward; see {@link dragStarted}. */
+  public onModuleDragStart(moduleType: DashboardModuleType) {
+    this.dragStarted.emit(moduleType);
   }
 
   /**

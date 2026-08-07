@@ -151,6 +151,34 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
 
   protected readonly moduleAdded = output<DashboardModuleType>();
 
+  /**
+   * Raised when a native drag of this row begins, carrying which module is being
+   * dragged.
+   *
+   * It exists because the grid engine sizes its own drop indicator from a single
+   * global default and knows nothing about per-module metadata: while a drag
+   * hovers, the engine mints its preview as `{ cols: defaultItemCols, rows:
+   * defaultItemRows }`, so the indicator described a 4x4 footprint for every
+   * module while the item actually committed on drop carried the registry's own -
+   * up to twelve columns. The viewer was shown one size and given another.
+   *
+   * Announcing the module type is all this row does about it. Deciding what to do
+   * with the announcement belongs to the canvas, which is the only thing that owns
+   * grid policy; this row still holds no geometry and reads nothing but `name` and
+   * `moduleType` from its definition.
+   */
+  protected readonly dragStarted = output<DashboardModuleType>();
+
+  /**
+   * Raised when a native drag of this row ends, however it ended.
+   *
+   * Paired with {@link dragStarted} so that whatever was adjusted for the drag can
+   * be put back. `dragend` is the only dependable place for it: a drag can finish
+   * in a drop, a cancel, or a release outside the grid, and only this event is
+   * raised in all three cases.
+   */
+  protected readonly dragEnded = output<void>();
+
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
 
   /**
@@ -233,6 +261,12 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
   public onDragEnd() {
     this.isDragging = false;
 
+    // Emitted unconditionally, including after a drag that dropped nothing: the
+    // parent uses it to undo an adjustment it made for the drag, and leaving that
+    // adjustment in place would size the NEXT module's drop indicator from this
+    // module's metadata.
+    this.dragEnded.emit();
+
     this.changeDetectorRef.markForCheck();
   }
 
@@ -268,6 +302,12 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
     event.dataTransfer.setData('text/plain', this.definition.moduleType);
 
     this.isDragging = true;
+
+    // Announced here rather than from the drop, because the drop indicator is
+    // drawn from the moment the drag enters the grid - by the time a drop happens
+    // there is nothing left to preview. The payload above is what the canvas reads
+    // on DROP; this is what it needs BEFORE one.
+    this.dragStarted.emit(this.definition.moduleType);
 
     this.changeDetectorRef.markForCheck();
   }

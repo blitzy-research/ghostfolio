@@ -1,6 +1,7 @@
 import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { GfModuleRegistryService } from '@ghostfolio/client/dashboard/module-registry.service';
+import { GfDashboardLayoutService } from '@ghostfolio/client/dashboard/services/dashboard-layout.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import {
@@ -149,6 +150,11 @@ describe('GfDashboardToolbarComponent', () => {
   let adminServiceMock: { fetchAdminMarketData?: jest.Mock };
 
   let dashboardIntentServiceMock: { getRevealModuleSubject: jest.Mock };
+  // Only the one member this bar reaches for. Signing out is an application-driven
+  // departure, so the debounce window that is acceptable to lose when a tab is
+  // closed is NOT acceptable here - the bar has to force the pending write out
+  // before it leaves the document.
+  let dashboardLayoutServiceMock: { flushPendingSnapshot: jest.Mock<void, []> };
   let deviceDetectorServiceMock: { getDeviceInfo: jest.Mock };
   let impersonationStorageServiceMock: {
     getId: jest.Mock;
@@ -319,6 +325,15 @@ describe('GfDashboardToolbarComponent', () => {
       getRevealModuleSubject: jest.fn().mockReturnValue(revealModuleSubject)
     };
 
+    // Records into the same ordering list the sign-out and navigation reports use,
+    // because WHEN the flush happens is the whole of this fix: after the document
+    // has been left, the write would never be issued.
+    dashboardLayoutServiceMock = {
+      flushPendingSnapshot: jest.fn<void, []>(() => {
+        callOrder.push('flushPendingSnapshot');
+      })
+    };
+
     dataServiceMock = {
       fetchInfo: jest.fn().mockReturnValue(createInfo()),
       putUserSetting: jest.fn().mockReturnValue(of({} as User))
@@ -359,6 +374,10 @@ describe('GfDashboardToolbarComponent', () => {
         {
           provide: DashboardIntentService,
           useValue: dashboardIntentServiceMock
+        },
+        {
+          provide: GfDashboardLayoutService,
+          useValue: dashboardLayoutServiceMock
         },
         { provide: DataService, useValue: dataServiceMock },
         { provide: DeviceDetectorService, useValue: deviceDetectorServiceMock },
@@ -971,6 +990,224 @@ describe('GfDashboardToolbarComponent', () => {
     });
   });
 
+  /**
+   * The bar as an operable surface rather than as a set of handlers.
+   *
+   * Every finding this group covers shipped because `strictTemplates` is off in
+   * this project: a binding to a member that does not exist compiles, lints and
+   * ships in silence, so a duplicated control bound to nothing rendered as a blank
+   * unnamed button and a pill bound to nothing rendered as nothing at all. These
+   * tests assert against the DOM the template actually produces, which is the only
+   * place that is visible.
+   */
+  describe('the operable surface of the bar', () => {
+    /**
+     * Every control in the bar, in document order.
+     *
+     * Anchors are included because two of the bar's affordances are external
+     * addresses, and they are as much controls as the buttons are. The account
+     * menu's own rows are excluded by construction: `MatMenu` renders into an
+     * overlay outside this host until it is opened.
+     */
+    const controls = () => {
+      return Array.from(
+        host().querySelectorAll<HTMLElement>(
+          'mat-toolbar button, mat-toolbar a[mat-button], mat-toolbar a[matButton]'
+        )
+      );
+    };
+
+    /**
+     * The name assistive technology would announce for a control.
+     *
+     * Only the two sources this template uses are consulted - an explicit
+     * `aria-label`, or the control's own text - which is deliberate: a third source
+     * appearing here would be a change to how the bar is named, and it should have
+     * to be added to this helper before it can pass.
+     */
+    const accessibleName = (control: HTMLElement) => {
+      return (
+        control.getAttribute('aria-label')?.trim() ||
+        control.textContent.trim() ||
+        ''
+      );
+    };
+
+    const appearanceControls = () => {
+      return controls().filter((control) => {
+        const glyph = control.querySelector('ion-icon') as unknown as {
+          name?: string;
+        };
+
+        return (
+          glyph?.name === 'moon-outline' || glyph?.name === 'sunny-outline'
+        );
+      });
+    };
+
+    afterEach(() => {
+      document.body.classList.remove('theme-dark');
+    });
+
+    // The finding, stated as an invariant. The bar carried the control twice: one
+    // copy bound to members that were never defined, so it rendered an empty,
+    // unnamed 40x24 button flush against the working one - two adjacent identical
+    // glyphs, one of them inert.
+    it('offers the appearance control exactly once', () => {
+      renderWithUser();
+
+      expect(appearanceControls()).toHaveLength(1);
+
+      document.body.classList.add('theme-dark');
+
+      renderWithUser();
+
+      // Once in each appearance, because the duplicate was distinguishable only by
+      // the glyph it happened to be showing at the time.
+      expect(appearanceControls()).toHaveLength(1);
+    });
+
+    it('names every control it renders', () => {
+      renderWithUser(
+        createUser({
+          permissions: [
+            permissions.accessAssistant,
+            permissions.createUserAccount
+          ]
+        })
+      );
+
+      const unnamed = controls()
+        .filter((control) => accessibleName(control) === '')
+        .map((control) => control.outerHTML);
+
+      expect(unnamed).toEqual([]);
+      expect(controls().length).toBeGreaterThan(1);
+    });
+
+    it('names every control it renders while an identity is borrowed', () => {
+      impersonationSubject.next('ACCESS_ID');
+
+      renderWithUser();
+
+      const unnamed = controls()
+        .filter((control) => accessibleName(control) === '')
+        .map((control) => control.outerHTML);
+
+      // The identity trigger was the one that lost its name here: its label was
+      // bound to a member that did not exist, so borrowing an identity left the
+      // only path to signing out both unnamed and unglyphed.
+      expect(unnamed).toEqual([]);
+    });
+
+    /**
+     * WCAG 2.2 SC 2.5.3, on the one control that showed visible words.
+     */
+    describe('the mark', () => {
+      const mark = () => {
+        return host().querySelector<HTMLButtonElement>('.gf-dashboard-refresh');
+      };
+
+      it('keeps the visible word inside its accessible name', () => {
+        renderWithUser();
+
+        expect(mark().textContent).toContain('Ghostfolio');
+
+        // No `aria-label`, on purpose. One of "Refresh dashboard" replaced the
+        // visible word wholesale, which leaves a speech-input user unable to
+        // address the control by the word they can see.
+        expect(mark().hasAttribute('aria-label')).toBe(false);
+        expect(accessibleName(mark())).toContain('Ghostfolio');
+      });
+
+      it('carries the action as its description instead', () => {
+        renderWithUser();
+
+        // The action is not lost - it is exposed where it does not compete with
+        // the name.
+        expect(mark().getAttribute('title')).toBe('Refresh dashboard');
+      });
+    });
+
+    describe('the borrowed-identity marker', () => {
+      const marker = () => {
+        return host().querySelector<HTMLElement>('.gf-impersonation-indicator');
+      };
+
+      /**
+       * Located structurally rather than by its name or its glyph, because both of
+       * those are what these tests are here to check - selecting on either would
+       * make the assertion circular and, when it regressed, would fail by finding
+       * nothing rather than by reporting what was wrong.
+       *
+       * The identity menu is the last item in the bar's list, and it is the only
+       * menu trigger there besides the assistant's.
+       */
+      const identityTrigger = () => {
+        const items = Array.from(
+          host().querySelectorAll<HTMLElement>('mat-toolbar ul > li')
+        );
+
+        return items[items.length - 1].querySelector<HTMLButtonElement>(
+          'button[aria-haspopup]'
+        );
+      };
+
+      it('shows nothing while the viewer is themselves', () => {
+        renderWithUser();
+
+        expect(marker()).toBeNull();
+      });
+
+      it('carries real words so it has a line box at all', () => {
+        impersonationSubject.next('ACCESS_ID');
+
+        renderWithUser();
+
+        // The pill was fully styled and reported as visible, yet painted nothing:
+        // it is a flex box with no intrinsic height, and with only whitespace
+        // inside it, it measured exactly 0px tall.
+        expect(marker()).toBeTruthy();
+        expect(marker().textContent.trim()).toBe('Viewing another account');
+      });
+
+      it('announces itself without becoming part of a control name', () => {
+        impersonationSubject.next('ACCESS_ID');
+
+        renderWithUser();
+
+        expect(marker().getAttribute('role')).toBe('status');
+
+        // A live region nested inside a button merges its announcement into that
+        // button's name. It is a sibling of the trigger for that reason, not for
+        // layout.
+        expect(marker().closest('button')).toBeNull();
+      });
+
+      it('leaves the identity trigger both named and glyphed', () => {
+        impersonationSubject.next('ACCESS_ID');
+
+        renderWithUser();
+
+        const trigger = identityTrigger();
+
+        expect(trigger).toBeTruthy();
+        expect(accessibleName(trigger)).toBe('Viewing another account');
+
+        // Rendered inside the trigger, the marker REPLACED these, leaving a blank
+        // button as the only way to reach the identity menu.
+        expect(trigger.querySelectorAll('ion-icon')).toHaveLength(2);
+      });
+
+      it('names the identity trigger for a viewer who has borrowed nobody', () => {
+        renderWithUser();
+
+        expect(accessibleName(identityTrigger())).toBe('Account');
+        expect(identityTrigger().querySelectorAll('ion-icon')).toHaveLength(2);
+      });
+    });
+  });
+
   describe('onFiltersChanged', () => {
     const persistFilter = (filter: Filter) => {
       component.onFiltersChanged([filter]);
@@ -1328,7 +1565,51 @@ describe('GfDashboardToolbarComponent', () => {
       expect(userServiceMock.signOut).toHaveBeenCalledTimes(1);
       expect(navigationAttempts).toHaveLength(1);
 
-      expect(callOrder).toEqual(['signOut', 'navigate']);
+      expect(callOrder).toEqual([
+        'flushPendingSnapshot',
+        'signOut',
+        'navigate'
+      ]);
+    });
+
+    // The finding this addresses: an arrangement change made inside the debounce
+    // window and followed immediately by signing out was simply lost. Losing it to
+    // a closed tab is a window this design accepts - nothing can be issued from a
+    // document that is going away on its own - but signing out is the application's
+    // own doing, so it is the one departure that can and must carry the write with
+    // it.
+    it('forces the pending arrangement out before anything else happens', () => {
+      document.documentElement.lang = 'de';
+
+      component.onSignOut();
+
+      expect(
+        dashboardLayoutServiceMock.flushPendingSnapshot
+      ).toHaveBeenCalledTimes(1);
+
+      // Ordering, not merely presence. After the identity is discarded the write
+      // would be issued for nobody, and after the document is left it would never
+      // be issued at all.
+      expect(callOrder.indexOf('flushPendingSnapshot')).toBeLessThan(
+        callOrder.indexOf('signOut')
+      );
+      expect(callOrder.indexOf('flushPendingSnapshot')).toBeLessThan(
+        callOrder.indexOf('navigate')
+      );
+    });
+
+    it('flushes even when the departure itself goes nowhere', () => {
+      // The locale is what the destination is composed from, and an absent one
+      // means no address is assigned at all. The flush must not be conditional on
+      // that: the arrangement is pending either way.
+      document.documentElement.lang = '';
+
+      component.onSignOut();
+
+      expect(
+        dashboardLayoutServiceMock.flushPendingSnapshot
+      ).toHaveBeenCalledTimes(1);
+      expect(navigationAttempts).toHaveLength(0);
     });
 
     it('targets the document language and nothing else', () => {

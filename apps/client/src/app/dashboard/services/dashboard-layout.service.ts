@@ -254,6 +254,51 @@ export class GfDashboardLayoutService
     this.identityTransitionSubject.next();
   }
 
+  /**
+   * Sends the arrangement still waiting out its debounce, immediately.
+   *
+   * Public because the debounce has to be short-circuited from more than one
+   * place, and only one of them is destruction. A control the application itself
+   * drives which tears the document down - signing out being the case that
+   * matters, since it replaces the whole document rather than routing - would
+   * otherwise drop a change made inside the last 500ms with no error, no warning
+   * and no retry. That is NOT the loss window this design accepts: the accepted
+   * one is a viewer closing the tab, which the application neither drives nor can
+   * observe reliably.
+   *
+   * It is a flush, not a second write origin. The arrangement was already
+   * produced and attributed by the canvas through the ordinary trigger path; this
+   * only decides that what is queued goes now instead of in 500ms. The identity
+   * check below is the same one the debounced dispatch applies, and it belongs
+   * here for the same reason: a flush happens precisely when an identity is
+   * ending, so the snapshot may already belong to a viewer this request would no
+   * longer be authorised as.
+   *
+   * Idempotent and cheap: the pending snapshot is cleared first, so a second call
+   * - from a teardown that follows the control that flushed - sends nothing.
+   *
+   * Deliberately fire-and-forget. The caller is on its way out of the document,
+   * so there is no state left to update and nothing to await; a failure is
+   * reported through the sanitized channel and nowhere else.
+   */
+  public flushPendingSnapshot() {
+    const snapshot = this.pendingSnapshot;
+
+    this.clearPendingSnapshot();
+
+    if (!snapshot || !this.isAuthorizedIdentity(snapshot.userId)) {
+      return;
+    }
+
+    // Closing the browser tab inside the debounce remains an accepted loss
+    // window; every in-application exit now flushes instead.
+    this.dataService.patchUserDashboardLayout(snapshot.layout).subscribe({
+      error: (error) => {
+        reportSanitizedError('GF-DASHBOARD-LAYOUT-FLUSH-FAILED', error);
+      }
+    });
+  }
+
   public get(force = false): Observable<UserDashboardLayout | null> {
     const state = this.getState();
 
@@ -445,27 +490,6 @@ export class GfDashboardLayoutService
       }),
       catchError((error) => this.handleError(error))
     );
-  }
-
-  private flushPendingSnapshot() {
-    // The identity check is the same one the debounced dispatch applies, and it
-    // belongs here for the same reason: destruction is one of the ways an
-    // identity ends, so the snapshot being flushed may already belong to a
-    // viewer who is no longer the one this request would be authorised as.
-    const snapshot = this.pendingSnapshot;
-
-    this.clearPendingSnapshot();
-
-    if (!snapshot || !this.isAuthorizedIdentity(snapshot.userId)) {
-      return;
-    }
-
-    // Closing the browser tab inside the debounce is an accepted loss window.
-    this.dataService.patchUserDashboardLayout(snapshot.layout).subscribe({
-      error: (error) => {
-        reportSanitizedError('GF-DASHBOARD-LAYOUT-FLUSH-FAILED', error);
-      }
-    });
   }
 
   private handleError(error: unknown) {

@@ -5,8 +5,26 @@
       own; a placeholder would only repeat it and be announced twice.
     -->
     <mat-label i18n>Search modules</mat-label>
+    <!--
+      `aria-describedby` points at the visible hint below the field, which was
+      never associated with anything: it sat in a sibling element, so the field
+      announced its label and nothing else, and the one sentence explaining that a
+      row can be dragged as well as clicked reached only people who could see it.
+
+      A static attribute rather than a binding, and pointing OUT of this form field
+      rather than being moved into a `mat-hint`. Material reads this attribute as
+      `MatInput.userAriaDescribedBy` and `MatFormField._syncDescribedByIds()` merges
+      it ahead of any hint or error ids it contributes, so nothing Material owns is
+      displaced and error announcements keep working. Converting the sentence into a
+      `mat-hint` would instead have moved it inside the field's subscript - below
+      the input, in the smaller hint type, and inside the reserved subscript row
+      this field explicitly suppresses with `without-hint` - which is a visual
+      change, and the hint deliberately sits ABOVE the list where the reader of an
+      auto-opened catalog will actually meet it.
+    -->
     <input
       #search
+      aria-describedby="gfDashboardCatalogHint"
       autocomplete="off"
       autocorrect="off"
       matInput
@@ -24,7 +42,15 @@
   reaches everyone, not as a label only assistive technology would reach.
 -->
 <div class="catalog-hint px-3 py-2">
-  <small i18n>Click a module to add it, or drag it onto the canvas.</small>
+  <!--
+    The id is what the search field's `aria-describedby` resolves to, so this
+    sentence is announced as the field's description as well as being read on
+    screen. It is on the text element rather than the wrapper so the description is
+    exactly the sentence and not whatever spacing utilities the wrapper carries.
+  -->
+  <small i18n id="gfDashboardCatalogHint"
+    >Click a module to add it, or drag it onto the canvas.</small
+  >
 </div>
 
 @if (modules?.length > 0) {
@@ -56,6 +82,8 @@
         [isPlaced]="isPlaced(module.moduleType)"
         [isTabbable]="index === tabbableIndex"
         [isUnavailable]="isUnavailable(module.moduleType)"
+        (dragEnded)="onModuleDragEnd()"
+        (dragStarted)="onModuleDragStart($event)"
         (focused)="onModuleCatalogItemFocused(index)"
         (moduleAdded)="onAddModule($event)"
       />

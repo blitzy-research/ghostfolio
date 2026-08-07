@@ -65,9 +65,11 @@ export class GfAppComponent implements OnInit {
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
   /**
-   * Injected for exactly one reason: `onCreateAccount()` has to announce an
-   * identity transition before it replaces the bearer token. No layout is read,
-   * written or held here — the canvas owns all three.
+   * Injected for exactly two reasons, neither of which reads, writes or holds a
+   * layout — the canvas owns all three. `onCreateAccount()` has to announce an
+   * identity transition before it replaces the bearer token, and `onSignOut()` has
+   * to flush an arrangement still inside its debounce before it replaces the
+   * document.
    */
   private readonly dashboardLayoutService = inject(GfDashboardLayoutService);
   private readonly dataService = inject(DataService);
@@ -304,7 +306,17 @@ export class GfAppComponent implements OnInit {
       });
   }
 
+  /**
+   * The flush comes first, and the ordering is load-bearing twice over: a
+   * document-level navigation replaces the document rather than routing within it,
+   * so no teardown downstream of this line ever runs and an arrangement still
+   * inside its 500ms debounce would be dropped in silence; and `signOut()` clears
+   * the token the write is authorised with, so flushing after it would send a
+   * request that cannot succeed.
+   */
   public onSignOut() {
+    this.dashboardLayoutService.flushPendingSnapshot();
+
     this.userService.signOut();
 
     document.location.href = `/${document.documentElement.lang}`;

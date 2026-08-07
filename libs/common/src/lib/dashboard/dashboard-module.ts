@@ -147,8 +147,23 @@ export const dashboardModules = {
     moduleType: DashboardModuleType.PORTFOLIO_OVERVIEW,
     name: $localize`Overview`
   },
+  // Eight columns rather than six, because this module's table has a horizontal
+  // requirement that is deterministic even though its vertical one is not. Its
+  // header row is `min-width: max-content` per column - the rule that stops a
+  // label being squeezed to "Sta" - so the columns it shows have a hard combined
+  // floor of 720px, measured identically at every viewport. Six columns gave the
+  // body 591px at a 1280px viewport, so the trailing performance column rendered
+  // as a lone "P" and the ± figure beside it was cut off entirely. Eight give it
+  // 803px: the whole table, with nothing clipped and no scrolling required, from
+  // 1280px upward.
+  //
+  // The ROW count is deliberately left where it is, for the reason set out above:
+  // how tall a holdings table needs to be depends on how many holdings the viewer
+  // owns, so the honest answer there stays the scroll hint on the module chrome.
+  // Width is the opposite case - the column set is fixed - which is why only one
+  // of the two is being tuned.
   [DashboardModuleType.HOLDINGS]: {
-    defaultItemCols: 6,
+    defaultItemCols: 8,
     defaultItemRows: 6,
     minItemCols: 4,
     minItemRows: 4,
@@ -265,11 +280,30 @@ export const dashboardModules = {
     moduleType: DashboardModuleType.ACCOUNT_MEMBERSHIP,
     name: $localize`Membership`
   },
+  // Eight columns and six rows, and the minimum height raised with them.
+  //
+  // Its table was the worst case on the canvas: the trailing actions column -
+  // the only way to edit or revoke a grant - sat entirely outside the visible
+  // area at 1280px and below, so a control the feature depends on was reachable
+  // only by discovering a horizontal scroll. Two things were wrong at once and
+  // both are fixed: the share address in the details column had no width cap, so
+  // it alone set an 858px floor that no viewport could reduce (capped in
+  // `access-table.component.scss`), and six columns were too few even for the
+  // reduced floor. Eight give the body 803px against a floor of roughly 574px.
+  //
+  // Six rows rather than five for the vertical half of the same defect: five left
+  // 389px of body against 428px of content, so the last grant's row was cut off.
+  //
+  // `minItemRows` moves from three to four because three could not work: a
+  // 3-row cell is 260px, and once the card header and the module gutter are taken
+  // out that leaves about 180px - not enough for a table header plus a single
+  // row. Raising it is safe for saved arrangements, because hydration clamps a
+  // stored footprint UP to the declared minimum rather than rejecting it.
   [DashboardModuleType.ACCOUNT_ACCESS]: {
-    defaultItemCols: 6,
-    defaultItemRows: 5,
+    defaultItemCols: 8,
+    defaultItemRows: 6,
     minItemCols: 4,
-    minItemRows: 3,
+    minItemRows: 4,
     moduleType: DashboardModuleType.ACCOUNT_ACCESS,
     name: $localize`Access`
   },

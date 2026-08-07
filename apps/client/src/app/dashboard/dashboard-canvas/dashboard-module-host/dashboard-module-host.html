@@ -46,7 +46,15 @@
       nothing, and this control intentionally has no activation behaviour at all -
       only its arrow keys act.
     -->
+    <!--
+      The reference is what lets the canvas hand focus to this module after a
+      neighbour is removed by keyboard. It is deliberately on the handle rather
+      than on the card: the handle is the module's only always-present focusable
+      element, and landing on it puts the arrow keys straight back under the
+      reader's fingers.
+    -->
     <button
+      #dragHandle
       aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
       aria-label="Move or resize module"
       class="gf-dashboard-module-drag-handle p-2"

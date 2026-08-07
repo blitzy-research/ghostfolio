@@ -1,6 +1,7 @@
 import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { DashboardModuleType } from '@ghostfolio/client/dashboard/enums/dashboard-module-type';
+import { GfDashboardLayoutService } from '@ghostfolio/client/dashboard/services/dashboard-layout.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import type { UpdateUserSettingDto } from '@ghostfolio/common/dtos';
@@ -132,6 +133,22 @@ export class GfDashboardToolbarComponent implements OnInit {
   @ViewChild('assistantTrigger') assistentMenuTriggerElement: MatMenuTrigger;
 
   /**
+   * The name the identity trigger takes while the viewer is looking at their own
+   * portfolio.
+   *
+   * It has to exist, and it has to be held here. The trigger renders nothing but
+   * a glyph, so without a name it is announced as an unnamed button - and it is
+   * the only route to signing out, which makes an unnamed one a dead end rather
+   * than an inconvenience. Held on the class because the name changes with the
+   * identity state and so has to be bound, and `i18n-aria-label` localizes only a
+   * static attribute.
+   *
+   * The wording is the source message this application already translates for the
+   * account surface, so the thirteen-locale contract absorbs it at no cost.
+   */
+  public readonly accountLabel = $localize`Account`;
+
+  /**
    * The two names the appearance control takes, one per direction.
    *
    * Held here rather than declared on the element because `i18n-aria-label`
@@ -162,6 +179,23 @@ export class GfDashboardToolbarComponent implements OnInit {
    */
   public isDarkTheme: boolean;
 
+  /**
+   * What the identity marker says, and what names the identity trigger, while
+   * another account's portfolio is being viewed.
+   *
+   * One message serving both places on purpose: the marker and the trigger report
+   * the same fact, and a second wording for it would be a second thing to keep in
+   * step for no gain. It names the STATE rather than the identity, because which
+   * account is borrowed is already listed, with a checked radio, inside the menu
+   * the trigger opens - and because a name assembled from user-supplied text would
+   * change shape with every alias.
+   *
+   * Non-empty text is load-bearing rather than presentational: the marker is a
+   * flex box with no intrinsic height, so an empty one measured exactly 0px tall
+   * and painted nothing while reporting itself as visible.
+   */
+  public readonly impersonationStatusLabel = $localize`Viewing another account`;
+
   /** Companion of {@link darkAppearanceLabel} for the other direction. */
   public readonly lightAppearanceLabel = $localize`Switch to light appearance`;
   public hasImpersonationId: boolean;
@@ -185,6 +219,11 @@ export class GfDashboardToolbarComponent implements OnInit {
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
     private dashboardIntentService: DashboardIntentService,
+    // Injected for exactly one purpose: flushing a queued arrangement before this
+    // bar takes the document away. Nothing here reads, projects or schedules a
+    // layout - the canvas remains the only producer of arrangements and the only
+    // origin of a write.
+    private dashboardLayoutService: GfDashboardLayoutService,
     private dataService: DataService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
@@ -470,8 +509,22 @@ export class GfDashboardToolbarComponent implements OnInit {
    * document-level navigation that follows is a full load of the locale root, which is
    * deliberate: it discards every in-memory cache belonging to the identity that just
    * left.
+   *
+   * The flush comes FIRST, and the order is the whole point. A document-level
+   * navigation replaces the document rather than routing within it, so nothing
+   * downstream of this line runs - not the canvas's teardown, not the layout
+   * service's - and an arrangement still inside its 500ms debounce was simply
+   * dropped: no request, no error, no warning, and the viewer's last drag silently
+   * lost. The accepted loss window in this design is a viewer closing the tab,
+   * which the application neither drives nor can reliably observe; signing out is
+   * an ordinary control this application drives itself, so it does not qualify.
+   *
+   * It must also precede `signOut()`, because that clears the token the write is
+   * authorised with.
    */
   public onSignOut() {
+    this.dashboardLayoutService.flushPendingSnapshot();
+
     this.userService.signOut();
 
     document.location.href = `/${document.documentElement.lang}`;

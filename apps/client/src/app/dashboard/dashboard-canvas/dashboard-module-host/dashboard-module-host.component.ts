@@ -117,6 +117,16 @@ export class GfDashboardModuleHostComponent
   @Output() resize = new EventEmitter<DashboardModuleGeometryStep>();
 
   /**
+   * The drag handle, held so the canvas can move focus onto this module.
+   *
+   * Queried rather than reached for through the DOM because the handle is the one
+   * element in this template whose identity the canvas depends on, and a query
+   * fails loudly at compile time if the reference is ever dropped from the
+   * markup, where a selector would silently start matching nothing.
+   */
+  @ViewChild('dragHandle') private dragHandle: ElementRef<HTMLElement>;
+
+  /**
    * The scrolling body. Held as a reference rather than reached for with a query
    * so the overflow watcher observes exactly the element that scrolls, whatever
    * the module inside it renders.
@@ -283,6 +293,31 @@ export class GfDashboardModuleHostComponent
   }
 
   /**
+   * Puts keyboard focus on this module's drag handle, reporting whether it landed.
+   *
+   * Exists so the canvas can keep focus somewhere useful after a module is removed
+   * by keyboard. It reports rather than assumes, because the caller walks a list of
+   * candidates and needs to know when to try the next one: this host may be mid
+   * teardown, or - while a `@ViewChild` is still unresolved - not yet have a handle
+   * at all.
+   *
+   * The read-back is not defensive noise. `focus()` on a detached or hidden element
+   * is a silent no-op in every browser, so the only honest way to answer the
+   * question is to ask the document where focus actually ended up.
+   */
+  public focusDragHandle(): boolean {
+    const handle = this.dragHandle?.nativeElement;
+
+    if (!handle) {
+      return false;
+    }
+
+    handle.focus();
+
+    return handle.ownerDocument?.activeElement === handle;
+  }
+
+  /**
    * Turns the arrow keys on the drag handle into geometry steps: bare arrows move
    * the module, Shift with an arrow resizes it from its bottom-right, which is
    * the pair of edges the pointer handles expose.
@@ -315,6 +350,53 @@ export class GfDashboardModuleHostComponent
 
   public onRemove() {
     this.remove.emit();
+  }
+
+  /**
+   * Discards the mounted module and mounts it again, so it re-reads everything it
+   * draws from.
+   *
+   * This is how a dashboard-wide refresh is actually delivered. The former
+   * mechanism was a bare subject with a single subscriber inside one feature
+   * component, so the control that claimed to refresh the dashboard refreshed
+   * nothing at all for any arrangement that did not happen to include that one
+   * module. Re-creating the mounted component instead makes the refresh a property
+   * of the host rather than of the module: every module fetches on construction,
+   * so every module refreshes, and none of them needs to know the control exists.
+   *
+   * Two phases, and they cannot be collapsed into one. `NgComponentOutlet`
+   * re-creates its content when the bound component TYPE changes, and the type
+   * resolved here is the same one on both sides of a reload - so the outlet has to
+   * observe the absence in between. `detectChanges()` is what guarantees that:
+   * marking the view and re-assigning within the same task would leave the outlet
+   * seeing an unchanged type and nothing would be re-created. The synchronous form
+   * is safe because every caller is an event handler, never a change-detection
+   * pass.
+   *
+   * Nothing about the cell is touched - not its position, not its size, not the
+   * grid item behind it - so a refresh produces no grid callback and therefore no
+   * layout write.
+   */
+  public reload() {
+    if (!this.definition) {
+      return;
+    }
+
+    // Phase one: let the outlet see the module gone, and destroy it.
+    this.resolvedComponent = undefined;
+    this.hasLoadError = false;
+
+    this.changeDetectorRef.detectChanges();
+
+    // Phase two: ask the registry for it again. Both fields are cleared so the
+    // exactly-once guard admits the request instead of treating it as the one
+    // already served for this definition.
+    this.hasRequestedLoad = false;
+    this.requestedDefinition = undefined;
+
+    // `void` for the same reason as in `ngOnChanges`: the resolution settles its
+    // own failures, so there is no rejection to propagate.
+    void this.resolveModule();
   }
 
   /**

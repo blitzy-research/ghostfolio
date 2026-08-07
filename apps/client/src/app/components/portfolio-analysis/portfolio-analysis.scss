@@ -1,7 +1,32 @@
 :host {
   display: block;
 
+  // Sized to the ratio the charts inside are actually drawn at, which is what
+  // makes their bitmaps map to their boxes one for one.
+  //
+  // Every chart in here is a Chart.js line chart configured `responsive: true`
+  // with `maintainAspectRatio: true` and NO explicit `aspectRatio`, so Chart.js
+  // falls back to its own default of 2 and composes a bitmap of exactly
+  // `width / 2`. It writes that height onto the canvas as an inline style - and
+  // loses, because the canvas also carries Bootstrap's `.h-100`, whose
+  // `height: 100% !important` beats a non-important inline declaration. The
+  // canvas therefore *displayed* at this container's height while *containing* a
+  // bitmap half its width tall, and the browser scaled the difference: at a
+  // 16 / 9 box that is 0.5625 / 0.5 = a 1.125x vertical stretch, measured on all
+  // four charts. Nothing was mis-drawn - every gridline, label and point spacing
+  // Chart.js computed was simply painted 12.5% too tall.
+  //
+  // Matching the box to the chart is the fix that keeps the chart's own geometry
+  // authoritative. The alternatives were worse: relaxing `.h-100` from here would
+  // leave the canvas at its natural height inside a taller box and put 11% dead
+  // space under every chart, and telling Chart.js to compose at 16 / 9 instead
+  // means editing the chart components themselves, which are outside this work's
+  // scope and shared with screens this change has no business altering.
+  //
+  // The chart area is consequently ~11% shorter relative to its width than
+  // before. That is the correction, not a side effect: the previous height was
+  // only ever reached by stretching.
   .chart-container {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 2 / 1;
   }
 }

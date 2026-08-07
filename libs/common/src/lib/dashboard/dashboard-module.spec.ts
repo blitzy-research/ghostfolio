@@ -77,6 +77,77 @@ describe('dashboardModules', () => {
     }
   });
 
+  /**
+   * The two table modules whose defaults were measured rather than guessed.
+   *
+   * Both hid an interactive control at ordinary desktop widths when placed at
+   * their own default size: the access table's trailing actions column - the only
+   * route to editing or revoking a grant - sat entirely outside the visible area
+   * at 1280px and below, and the holdings table's trailing performance column
+   * rendered as a lone letter. Their column sets are FIXED, so unlike the row
+   * counts of data-driven modules the requirement is deterministic and a default
+   * can genuinely satisfy it. These numbers are therefore pinned against the
+   * measurement, not left to taste.
+   */
+  describe('the widths measured against real content', () => {
+    /** Content box of a module, in CSS pixels, at a given viewport and column span. */
+    const contentWidth = (viewportWidth: number, cols: number) => {
+      // Canvas geometry: twelve columns, a 10px margin between and outside them,
+      // a 1px card border each side and the module's own 16px gutter each side.
+      const columnWidth = (viewportWidth - 130) / GRID_COLUMNS;
+
+      return columnWidth * cols + (cols - 1) * 10 - 2 - 32;
+    };
+
+    it.each([
+      // Floor measured after the share address in the details column was capped;
+      // before the cap it was a width-invariant 858px that no viewport could reduce.
+      [DashboardModuleType.ACCOUNT_ACCESS, 574],
+      // Floor set by the header row, which is `min-width: max-content` per column
+      // so a label can never be squeezed to an initial.
+      [DashboardModuleType.HOLDINGS, 720]
+    ])(
+      'places %s wide enough for its own table from 1280px upward',
+      (moduleType, minimumContentWidth) => {
+        const { defaultItemCols } = dashboardModules[moduleType];
+
+        for (const viewportWidth of [1280, 1440, 1920]) {
+          expect(contentWidth(viewportWidth, defaultItemCols)).toBeGreaterThan(
+            minimumContentWidth
+          );
+        }
+      }
+    );
+
+    it('keeps both of them narrow enough to sit beside something', () => {
+      // Widening is bounded on the other side too: a default that filled the grid
+      // would leave a freshly added module unable to share a row with anything,
+      // which is a worse dashboard than one that scrolls.
+      for (const moduleType of [
+        DashboardModuleType.ACCOUNT_ACCESS,
+        DashboardModuleType.HOLDINGS
+      ]) {
+        expect(
+          dashboardModules[moduleType].defaultItemCols
+        ).toBeLessThanOrEqual(8);
+      }
+    });
+
+    it('gives the access table room for a header row and a grant', () => {
+      const { defaultItemRows, minItemRows } =
+        dashboardModules[DashboardModuleType.ACCOUNT_ACCESS];
+
+      // Rows are a constant 80px with a 10px margin between them, and the card
+      // header plus the module gutter take roughly 80px out of the cell. At three
+      // rows that left about 180px - not enough for a table header and one row -
+      // which is why the minimum moved up with the default.
+      expect(minItemRows).toBeGreaterThanOrEqual(4);
+      expect(
+        defaultItemRows * 80 + (defaultItemRows - 1) * 10 - 80
+      ).toBeGreaterThan(428);
+    });
+  });
+
   describe('getDashboardModule', () => {
     it('resolves a known discriminator to its own definition', () => {
       expect(getDashboardModule(DashboardModuleType.AI_CHAT)).toBe(

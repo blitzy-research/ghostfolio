@@ -150,11 +150,6 @@
     min-height: 0;
   }
 
-  // Declared once and read in two places - the drawer's own width and the
-  // distance the floating trigger has to step aside to clear it - so the two can
-  // never drift apart.
-  --gf-dashboard-catalog-width: 22rem;
-
   // The corner the floating catalog trigger occupies, as the sum of the two
   // quantities that actually produce it: the `right: 2rem` inset declared for
   // `.gf-dashboard-catalog-trigger` in the global stylesheet, and Material's own
@@ -162,6 +157,37 @@
   // rather than a collapsed `5.5rem` so a change to either source is legible
   // here, and read by the `.fab-container` clearance above.
   --gf-dashboard-catalog-trigger-footprint: calc(2rem + 3.5rem);
+
+  // Declared once and read in two places - the drawer's own width and the
+  // distance the floating trigger has to step aside to clear it - so the two can
+  // never drift apart.
+  //
+  // 22rem is the width the canvas is designed around, and above a 440px viewport
+  // it is the width that applies. The second term is a floor under the trigger's
+  // reachability, not a responsive layout: the trigger is `position: fixed` at the
+  // trailing edge and steps aside by exactly this width while the catalog is open,
+  // so an unconditional 22rem puts its left edge at `100vw - 22rem - 5.5rem`,
+  // which goes negative below 440px. It went off-screen while still reporting
+  // itself as present and expanded - `display: inline-flex`, `visibility: visible`,
+  // `opacity: 1`, `aria-expanded="true"` - and since it is the panel's ONLY
+  // dismissal (the drawer is `mode="side"`, so it has no backdrop, and Material
+  // does not answer Escape for a side drawer while focus sits outside it), the
+  // panel became a pointer trap that only a keyboard could escape.
+  //
+  // Subtracting the trigger's own footprint is therefore the minimum that keeps
+  // the control that closes the panel inside the viewport: at 375px the drawer
+  // resolves to 287px and the trigger's left edge lands at exactly 0. At 440px the
+  // two terms are equal - `100vw - 5.5rem == 22rem` - so the cap engages precisely
+  // at the crossover and is inert above it, which is what keeps this from becoming
+  // the responsive behaviour the specification excludes.
+  //
+  // `min()` rather than a media query on purpose: there is no breakpoint here and
+  // introducing one would imply a supported narrow layout. This is one continuous
+  // expression whose second term simply never wins on a supported viewport.
+  --gf-dashboard-catalog-width: min(
+    22rem,
+    100vw - var(--gf-dashboard-catalog-trigger-footprint)
+  );
 
   mat-sidenav {
     border-end-start-radius: var(--mat-sys-corner-medium, 4px);
