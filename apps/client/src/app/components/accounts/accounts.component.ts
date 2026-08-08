@@ -165,9 +165,6 @@ export class GfAccountsComponent implements OnInit {
         }
       });
 
-    // Re-evaluated once the device is known, so a request that was already on the
-    // URL when this module was created is honoured now that it can be honoured
-    // correctly.
     this.applyQueryParams();
 
     this.fetchAccounts();
@@ -189,15 +186,13 @@ export class GfAccountsComponent implements OnInit {
           this.totalBalanceInBaseCurrency = totalBalanceInBaseCurrency;
           this.totalValueInBaseCurrency = totalValueInBaseCurrency;
 
-          // Nothing is opened automatically. On the route-per-screen shell the
-          // accounts screen was the only thing on it, so greeting a user who had
-          // no accounts with the create dialog was unambiguous. On one canvas the
-          // activities module makes the same offer for the same user at the same
-          // moment, and which of the two responses arrives first decides whether
-          // one onboarding dialog appears or two appear stacked - an outcome the
-          // previous shell could not produce. The offer is made by the empty state
-          // this module already renders and by its floating action button, both of
-          // which the viewer chooses to act on.
+          // Nothing is opened automatically. The activities module makes the same
+          // offer to the same user at the same moment, and both modules can be on
+          // the canvas together, so greeting an empty portfolio with a dialog would
+          // let the order the two responses arrive in decide whether one onboarding
+          // dialog appears or two appear stacked. The offer is made instead by the
+          // empty state this module already renders and by its floating action
+          // button, both of which the viewer chooses to act on.
           this.applyQueryParams();
 
           this.changeDetectorRef.markForCheck();
@@ -345,17 +340,11 @@ export class GfAccountsComponent implements OnInit {
       transferBalanceDialog
     } = this.queryParams ?? {};
 
-    // On the single-canvas shell every module observes the same query
-    // parameters at once, so a flag that does not say who it is for is
-    // seen by all of them. `dialogModule` is what says it, and the two
-    // kinds of flag need it differently.
+    // The two kinds of flag need `dialogModule` differently.
     //
-    // `createDialog` and `editDialog` name no dialog of their own, so they
-    // are honoured here ONLY when addressed to this module. That gate is
-    // fail-safe by construction - an unqualified or foreign-qualified flag
-    // opens nothing - and it is what stops one module's floating action
-    // button from opening another's dialog. Same gate as in
-    // `components/user-account-access/user-account-access.component.ts`.
+    // `createDialog` and `editDialog` name no dialog of their own, so they are
+    // honoured here ONLY when addressed to this module, which is what stops one
+    // module's floating action button from opening another's dialog.
     //
     // `accountDetailDialog` and `transferBalanceDialog` do name a dialog,
     // but naming a dialog is not the same as naming an owner: the account
@@ -389,9 +378,9 @@ export class GfAccountsComponent implements OnInit {
 
       // An account that cannot be found is the only outcome besides
       // opening the dialog. Passing it on regardless would destructure
-      // `undefined` and throw, which is exactly what an `editDialog`
-      // addressed to this module before its accounts had loaded - or
-      // naming an account that has since been deleted - used to do.
+      // `undefined` and throw - which is what an `editDialog` addressed to
+      // this module before its accounts have loaded, or naming an account
+      // that has since been deleted, would otherwise produce.
       if (account) {
         this.serveDialogRequest(`editDialog:${account.id}`, () => {
           this.openUpdateAccountDialog(account);

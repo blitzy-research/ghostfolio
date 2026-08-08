@@ -71,7 +71,7 @@ class GfTestAccountsTableComponent {
 }
 
 /**
- * Specification for the accounts module's query parameter contract.
+ * The accounts module's query parameter contract.
  *
  * The application resolves to a single canvas, so every mounted module observes
  * the same address at the same moment: a bare `createDialog`, `editDialog` or
@@ -428,13 +428,12 @@ describe('GfAccountsComponent', () => {
 
       component.fetchAccounts();
 
-      // This module used to ask for its create dialog here. The activities module
-      // made the same offer for the same viewer at the same moment, and which of
-      // the two responses arrived first decided whether one onboarding dialog
-      // appeared or two appeared stacked - an outcome the route-per-screen shell
-      // could not produce, because only one of the two screens was ever mounted.
-      // The offer is now made by the empty state this module renders and by its
-      // floating action button, both of which the viewer chooses to act on.
+      // Nothing asks for the create dialog here. The activities module makes the
+      // same offer for the same viewer at the same moment, so asking from a fetch
+      // would let whichever response landed first decide whether one onboarding
+      // dialog appeared or two appeared stacked. The offer is made instead by the
+      // empty state this module renders and by its floating action button, both of
+      // which the viewer chooses to act on.
       expect(routerMock.navigate).not.toHaveBeenCalled();
       expect(dialogMock.open).not.toHaveBeenCalled();
     });
@@ -485,8 +484,8 @@ describe('GfAccountsComponent', () => {
       // synchronously, its handler calls `fetchAccounts`, and the stubbed data
       // service answers synchronously too - so the whole cycle runs inside this
       // one emission, with the clearing navigation still unapplied because the
-      // router is a stub. That is the tightest form of the race, and it used to
-      // reopen the dialog without bound.
+      // router is a stub. That is the tightest form of the race, and without the
+      // guard below it reopens the dialog without bound.
       queryParamsSubject.next({
         accountDetailDialog: 'true',
         accountId: 'ACCOUNT_ID'

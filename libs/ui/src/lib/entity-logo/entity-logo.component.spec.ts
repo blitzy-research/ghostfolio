@@ -11,8 +11,8 @@ import { GfEntityLogoComponent } from './entity-logo.component';
  * assertion here involves two of them. On a canvas holding both Holdings and
  * Activities, the two tables render one logo per row for the same twelve asset
  * profiles; the server answers 404 for each, because those profiles carry no
- * `url`; and before this component remembered that, the measured result was 24
- * requests and 24 console errors on every single load.
+ * `url`; and a component that did not remember that would make 24 requests and
+ * write 24 console errors on every single load.
  *
  * The register is module-scoped and therefore shared by the whole suite, so each
  * test uses its own symbol. That is deliberate rather than incidental: resetting
@@ -60,12 +60,12 @@ describe('GfEntityLogoComponent', () => {
    *
    * Nullable, and honestly so. "No image at all" is a state this suite asserts more
    * than a dozen times, so a helper that claimed otherwise would be describing the
-   * opposite of what half its call sites measure. It used to claim otherwise, and
-   * that claim could not simply be rewritten either: with the host narrowed, `as
-   * HTMLImageElement` is reported as a style error in favour of `!`, and `!` is in
-   * turn reported as a forbidden non-null assertion - so the only way out is for the
-   * value to genuinely not be nullable, which is what {@link requireImageOf}
-   * provides for the call sites that need it.
+   * opposite of what half its call sites measure. Nor can a non-nullable claim be
+   * asserted here: with the host narrowed, `as HTMLImageElement` is reported as a
+   * style error in favour of `!`, and `!` is in turn reported as a forbidden
+   * non-null assertion - so the only way out is for the value to genuinely not be
+   * nullable, which is what {@link requireImageOf} provides for the call sites that
+   * need it.
    */
   const imageOf = (fixture: ComponentFixture<GfEntityLogoComponent>) => {
     return (fixture.nativeElement as HTMLElement).querySelector('img');
@@ -282,9 +282,10 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(switching, 'wanted-now-instead');
 
-    // Measured at 220-320ms after the 404 itself, so an address swapped in
-    // between is the normal case rather than a race worth calling unlikely. The
-    // element the browser answers for is the one it was loading.
+    // The verdict arrives hundreds of milliseconds after the 404 itself, so an
+    // address swapped in between is the normal case rather than a race worth
+    // calling unlikely. The element the browser answers for is the one it was
+    // loading.
     abandonedImage.dispatchEvent(new Event('error'));
 
     switching.detectChanges();
@@ -388,8 +389,8 @@ describe('GfEntityLogoComponent', () => {
     cleared.detectChanges();
 
     // Reached only when the asset profile identifier and the explicit url are all
-    // absent, so what is rendered describes inputs that no longer exist. Leaving
-    // it in place showed a logo belonging to a row that had been emptied.
+    // absent, so anything rendered describes inputs that are gone - a logo
+    // belonging to a row that has been emptied.
     expect(imageOf(cleared)).toBeNull();
     expect(cleared.componentInstance.src).toBeUndefined();
   });

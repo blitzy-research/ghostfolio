@@ -12,14 +12,12 @@ import { AuthService } from './auth.service';
  * The two federated sign-in callbacks, and specifically where they send the
  * browser afterwards.
  *
- * Both used to land on a dedicated authentication route that received the token
- * and forwarded it on. That route was deleted along with the rest of the
- * navigation surface, so the callbacks now land on the locale root and hand the
- * token over as a query parameter, which the root route's guard adopts before it
- * resolves the viewer.
+ * Both land on the locale root and hand the token over as a query parameter,
+ * which the root route's guard adopts before it resolves the viewer. There is no
+ * dedicated authentication route to receive it.
  *
  * Nothing about that arrangement is expressible in the type system: both targets
- * are template strings, and a drift in either - the retired path returning, the
+ * are template strings, and a drift in either - an internal path appearing, the
  * `jwt` parameter being dropped, the locale segment disappearing - would compile,
  * pass every layout test, and strand a validly authenticated visitor on the
  * signed-out prompt with no error anywhere. The exact strings are therefore
@@ -28,8 +26,8 @@ import { AuthService } from './auth.service';
  * of the URL rather than restating one copy of it.
  *
  * Only the callbacks are covered. The rest of this controller - anonymous
- * sign-in, WebAuthn registration and assertion - is untouched by the refactor
- * and belongs to whatever suite covers it.
+ * sign-in, WebAuthn registration and assertion - belongs to whatever suite covers
+ * it.
  */
 describe('AuthController', () => {
   const rootUrl = 'https://ghostfolio.example';
@@ -164,8 +162,7 @@ describe('AuthController', () => {
       const [target] = redirect.mock.calls[0] as [string];
 
       // The mechanical form of the rule, kept separate from the exact-string
-      // assertions above so that a reviewer can see the intent without inferring
-      // it: the shell has one route, and it is the root.
+      // assertions above: the shell serves one route, and it is the root.
       for (const retired of ['/auth', '/home', '/register', '/start', '/zen']) {
         expect(target).not.toContain(retired);
       }

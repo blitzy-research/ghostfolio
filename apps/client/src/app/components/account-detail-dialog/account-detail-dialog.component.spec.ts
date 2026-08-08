@@ -15,13 +15,12 @@ import { GfAccountDetailDialogComponent } from './account-detail-dialog.componen
 
 /**
  * The reveal-then-merge sequence, which is how a dialog hands work to a module
- * that no longer has an address.
+ * that has no address of its own.
  *
- * Cloning or editing an activity from inside this dialog used to close it and
- * navigate to the activities screen with the payload on the URL. There is no
- * activities screen now, so the departure splits in two: an intent asks the canvas
- * to surface the activities module, and the payload is *merged* onto the current
- * route so the module's own query-parameter handler opens the right form.
+ * Cloning or editing an activity from inside this dialog is two things rather than
+ * a navigation: an intent asks the canvas to surface the activities module, and
+ * the payload is *merged* onto the current route so the module's own
+ * query-parameter handler opens the right form.
  *
  * Three properties make that work, and each is asserted here because each fails
  * silently on its own.
@@ -30,9 +29,8 @@ import { GfAccountDetailDialogComponent } from './account-detail-dialog.componen
  * arrive while the account dialog's own parameters are still on the URL; replacing
  * them would erase the state the surrounding shell is mid-way through reading.
  *
- * The command array must stay empty. That is what makes the write route-agnostic,
- * and it is the single reason this entry point needed no change when 22 routes
- * became one.
+ * The command array must stay empty. That is what makes the write
+ * route-agnostic, and therefore independent of what the route table holds.
  *
  * The dialog must close. Left open, it would cover the very module the intent just
  * asked to be revealed.

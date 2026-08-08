@@ -35,18 +35,18 @@
               more" to anyone reading the page as a list of links, and it is what
               an SEO audit reports as non-descriptive.
 
-              Deliberately fixed in the VISIBLE text rather than with an
-              `aria-label`: the accessible name is what assistive technology
-              reads, but the rendered text is what a sighted reader and a crawler
-              read, and only changing the text serves all three. An `aria-label`
-              was measured to leave the audit red - it compares the element's own
-              text, never its accessible name - while also risking a "label in
-              name" mismatch by making the spoken name diverge from the printed
-              one. With no override the two are identical, so nothing can drift.
+              Carried in the VISIBLE text rather than in an `aria-label`: the
+              accessible name is what assistive technology reads, but the rendered
+              text is what a sighted reader and a crawler read, and only the text
+              serves all three. An `aria-label` would satisfy none of the latter
+              two - the check compares the element's own text, never its accessible
+              name - while also risking a "label in name" mismatch by making the
+              spoken name diverge from the printed one. With no override the two are
+              identical, so nothing can drift.
 
-              It fits: this row occupies 43-299px of a card that is over 1300px
-              wide, and the button is a flex item that wraps rather than
-              overflowing if a viewer makes the module narrow.
+              It fits: the row is a fraction of the card's width, and the button is
+              a flex item that wraps rather than overflowing if a viewer makes the
+              module narrow.
             -->
             <a
               color="accent"

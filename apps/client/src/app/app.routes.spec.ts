@@ -17,16 +17,14 @@ import { PageTitleStrategy } from './services/page-title.strategy';
 /**
  * The router contract of the single-canvas shell.
  *
- * The refactor collapsed twenty-two lazy top-level route entries into one, and it
- * did so under an explicit constraint: the Angular Router itself is *preserved*
- * and only the set of routes it resolves shrinks. Both halves of that are
- * regressions waiting to happen and neither is visible to a compiler.
+ * Exactly one route renders anything, and the Angular Router itself is fully
+ * *preserved* around it. Both halves of that are regressions waiting to happen and
+ * neither is visible to a compiler.
  *
  * The route table is asserted directly, because it is an exported array. A second
  * route added for "just this one screen" would compile, would work, and would
- * reintroduce the navigation surface this refactor exists to remove; and a
- * wildcard still pointing at a deleted path would send every stale bookmark to a
- * blank screen.
+ * reintroduce a navigation surface; and a wildcard pointing at a path this
+ * application does not serve would send every stale bookmark to a blank screen.
  *
  * The four preserved bootstrap facilities are asserted in two complementary ways,
  * because `apps/client/src/main.ts` cannot be imported: its body is a top-level
@@ -38,7 +36,7 @@ import { PageTitleStrategy } from './services/page-title.strategy';
  *    catches a provider being dropped, renamed or reconfigured;
  *  - the *behaviour* of the two facilities that carry logic - the title strategy
  *    and the preloading strategy - is asserted by exercising them, which is what
- *    catches a facility that is still registered but no longer does its job.
+ *    catches a facility that is registered but does not do its job.
  *
  * Reading a source file in a test is unusual enough to deserve the reason: the
  * alternative is asserting nothing at all about the provider block, and the
@@ -70,10 +68,10 @@ describe('the single-canvas router contract', () => {
     it('declares the root route eagerly, because code splitting moved to the registry', () => {
       const [root] = routes;
 
-      // Collapsing the lazy routes removed every code-splitting boundary in the
-      // application and the module registry's own lazy loaders replaced them. The
-      // root route is the one thing every visit needs, so deferring it would add a
-      // round trip and buy nothing.
+      // The route table declares no lazy boundary at all; the module registry's own
+      // lazy loaders are where code splitting happens. The root route is the one
+      // thing every visit needs, so deferring it would add a round trip and buy
+      // nothing.
       expect(root.loadComponent).toBeUndefined();
       expect(root.loadChildren).toBeUndefined();
       expect(root.children).toBeUndefined();
@@ -92,15 +90,15 @@ describe('the single-canvas router contract', () => {
     it('redirects every other address to the root, not to a deleted path', () => {
       const [, wildcard] = routes;
 
-      // `redirectTo: 'home'` was the previous target and `home` no longer exists,
-      // so this assertion is the difference between a stale bookmark landing on the
-      // canvas and landing on nothing.
+      // The only path this application serves is the root, so this assertion is
+      // the difference between a stale bookmark landing on the canvas and landing
+      // on nothing.
       expect(wildcard.path).toBe('**');
       expect(wildcard.redirectTo).toBe('');
       expect(wildcard.pathMatch).toBe('full');
     });
 
-    it('addresses none of the paths the refactor deleted', () => {
+    it('declares no path this application does not serve', () => {
       const declaredPaths = routes.map(({ path }) => path);
 
       for (const retired of [
@@ -265,10 +263,10 @@ describe('the single-canvas router contract', () => {
     });
 
     it('is unreachable from the route table, and therefore unchanged by it', () => {
-      // The strategy governs `loadChildren` only, and no route declares the flag -
-      // it was already inert before the collapse. Keeping it registered is
-      // consequently a zero-delta preservation rather than a claim that something
-      // still preloads, and this assertion is what keeps that statement true.
+      // The strategy governs `loadChildren` only, and no route declares the flag, so
+      // it is inert. Keeping it registered preserves the router wiring without
+      // claiming that anything preloads, and this assertion is what keeps that
+      // statement true.
       for (const route of routes) {
         expect(route.data?.preload).toBeUndefined();
         expect(route.loadChildren).toBeUndefined();

@@ -45,9 +45,9 @@ let isRegistered = false;
  * to plugins that are registered at the moment the chart is constructed.
  *
  * Registering a plugin from a component constructor therefore makes the global
- * registry depend on module load order, and this application collapsed its
- * routes onto one canvas whose modules arrive as independently loaded chunks in
- * a non-deterministic order. A chart built from a chunk that arrived before the
+ * registry depend on module load order, and this application draws its modules
+ * onto one canvas as independently loaded chunks that arrive in a
+ * non-deterministic order. A chart built from a chunk that arrived before the
  * plugin was registered never gets its `start` hook, so it has no state - and
  * the moment a later chunk registers that plugin, the earlier chart's next
  * update runs the plugin against state that was never created and throws,

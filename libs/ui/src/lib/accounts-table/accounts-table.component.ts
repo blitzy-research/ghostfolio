@@ -152,11 +152,6 @@ export class GfAccountsTableComponent {
 
   protected onOpenAccountDetailDialog(accountId: string) {
     if (this.hasPermissionToOpenDetails()) {
-      // Merged, not replaced. Replacing the whole map discarded every parameter the
-      // rest of the canvas had put there - a sibling module's open dialog, the
-      // shared-portfolio access identifier, the sign-in token hand-off - as a side
-      // effect of opening this one dialog.
-      //
       // Deliberately unqualified. This table is mounted by the accounts module,
       // which is the default owner of this dialog and answers a request that names
       // nobody; the allocations module hosts its own copy and answers only a

@@ -1,6 +1,3 @@
-// Material system tokens require fallbacks because the current theme does not
-// emit the --mat-sys layer.
-
 :host {
   background: var(--mat-sys-surface-container, #ffffff);
   border-end-start-radius: var(--mat-sys-corner-medium, 4px);

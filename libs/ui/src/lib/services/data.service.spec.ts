@@ -541,9 +541,9 @@ describe('DataService in-flight read sharing', () => {
 
   it('shares the reads the canvas actually duplicated', () => {
     // Holdings is asked for by the Holdings module and by Analysis; performance
-    // by Overview and by Analysis. Both pairs were measured as byte-identical
-    // URLs, and both are asserted here so a future change to either method's
-    // parameter assembly cannot silently un-share it.
+    // by Overview and by Analysis. Each pair resolves to a byte-identical URL, and
+    // both are asserted here so a future change to either method's parameter
+    // assembly cannot silently un-share it.
     dataService.fetchPortfolioHoldings({ range: 'max' }).subscribe();
     dataService.fetchPortfolioHoldings({ range: 'max' }).subscribe();
 
@@ -725,8 +725,8 @@ describe('DataService in-flight read sharing across identities', () => {
       ({ url }) => url === detailsPath && url !== undefined
     );
 
-    // One request for A, one for B. Before this partitioning there was one request
-    // in total and B was subscribed to it.
+    // One request for A, one for B. Without partitioning by argument there would
+    // be one request in total and B would be subscribed to it.
     expect(requestsAsAccountB.length).toBe(1);
 
     requestAsAccountA.flush(responseFor('ACCOUNT_A_HOLDING'));

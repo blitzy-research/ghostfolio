@@ -10,22 +10,19 @@ import { BehaviorSubject } from 'rxjs';
 import { GfUserAccountMembershipComponent } from './user-account-membership.component';
 
 /**
- * The pricing link, which had to stop being a route without stopping being a link.
+ * The pricing link, which is a link without being a route.
  *
- * The public marketing surface - pricing included - is deleted from this
- * application, so the former in-app `routerLink` has no destination. But the page
- * itself still exists, on the hosted deployment, so the correct remediation is not
- * to drop the link: it becomes an absolute URL to `ghostfol.io`, which is the exact
- * pattern the admin settings component already used for the same page and which is
- * therefore the in-repository precedent rather than an invention.
+ * This application serves no pricing page, but the hosted deployment does, so the
+ * link is an absolute URL to `ghostfol.io` - the same pattern the admin settings
+ * component uses for the same page.
  *
  * Two things make this worth pinning. The route *constant* is deliberately still
  * consulted - `publicRoutes.pricing.path` is a `$localize`-tagged, per-locale
  * segment, so hardcoding "pricing" here would break twelve translations - which
- * means a reader could easily mistake this for a surviving internal route and
- * "simplify" it back into one. And because the URL is only ever handed to an
- * `href`, a relative value would still render as a working-looking link that
- * resolves to the canvas via the wildcard, so nothing would visibly fail.
+ * means a reader could easily mistake this for an internal route and "simplify" it
+ * into one. And because the URL is only ever handed to an `href`, a relative value
+ * would still render as a working-looking link that resolves to the canvas via the
+ * wildcard, so nothing would visibly fail.
  */
 describe('GfUserAccountMembershipComponent', () => {
   let fixture: ComponentFixture<GfUserAccountMembershipComponent>;

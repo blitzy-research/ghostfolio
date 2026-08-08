@@ -14,20 +14,18 @@ import { BehaviorSubject, of } from 'rxjs';
 import { GfAdminUsersComponent } from './admin-users.component';
 
 /**
- * Inspecting a user, which used to be a route and is now a dialog.
+ * Inspecting a user, which is a dialog rather than a destination.
  *
- * This row action was the one place in the admin surface that navigated by
- * concatenating an identifier onto a route path. That route is gone, and rather
- * than becoming a reveal-module intent - which would surface a module without
- * saying *which* user to show - it opens the user detail dialog directly. That
- * makes this the one producer in the refactor whose remediation is neither a
- * navigation nor an intent, which is precisely why it is worth pinning: the
- * identifier has to survive the change, and a dialog opened without it shows
+ * This row action carries an identifier, so it is neither a navigation nor a
+ * reveal-module intent - an intent would surface a module without saying *which*
+ * user to show. It opens the user detail dialog directly instead, which makes it
+ * the one producer of its kind in this application and precisely why it is worth
+ * pinning: the identifier has to reach the dialog, and one opened without it shows
  * nothing.
  *
- * The suite deliberately provides no `Router`. The component no longer injects one,
- * so its absence is an assertion rather than an omission - a reintroduced router
- * would fail to resolve here.
+ * The suite deliberately provides no `Router`. The component injects none, so its
+ * absence is an assertion rather than an omission - a reintroduced router would
+ * fail to resolve here.
  */
 describe('GfAdminUsersComponent', () => {
   let dialogOpen: jest.Mock;
@@ -136,8 +134,8 @@ describe('GfAdminUsersComponent', () => {
 
       component.onOpenUserDetailDialog('user-42');
 
-      // The identifier used to travel in the URL. It now travels in the dialog
-      // payload, and losing it would open a dialog with nothing to show.
+      // The identifier travels in the dialog payload rather than in the URL, and
+      // losing it would open a dialog with nothing to show.
       expect(dialogRequests[0].config.data).toMatchObject({
         currentUserId: 'admin-1',
         userId: 'user-42'
@@ -180,8 +178,8 @@ describe('GfAdminUsersComponent', () => {
 
     it('wires the handler from the template', () => {
       // The handler is invoked directly above, so this is what proves it is
-      // reachable at all - the gap that left another call to action in this
-      // refactor bound to nothing.
+      // reachable at all - the gap that leaves a call to action bound to
+      // nothing.
       expect(template).toContain('onOpenUserDetailDialog(');
     });
 

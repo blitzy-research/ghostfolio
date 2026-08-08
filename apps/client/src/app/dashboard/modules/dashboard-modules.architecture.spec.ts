@@ -245,7 +245,7 @@ describe('the dashboard module wrappers', () => {
       ).toEqual(titles);
 
       // The AI chat module is the one module with no screen to inherit a title
-      // from, and therefore the only display name this refactor introduces.
+      // from, so its display name is declared rather than reused.
       expect(dashboardModules[DashboardModuleType.AI_CHAT].name).toBe(
         'AI Chat'
       );
@@ -464,7 +464,7 @@ describe('the dashboard module wrappers', () => {
   /**
    * The reverse dependency direction: the canvas layer must not name a wrapper.
    *
-   * Rule 3 makes the registry the only mechanism that introduces a module type.
+   * The registry is the only mechanism that introduces a module type.
    * The wrapper-side checks above stop a module reaching into the canvas; they
    * say nothing about the canvas reaching into `modules/**`. A `@if` on a module
    * type in the canvas template, a static import in the host, or one special
@@ -578,11 +578,11 @@ describe('the dashboard module wrappers', () => {
   /**
    * Where a module's position and size live, asserted as an absence.
    *
-   * Rule 2 makes grid state the single source of truth for placement. A wrapper
+   * Grid state is the single source of truth for placement. A wrapper
    * that declared `x`, `y`, `cols` or `rows` - as an input, a field or a default
    * - would be a second authority for the same value, and the two would disagree
    * the moment a viewer dragged the module: the grid would move it, the wrapper
-   * would keep reporting where it used to be, and whichever one the persisted
+   * would keep reporting the stale value, and whichever one the persisted
    * projection happened to read would win. The wrappers are reached through
    * `NgComponentOutlet`, which passes no inputs at all, so such a declaration
    * could never even be populated - it would simply be a lie that compiles.

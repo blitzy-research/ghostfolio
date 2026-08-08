@@ -9,10 +9,9 @@
   // Sizing the box to the ratio the chart is composed at removes the scaling
   // without touching the chart's own configuration.
   //
-  // This is the fourth of the four charts the finding covers - the other three
-  // are the investment charts inside `portfolio-analysis` - so the two values
-  // have to move together or the performance chart would keep stretching while
-  // its neighbours stopped.
+  // The investment charts inside `portfolio-analysis` are drawn at the same ratio
+  // for the same reason, so the two values have to move together or this chart
+  // would stretch while its neighbours did not.
   .chart-container {
     aspect-ratio: 2 / 1;
 

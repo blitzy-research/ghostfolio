@@ -482,9 +482,9 @@ ngx-skeleton-loader {
     // This is where it has to be fixed. The declaration is `!important` on `color`
     // itself, so it overrides Material's own `color: var(--mat-button-filled-
     // label-text-color, ...)` outright - which means overriding that token from a
-    // component stylesheet, as this work first attempted, changes nothing at all
-    // and does so silently. `--dark-primary-text` is the palette's own contrast
-    // colour for a light container and computes 9.27:1 on it.
+    // component stylesheet changes nothing at all, and does so silently.
+    // `--dark-primary-text` is the palette's own contrast colour for a light
+    // container and computes 9.27:1 on it.
     color: var(--mat-sys-on-primary, rgba(var(--dark-primary-text))) !important;
   }
 }
@@ -547,11 +547,11 @@ ngx-skeleton-loader {
     // `inherit`, and a button the author marked as the primary action renders in the
     // surrounding body text colour: near-black, indistinguishable from a plain one.
     //
-    // Fixed here rather than at the theme, which this work treats as read-only. The
-    // values are Material's own computed primary for each theme - it emits them
-    // correctly before the broken declaration overrides them - so this restores the
-    // library's intent rather than inventing a colour. Both clear WCAG AA for normal
-    // text on the surface they sit on: 6.44:1 here, 9.72:1 in the dark theme.
+    // Fixed here rather than at the theme, which is treated as read-only. The values
+    // are Material's own computed primary for each theme - it emits them correctly
+    // before the broken declaration overrides them - so this restores the library's
+    // intent rather than inventing a colour. Both clear WCAG AA for normal text on
+    // the surface they sit on: 6.44:1 here, 9.72:1 in the dark theme.
     //
     // The filled variant's label sits on a brand-filled container, so it takes the
     // on-primary foreground rather than the brand colour. That is the same dark

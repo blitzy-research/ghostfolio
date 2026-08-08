@@ -32,34 +32,32 @@ jest.mock(
 );
 
 /**
- * The activities screen as a canvas module, focused on the route-neutral entry
- * points the single-canvas refactor rewrote.
+ * The activities module, focused on its route-neutral entry points.
  *
  * Two things are proved here, and the first of them is a regression the
  * compiler cannot catch:
  *
- * 1. **The empty-state call to action is connected end to end.** That control
- *    used to be an anchor inside `gf-no-transactions-info-indicator` carrying
- *    its own router link. Neutralising the link turned it into a button that
- *    emits `createActivityClicked`, which `gf-activities-table` re-emits. If
- *    this component does not bind that output, the button renders, is
- *    focusable, is clickable - and does nothing at all. Nothing in the type
- *    system notices an unbound output, so the button is *clicked for real*
- *    here: the table is rendered as the real component, the notice is brought
- *    into its empty state through the same inputs the template binds, and the
- *    assertion is made on the effect at the far end of the chain.
+ * 1. **The empty-state call to action is connected end to end.** That control is
+ *    a button inside `gf-no-transactions-info-indicator` that emits
+ *    `createActivityClicked`, which `gf-activities-table` re-emits, rather than
+ *    an anchor carrying a router link. If this component does not bind that
+ *    output, the button renders, is focusable, is clickable - and does nothing at
+ *    all. Nothing in the type system notices an unbound output, so the button is
+ *    *clicked for real* here: the table is rendered as the real component, the
+ *    notice is brought into its empty state through the same inputs the template
+ *    binds, and the assertion is made on the effect at the far end of the chain.
  * 2. **The dialog request stays route-agnostic and stays narrow.** The payload is
  *    asserted down to its exact members: the `dialogModule` discriminator that
  *    tells co-mounted modules the flag is not addressed to them, the explicit
  *    nulls that neutralise a stale edit request, and the `merge` mode that keeps
  *    the clear confined to those keys instead of taking the shared-portfolio
  *    identifier and every sibling module's state with it.
- * 3. **Nothing is opened automatically.** The first-activity prompt used to be
- *    raised by `fetchActivities`, and the accounts module raised its own for the
- *    same viewer at the same moment - so which response landed first decided
- *    whether one onboarding dialog appeared or two appeared stacked. The absence
- *    of that navigation is asserted, because an absence is exactly the kind of
- *    behaviour a later change reinstates without noticing.
+ * 3. **Nothing is opened automatically.** `fetchActivities` raises no
+ *    first-activity prompt, and the accounts module would make the same offer for
+ *    the same viewer at the same moment - so raising one from a fetch would let
+ *    whichever response landed first decide whether one onboarding dialog appeared
+ *    or two appeared stacked. That absence is asserted, because an absence is
+ *    exactly the kind of behaviour a later change reinstates without noticing.
  *
  * A `Router` stub records instead of navigating, which is what keeps the
  * assertions about the URL request rather than about the router: on a
@@ -340,13 +338,11 @@ describe('GfActivitiesComponent', () => {
     it('should open nothing at all for a viewer holding no activities', async () => {
       await createComponent();
 
-      // The onboarding prompt this module used to raise from `fetchActivities` is
-      // gone. The accounts module raised its own for the same viewer at the same
-      // moment, and which of the two responses arrived first decided whether one
-      // onboarding dialog appeared or two appeared stacked - an outcome the
-      // route-per-screen shell could not produce, because only one of the two
-      // screens was ever mounted. The empty-state call to action asserted above
-      // makes the same offer, and the viewer chooses to act on it.
+      // `fetchActivities` raises no onboarding prompt. The accounts module makes
+      // the same offer for the same viewer at the same moment, so raising one here
+      // would let whichever response arrived first decide whether one onboarding
+      // dialog appeared or two appeared stacked. The empty-state call to action
+      // asserted above makes the offer, and the viewer chooses to act on it.
       expect(routerMock.navigate).not.toHaveBeenCalled();
       expect(dialogMock.open).not.toHaveBeenCalled();
     });
@@ -437,11 +433,11 @@ describe('GfActivitiesComponent', () => {
       TestBed.inject(MatDialog).open = open;
 
       // The seeded viewer holds zero activities and may create one, which is
-      // exactly the case that used to have the create dialog opened for it at the
-      // end of the first fetch. On a canvas that is an ambush: the module is one
-      // card among many that all load together, and the dialog it raised covered
-      // and blocked every other module behind a full-viewport scrim - on every
-      // visit, because the fetch runs on every load.
+      // exactly the case a fetch-time create dialog would fire for. On a canvas
+      // that is an ambush: the module is one card among many that all load
+      // together, the dialog would cover and block every other module behind a
+      // full-viewport scrim, and it would do so on every visit because the fetch
+      // runs on every load.
       //
       // Both halves are asserted, because either alone would be satisfiable by a
       // broken component: that no dialog REQUEST was made, and that no dialog was

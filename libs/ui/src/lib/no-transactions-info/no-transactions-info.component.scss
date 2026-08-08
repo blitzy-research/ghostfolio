@@ -6,12 +6,12 @@
     border-radius: 0.25rem;
   }
 
-  // The control below became a real button when its router binding was removed,
-  // which restored keyboard focus and activation - but the host application
-  // resets `button:focus` globally and its theme does not opt into Material's
-  // strong focus indicators, so a keyboard user reached the control with nothing
-  // on screen to say so. Declared here rather than left to the theme, in the same
-  // system-token-with-fallback form the dashboard chrome uses.
+  // The control below is a real button, so it takes keyboard focus and activation -
+  // but the host application resets `button:focus` globally and its theme does not
+  // opt into Material's strong focus indicators, so without this a keyboard user
+  // reaches the control with nothing on screen to say so. Declared here rather than
+  // left to the theme, in the same system-token-with-fallback form the dashboard
+  // chrome uses.
   button:focus-visible {
     outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     outline-offset: 2px;

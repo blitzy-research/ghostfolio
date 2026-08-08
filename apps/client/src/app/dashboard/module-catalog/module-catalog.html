@@ -6,10 +6,10 @@
     -->
     <mat-label i18n>Search modules</mat-label>
     <!--
-      `aria-describedby` points at the visible hint below the field, which was
-      never associated with anything: it sat in a sibling element, so the field
-      announced its label and nothing else, and the one sentence explaining that a
-      row can be dragged as well as clicked reached only people who could see it.
+      `aria-describedby` points at the visible hint below the field, which lives in
+      a sibling element and would otherwise be announced to nobody: the field would
+      carry only its label, and the sentence explaining that a row can be dragged
+      as well as clicked would reach only people who can see it.
 
       A static attribute rather than a binding, and pointing OUT of this form field
       rather than being moved into a `mat-hint`. Material reads this attribute as

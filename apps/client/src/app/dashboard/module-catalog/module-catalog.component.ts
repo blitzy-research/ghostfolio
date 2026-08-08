@@ -41,72 +41,32 @@ import { GfModuleCatalogItemComponent } from './module-catalog-item/module-catal
  * reports one thing outwards - that a module type was chosen - and everything
  * downstream of that choice belongs to the canvas.
  *
- * Rows come from {@link GfModuleRegistryService.getAll}, which deliberately
- * returns every module it holds, permission included: hiding entries inside the
- * registry would move an authorization decision somewhere it could be neither seen
- * nor tested. Narrowing to the current viewer is therefore this component's job,
- * done in {@link GfModuleCatalogComponent.applyPermissionFilter} before a row is
- * rendered or a module type emitted. The canvas repeats the check against saved
- * layouts and the API stays independently guarded; those are layers of the same
- * defence, not a licence to relax this one.
+ * The module registry is the only source of rows, and it deliberately returns
+ * every module it holds, permission included: hiding entries inside the
+ * registry would move an authorization decision somewhere it could be neither
+ * seen nor tested. Narrowing to the current viewer is therefore this
+ * component's job, done in {@link
+ * GfModuleCatalogComponent.applyPermissionFilter} before a row is rendered or a
+ * module type emitted. The canvas repeats the check against saved layouts and
+ * the API stays independently guarded; those are layers of the same defence,
+ * not a licence to relax this one.
  *
  * Only `name`, `moduleType` and `permission` are read. The lazy `loadComponent`
- * thunk is never called here - doing so would fetch every module bundle just to
+ * thunk is never called here - resolving a module class belongs to the module
+ * host, and calling it from a listing would fetch every module bundle just to
  * draw a list of names.
  *
- * The module registry is the only source. Every listed row originates from
- * {@link GfModuleRegistryService.getAll}, so a module type that is not
- * registered cannot be offered, and there is no second place a module could be
- * introduced from. The registry deliberately returns every module it holds,
- * permission included, because hiding entries inside it would move an
- * authorization decision somewhere it could be neither seen nor tested - so
- * narrowing that list to the current viewer is this component's job, performed
- * in {@link GfModuleCatalogComponent.applyPermissionFilter}, before a row is
- * ever rendered or a module type ever emitted. The canvas repeats the same
- * check against saved layouts, and the API endpoints stay independently
- * guarded; those are layers of the same defence, not a licence to relax this
- * one.
+ * It owns no layout state: no cell coordinate and no cell size is declared,
+ * read, displayed or emitted. It owns no panel state either - the canvas mounts
+ * this content inside its own side drawer and decides when that drawer is open.
+ * It persists nothing and navigates nowhere, which is also why a row is a card
+ * rather than an anchor.
  *
- * Only three members of a definition are ever read: `name`, `moduleType` and
- * `permission`. In particular the lazy `loadComponent` thunk is never called
- * here - resolving a module class belongs to the module host, and calling it
- * from a catalog listing would fetch all twenty-one module bundles just to draw
- * a list of names.
- *
- * ## What it deliberately cannot do
- *
- * - **It owns no layout state.** No cell coordinate and no cell size is
- *   declared, read, displayed or emitted. The catalog emits a bare
- *   {@link DashboardModuleType}; the canvas resolves geometry from the registry
- *   and the grid engine enforces the declared floor.
- * - **It owns no panel state.** No open-state input and no open or close method
- *   is exposed, and no drawer, backdrop or floating action button is rendered.
- *   The canvas mounts this content inside its own side drawer and decides when
- *   that drawer is open - including opening it unprompted for a viewer with no
- *   saved layout.
- * - **It persists nothing.** A layout write originates only from a grid state
- *   change on the canvas, so no data service, no HTTP client and no browser
- *   storage is reachable from here.
- * - **It navigates nowhere.** The URL no longer selects a screen, so no router
- *   API, link directive or route constant is imported. That is also why a row is
- *   a card rather than an anchor.
- *
- * ## Interaction contract
- *
- * A module can be chosen in three interchangeable ways, all of which converge
- * on one emission per choice:
- *
- * 1. clicking a row, which the row reports through its own output;
- * 2. pressing Enter or Space on the row that currently holds focus, which the
- *    row's own button handles natively and reports through that same output;
- * 3. dragging a row onto empty canvas, which bypasses this component entirely -
- *    the row writes the discriminator as a native drag payload and the canvas
- *    reads it on drop.
- *
- * @example
- * ```html
- * <gf-module-catalog (moduleAdded)="onAddModule($event)" />
- * ```
+ * A module can be chosen in three interchangeable ways, all converging on one
+ * emission per choice: clicking a row; pressing Enter or Space on the focused
+ * row, which its own button handles natively; or dragging a row onto empty
+ * canvas, which bypasses this component entirely - the row writes the
+ * discriminator as a native drag payload and the canvas reads it on drop.
  */
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -121,109 +81,36 @@ import { GfModuleCatalogItemComponent } from './module-catalog-item/module-catal
   templateUrl: './module-catalog.html'
 })
 export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
-  /**
-   * The rendered rows, in display order.
-   *
-   * Queried as components rather than as elements because the key manager moves
-   * a roving focus between them through their `FocusableOption` implementation,
-   * and because reading which row currently holds that focus goes through the
-   * component instance.
-   */
   @ViewChildren(GfModuleCatalogItemComponent)
   public moduleCatalogItems: QueryList<GfModuleCatalogItemComponent>;
 
-  /**
-   * The module types currently on the canvas.
-   *
-   * Supplied by the canvas, which owns the arrangement, and read for one purpose
-   * only: telling a row that its module is already placed so it can say so. It is
-   * deliberately a list of TYPES and not of grid items - no coordinate and no size
-   * reaches this component - so the grid remains the single authority on geometry
-   * and this holds no copy of it.
-   */
+  // Discriminators only, never geometry: a row says whether its module is
+  // already on the canvas, and the grid remains the sole authority on where
+  // anything sits.
   @Input() placedModuleTypes: DashboardModuleType[] = [];
 
-  /**
-   * The module types the canvas has no room for.
-   *
-   * Read for one purpose, exactly as {@link placedModuleTypes} is: telling a row
-   * that clicking it cannot currently succeed, so the catalog stops inviting an
-   * action that would silently do nothing. Also a list of TYPES and nothing more -
-   * answering *why* there is no room needs the grid's geometry, which is why the
-   * canvas answers it and this only reports the answer.
-   */
   @Input() unavailableModuleTypes: DashboardModuleType[] = [];
 
-  /**
-   * The search field, which is this panel's own first tabbable control.
-   *
-   * Queried so the canvas can hand keyboard focus to the catalog when a viewer
-   * opens it deliberately; see {@link GfModuleCatalogComponent.focusSearchField}.
-   * Read as an `ElementRef` explicitly, because the element the reference names
-   * also hosts Material's input directive and the intent here is the element.
-   */
   @ViewChild('search', { read: ElementRef })
   private searchField: ElementRef<HTMLInputElement>;
 
-  /**
-   * The definitions currently on display: permission-eligible, then narrowed by the
-   * active search term.
-   *
-   * Assigned rather than mutated, but note that an empty search term assigns
-   * {@link eligibleModules} itself, so this is not always a fresh reference - the
-   * explicit `markForCheck()` in {@link setModules} is what re-reads the view.
-   */
   public modules: DashboardModuleDefinition[] = [];
 
   public searchFormControl = new FormControl<string>('');
 
-  /**
-   * Which row currently holds the list's single tab stop.
-   *
-   * A roving-focus list has exactly one: the row the key manager last moved to,
-   * or the first row before any movement. Publishing it here is what lets Tab
-   * reach the results at all - every row being permanently untabbable is what made
-   * the whole result list unreachable from the keyboard, and narrowing the list by
-   * search made that worse rather than better, because there was then nothing else
-   * for Tab to land on either.
-   *
-   * It is reset to the first row whenever the results change, since the row that
-   * held it may no longer be in the list.
-   */
+  // The one row in the tab order. The list is a roving-tabindex composite, so
+  // exactly one row is tabbable at a time and the arrow keys move that point
+  // rather than the browser's own focus order.
   public tabbableIndex = 0;
 
   protected readonly moduleAdded = output<DashboardModuleType>();
 
-  /**
-   * Forwarded from whichever row is being dragged, so the canvas can size the
-   * grid's drop indicator from that module's own registered footprint instead of
-   * the engine's single global default.
-   *
-   * Relayed rather than acted on. This panel holds no geometry, resolves no
-   * component and reads nothing but `name` and `moduleType`; the module type is
-   * simply passed through to the one component that owns grid policy.
-   */
   protected readonly dragStarted = output<DashboardModuleType>();
 
-  /** Forwarded from the dragged row so the canvas can undo that adjustment. */
   protected readonly dragEnded = output<void>();
 
-  /**
-   * Every registered module the current viewer is allowed to see, in registry order.
-   * Searched rather than rendered directly.
-   *
-   * Recomputed on every user-store emission, not only when the permissions actually
-   * change. Keeping it separate from {@link modules} is what lets a cleared search
-   * term restore the full list without going back to the registry, and what lets a
-   * permission change re-narrow the display without a synthetic form emission.
-   */
   private eligibleModules: DashboardModuleDefinition[] = [];
 
-  /**
-   * Drives the roving focus across the rows. Undefined until the view has been
-   * initialized, so every use is guarded: a keystroke can reach the host before
-   * the first query resolves.
-   */
   private keyManager: FocusKeyManager<GfModuleCatalogItemComponent>;
 
   public constructor(
@@ -233,25 +120,9 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     private userService: UserService
   ) {}
 
-  /**
-   * Bound to the host rather than to `document` on purpose: this component owns no
-   * open state, so a document-level listener would keep firing for a closed catalog
-   * and compete with whatever has focus. A host-scoped listener can only fire while
-   * focus is inside the catalog, which is self-gating.
-   *
-   * Bound to the host rather than to the document. The precedent this is
-   * modelled on listens on `document:keydown` and gates itself on an open flag
-   * it owns, but this component owns no open state - the canvas does - so a
-   * document-level listener would keep firing for a catalog that is closed, and
-   * would compete with whatever has focus instead. A host-scoped listener is
-   * self-gating: it can only fire while focus is inside the catalog. Please do
-   * not "restore" the document-level form.
-   *
-   * Only ArrowDown and ArrowUp are considered. Every other key - the whole of
-   * ordinary text entry, Tab, Escape, and activation - is left untouched, so the
-   * search field keeps working, dismissing the panel stays with the canvas, and
-   * activating a row stays with the row's own button.
-   */
+  // Bound on the host rather than on the list, because the search field sits
+  // above the rows and a viewer typing into it must still be able to step
+  // through them with the arrow keys without leaving the field.
   @HostListener('keydown', ['$event'])
   public onKeydown(event: KeyboardEvent) {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -259,69 +130,32 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
         return;
       }
 
-      // Clearing first keeps the highlight single-valued. The key manager
-      // focuses the row it moves to and the browser blurs the one it left, which
-      // clears that row on its own, but the clear is done here too so the state
-      // is already single-valued by the time the lookup below reads it rather
-      // than depending on blur having been dispatched first.
-      //
-      // Note that the active index must NOT be reset here, unlike on a results
-      // update. The key manager treats a negative index as "nothing active yet"
-      // and answers a movement request from it by activating the first or last
-      // row, so resetting at this point would turn every arrow press into a
-      // jump to one end of the list instead of a step through it.
       this.removeFocusFromModuleCatalogItems();
 
       this.keyManager.onKeydown(event);
 
       const currentItem = this.getCurrentModuleCatalogItem();
 
-      // Moves the tab stop with the focus, which is the other half of the roving
-      // pattern: a viewer who arrowed to a row and then tabbed away must come back
-      // to that row rather than to the top of the list.
       this.tabbableIndex = Math.max(this.keyManager.activeItemIndex ?? 0, 0);
 
       if (currentItem?.rowElement) {
         currentItem.rowElement.nativeElement?.scrollIntoView({
-          // `nearest` rather than `center`: this list is a scroll region of its
-          // own, and asking to centre a row scrolls it even when the row is
-          // already fully visible, which makes every arrow press jolt the panel.
           block: 'nearest'
         });
       }
 
-      // No `preventDefault()` here on purpose: the key manager already
-      // suppresses the default action for the keys it handles, and calling it
-      // again would be redundant. Nothing is suppressed for keys it ignores.
       return;
     }
-
-    // Enter and Space are deliberately absent. The key manager moves real DOM
-    // focus onto the focused row's button, and a focused native button already
-    // activates on both keys by itself - so handling either here would add the
-    // module a second time. Leaving them alone also keeps plain Enter in the
-    // search field behaving normally.
   }
 
+  // Deferred to `AfterViewInit` because `FocusKeyManager` needs a populated
+  // `QueryList`; `withWrap` makes the list circular so arrowing past either end
+  // continues rather than stopping dead.
   public ngAfterViewInit() {
-    // Constructed exactly once. The key manager subscribes to the query list
-    // itself, so it keeps tracking the rows as search results narrow and widen;
-    // rebuilding it per update would discard that subscription and the active
-    // row along with it. Wrapping is deliberate: at either end of the list the
-    // next step continues from the opposite end.
     this.keyManager = new FocusKeyManager(this.moduleCatalogItems).withWrap();
   }
 
   public ngOnInit() {
-    // Subscribed before the search stream deliberately: the user store emits
-    // synchronously on subscribe, which is what fills the catalog for the first
-    // frame. The search stream cannot do that job, because its seed has to travel
-    // through the debounce below - leaving the panel blank for that window, exactly
-    // when it opens by itself for a viewer with no saved layout.
-    //
-    // That first emission carries no viewer and may carry no state object at all,
-    // hence the optional chaining. Absent a viewer only the modules that declare no
-    // permission are eligible, which is the correct answer while nothing is known.
     this.userService.stateChanged
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((state) => {
@@ -333,20 +167,14 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     this.searchFormControl.valueChanges
       .pipe(
         map((searchTerm) => {
-          // The results are deliberately left standing while the new term
-          // settles. The template decides between the list and its "no results"
-          // notice from the list itself, so emptying it here - rather than when
-          // the narrowed result arrives - would flash that notice between
-          // keystrokes.
-          //
-          // Marking is still required: a term can arrive programmatically, from
-          // the seed below or from a reset, and such an emission is not a DOM
-          // event, so nothing else would mark this `OnPush` view for the
-          // template to re-read the term it renders its empty state from.
           this.changeDetectorRef.markForCheck();
 
           return searchTerm?.trim();
         }),
+        // The search index is rebuilt per query and the permission filter
+        // re-runs on every viewer emission, so the debounce is what keeps
+        // typing from re-searching per keystroke. `distinctUntilChanged`
+        // additionally drops a re-emission that trimmed to the same term.
         debounceTime(300),
         distinctUntilChanged(),
         switchMap((searchTerm) => {
@@ -358,55 +186,29 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
         next: (modules) => {
           this.setModules(modules);
         },
+        // A failed search empties the list rather than terminating the stream,
+        // so the next keystroke is still searched. The error is reported
+        // sanitized because a search term is viewer input.
         error: (error: unknown) => {
-          // A form control's value stream does not fail, so reaching this means
-          // the narrowing itself threw. Recorded rather than swallowed, and
-          // recorded through the shared reporter, which emits the event id and a
-          // numeric status and nothing else - no stack and no search term. The
-          // actionable part of the response is the display, which is emptied so
-          // the template falls back to a notice the viewer can see instead of
-          // leaving stale rows that no longer correspond to the term on screen.
           reportSanitizedError('GF-MODULE-CATALOG-SEARCH-FAILED', error);
 
           this.setModules([]);
         }
       });
 
-    // `valueChanges` does not replay the control's current value, so the first
-    // pass has to be asked for explicitly. This is what makes a cleared search
-    // term - the state the catalog opens in - resolve to the full eligible list
-    // through exactly the same path every later term takes.
+    // Primes the stream so the full list is rendered before anything is typed.
     this.searchFormControl.setValue('');
   }
 
   /**
-   * Puts keyboard focus inside the catalog, reporting whether it landed.
+   * Where focus should land inside the panel, which is this component's
+   * decision rather than the canvas's: the search field first, and the first
+   * row when the field is absent.
    *
-   * Exists because the canvas mounts this panel in a Material drawer configured
-   * `mode="side"`, and a side drawer moves focus in neither direction: its
-   * `autoFocus` resolves to `'dialog'` for that mode, and both the take-focus and
-   * the restore-focus paths return immediately for that value. So a viewer who
-   * opened the catalog from the keyboard was left standing on the trigger behind
-   * the panel, able to reach the rows only by tabbing through the whole canvas.
-   * Asking Material for `autoFocus="first-tabbable"` instead would be wrong in the
-   * other direction: the drawer cannot tell an open a viewer asked for from the
-   * unprompted first-visit open, so it would seize focus during that one too.
-   * Hence the canvas calls this, and calls it only for an open a viewer initiated.
-   *
-   * The search field is the target rather than the first row because it is this
-   * panel's own first tabbable and the one control that reaches every row: a
-   * viewer who lands there can type to narrow the list or Tab onward into it,
-   * whereas landing on a row silently skips the field. The first row is the
-   * fallback for the only case where there is no field to land on - a view query
-   * that has not resolved yet.
-   *
-   * Reports rather than assumes, exactly as the module host's `focusDragHandle`
-   * does and for the same reason: `focus()` on a detached or hidden element is a
-   * silent no-op in every browser, so the only honest way to answer is to ask the
-   * document where focus actually ended up. The canvas needs that answer because
-   * it only owes the trigger a restoration for focus it actually moved.
-   *
-   * @returns Whether focus is now inside the catalog.
+   * Both outcomes are read back from the document rather than assumed, because
+   * `focus()` on a detached or hidden element is a silent no-op - and the
+   * canvas uses the return value to decide whether it owes focus back when the
+   * panel closes.
    */
   public focusSearchField(): boolean {
     const searchField = this.searchField?.nativeElement;
@@ -419,11 +221,6 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
       }
     }
 
-    // Falls through to the roving list rather than giving up. `setFirstItemActive`
-    // moves real DOM focus onto the first row AND leaves the key manager measuring
-    // from it, so an arrow press straight afterwards steps to the second row
-    // instead of jumping to one end of the list. The row's own focus event keeps
-    // the tab stop in step, so nothing is assigned here.
     this.keyManager?.setFirstItemActive();
 
     const firstRow = this.moduleCatalogItems?.first?.rowElement?.nativeElement;
@@ -435,31 +232,14 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     this.moduleAdded.emit(moduleType);
   }
 
-  /** Relays a row's drag end upward; see {@link dragEnded}. */
   public onModuleDragEnd() {
     this.dragEnded.emit();
   }
 
-  /** Relays a row's drag start upward; see {@link dragStarted}. */
   public onModuleDragStart(moduleType: DashboardModuleType) {
     this.dragStarted.emit(moduleType);
   }
 
-  /**
-   * Adopts focus that arrived at a row from somewhere other than the arrow keys -
-   * a Tab into the list, a click, the browser restoring focus after the panel
-   * reopens.
-   *
-   * Both halves matter and they are different things. The tab stop moves, so that
-   * leaving and re-entering the panel returns to the row the viewer is on. The key
-   * manager's active index is updated WITHOUT moving focus, which is the whole
-   * point of `updateActiveItem`: it means the next arrow press steps from the row
-   * the viewer is actually on rather than from wherever the manager last put
-   * focus itself - and from its initial "nothing active", that first press would
-   * otherwise jump to one end of the list.
-   *
-   * @param aIndex Position of the row that took focus, in display order.
-   */
   public onModuleCatalogItemFocused(aIndex: number) {
     this.tabbableIndex = aIndex;
 
@@ -468,33 +248,17 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     this.changeDetectorRef.markForCheck();
   }
 
-  /**
-   * @param aModuleType The module type a row offers.
-   * @returns Whether that module is already on the canvas.
-   */
   public isPlaced(aModuleType: DashboardModuleType): boolean {
     return this.placedModuleTypes?.includes(aModuleType) ?? false;
   }
 
-  /**
-   * @param aModuleType The module type a row offers.
-   * @returns Whether the canvas currently has no room for that module.
-   */
   public isUnavailable(aModuleType: DashboardModuleType): boolean {
     return this.unavailableModuleTypes?.includes(aModuleType) ?? false;
   }
 
-  /**
-   * A module that declares no permission is unconditionally visible; one that
-   * declares a permission is visible only while the viewer holds it. Inverting that
-   * direction would expose the administrative modules to everyone.
-   *
-   * The permissions array is passed in rather than cached, so this stays a pure
-   * function of the viewer it is called for and an unresolved viewer's absent array
-   * simply holds nothing.
-   *
-   * @param permissions Permissions held by the current viewer, if any.
-   */
+  // Applied to the registry's full list before a row is rendered or a module
+  // type emitted, so an unpermitted module can be neither seen nor chosen.
+  // Absence of a declared permission means unconditionally visible.
   private applyPermissionFilter(permissions: string[]) {
     this.eligibleModules = this.moduleRegistryService
       .getAll()
@@ -503,16 +267,6 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
       });
   }
 
-  /**
-   * The row that currently holds the roving focus, if any.
-   *
-   * Reads the row's focus state as a property, which is why the row exposes it
-   * as a getter. Were it a method, this would still compile and would match the
-   * first row every time.
-   *
-   * @returns The focused row, or `undefined` when none is - including before the
-   * view has been initialized and whenever the list is empty.
-   */
   private getCurrentModuleCatalogItem() {
     return this.moduleCatalogItems?.find(({ getHasFocus }) => {
       return getHasFocus;
@@ -529,21 +283,10 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     }
   }
 
-  /**
-   * Matching is fuzzy over exactly what the row shows: its display name, and the
-   * qualifier that follows the name on the rows that carry one. Searching a value
-   * the viewer cannot see would return rows for no visible reason, and omitting the
-   * qualifier would leave the word that distinguishes two same-named modules
-   * unsearchable - typing `Admin` would not reach the admin settings row even
-   * though the row reads `Settings · Admin Control`.
-   *
-   * The index is rebuilt per search rather than kept, so a permission change takes
-   * effect with no cache to invalidate; the list is a few dozen entries at most.
-   *
-   * @param searchTerm Normalized term, possibly empty.
-   * @returns The definitions to display, in registry order when unfiltered and in
-   * relevance order when filtered.
-   */
+  // Searched over the already-filtered list, so a term can never surface a
+  // module the viewer may not place. `context` is a key alongside `name`
+  // because two modules can share a display name and the qualifier is what
+  // tells them apart.
   private searchModules(searchTerm: string): DashboardModuleDefinition[] {
     if (!searchTerm) {
       return this.eligibleModules;
@@ -559,32 +302,17 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     });
   }
 
-  /**
-   * Publishes a new set of rows and resets the roving focus onto none of them.
-   *
-   * Both halves of that reset are necessary and they are not the same thing:
-   * the rows carry the highlight that is painted, while the key manager holds
-   * the index the next movement is measured from. A row that was highlighted
-   * may not be in the new list at all, so leaving either behind would either
-   * paint a highlight the viewer cannot move away from or resume movement from
-   * a row that is no longer there.
-   *
-   * @param modules The definitions to display.
-   */
+  // A new result set invalidates the roving point: the row that held it may not
+  // be in the list any more, so focus is cleared from every row and the tab
+  // order is reset to the first one.
   private setModules(modules: DashboardModuleDefinition[]) {
     this.modules = modules;
 
     this.removeFocusFromModuleCatalogItems();
     this.keyManager?.setActiveItem(-1);
 
-    // Back to the first row, because the row that held the tab stop may not be in
-    // the new list at all - and a tab stop pointing at a row that no longer exists
-    // is the same thing as no tab stop.
     this.tabbableIndex = 0;
 
-    // Required rather than defensive: these updates originate from a stream and
-    // from the user store, never from a template-triggered check, and this view
-    // is only re-read when it is marked.
     this.changeDetectorRef.markForCheck();
   }
 }

@@ -16,15 +16,14 @@ import { WebAuthService } from './web-auth.service';
  * What a rejected credential ceremony is allowed to say, to the log and to the
  * caller.
  *
- * Both verification paths used to hand the library's own exception straight to
- * `Logger.error` and its message straight back to the caller. Neither is a safe
- * place for it. The message quotes the challenge, the origin and the relying-party
+ * Neither `Logger.error` nor the caller is a safe place for the library's own
+ * exception. The message quotes the challenge, the origin and the relying-party
  * identifier the ceremony was given, and the stack names the verification
- * internals and their file paths - so the log, which is read far more widely than
- * the request was, ended up holding the ceremony's inputs. Returning the message
- * was worse than untidy: it told an authenticated caller *which* check their
- * crafted response had tripped, which turns the endpoint into an oracle that can
- * be probed one field at a time.
+ * internals and their file paths - so a log read far more widely than the request
+ * would end up holding the ceremony's inputs. Returning the message is worse than
+ * untidy: it tells an authenticated caller *which* check their crafted response
+ * tripped, which turns the endpoint into an oracle that can be probed one field at
+ * a time.
  *
  * These tests are written against the two observable outputs - the exact string
  * handed to the logger, and the exception handed to the caller - because that is
@@ -244,9 +243,9 @@ describe('WebAuthService', () => {
     it('returns the same generic error as registration, not a different shape', async () => {
       const error = await authenticate().catch((caught: unknown) => caught);
 
-      // Previously this path threw `{ error: <message> }` where registration threw
-      // a bare message. Two shapes for one class of failure is itself a signal, so
-      // they are asserted to be identical.
+      // Two shapes for one class of failure would itself be a signal - this path
+      // wrapping the message where registration throws it bare - so the two are
+      // asserted to be identical.
       expect((error as InternalServerErrorException).getResponse()).toEqual(
         new InternalServerErrorException(
           'An unknown error occurred'

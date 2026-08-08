@@ -10,22 +10,18 @@
   // `width / 2`. It writes that height onto the canvas as an inline style - and
   // loses, because the canvas also carries Bootstrap's `.h-100`, whose
   // `height: 100% !important` beats a non-important inline declaration. The
-  // canvas therefore *displayed* at this container's height while *containing* a
-  // bitmap half its width tall, and the browser scaled the difference: at a
-  // 16 / 9 box that is 0.5625 / 0.5 = a 1.125x vertical stretch, measured on all
-  // four charts. Nothing was mis-drawn - every gridline, label and point spacing
-  // Chart.js computed was simply painted 12.5% too tall.
+  // canvas would therefore *display* at this container's height while *containing*
+  // a bitmap half its width tall, and the browser would scale the difference: at a
+  // 16 / 9 box that is 0.5625 / 0.5 = a 1.125x vertical stretch, on every chart in
+  // here. Nothing is mis-drawn by Chart.js in that state - every gridline, label
+  // and point spacing it computes is simply painted 12.5% too tall.
   //
-  // Matching the box to the chart is the fix that keeps the chart's own geometry
-  // authoritative. The alternatives were worse: relaxing `.h-100` from here would
-  // leave the canvas at its natural height inside a taller box and put 11% dead
-  // space under every chart, and telling Chart.js to compose at 16 / 9 instead
-  // means editing the chart components themselves, which are outside this work's
-  // scope and shared with screens this change has no business altering.
-  //
-  // The chart area is consequently ~11% shorter relative to its width than
-  // before. That is the correction, not a side effect: the previous height was
-  // only ever reached by stretching.
+  // Matching the box to the chart keeps the chart's own geometry authoritative. The
+  // alternatives are worse: relaxing `.h-100` from here leaves the canvas at its
+  // natural height inside a taller box and puts 11% dead space under every chart,
+  // and telling Chart.js to compose at 16 / 9 instead means editing the chart
+  // components, which are shared with other screens and are not this component's
+  // to change.
   .chart-container {
     aspect-ratio: 2 / 1;
   }

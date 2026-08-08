@@ -123,9 +123,9 @@ class GfTestModuleCatalogHostComponent {
  * the obvious construction reaches the component and does nothing.
  *
  * **No router and no persistence collaborator is provided, and that absence is the
- * assertion.** Do not "fix" a future failure by adding one: a catalog that reached for
- * a router API, a data service, an HTTP client or the layout store would fail to
- * instantiate here, which is what makes those structural rather than asserted.
+ * assertion.** A catalog that reached for a router API, a data service, an HTTP client
+ * or the layout store would fail to instantiate against this harness, which is what
+ * makes those absences structural rather than asserted.
  */
 describe('GfModuleCatalogComponent', () => {
   const debounceInMilliseconds = 300;
@@ -531,9 +531,9 @@ describe('GfModuleCatalogComponent', () => {
         emitViewerState(entitledViewer);
         advance();
 
-        // Searching what the row shows. Without the qualifier in the index the
-        // word that separates the two rows would be the one word that cannot be
-        // used to find either of them.
+        // Searching what the row shows. Without the qualifier in the index, the
+        // one word that separates the two rows is the one word that finds
+        // neither.
         setSearchTerm('Market Data');
         advance();
 
@@ -564,10 +564,10 @@ describe('GfModuleCatalogComponent', () => {
      * The visible hint above the list, and whether the search field actually
      * points at it.
      *
-     * The sentence explaining that a row can be dragged as well as clicked used to
-     * sit in a sibling element associated with nothing, so the field announced its
-     * label and stopped there - and the catalog opens by itself for exactly the
-     * viewer who has not yet learned that a row is draggable.
+     * The sentence explaining that a row can be dragged as well as clicked has to
+     * be associated with the field, or the field announces its label and stops
+     * there - and the catalog opens by itself for exactly the viewer who has not
+     * yet learned that a row is draggable.
      */
     describe('the search field description', () => {
       it('should point the search field at the visible hint', () => {
@@ -1038,12 +1038,12 @@ describe('GfModuleCatalogComponent', () => {
       expect(focusedRowIndexes()).toEqual([0]);
     });
 
-    // `nearest` and nothing else. Both of the options this used to pass were
-    // reported defects rather than preferences: `center` re-scrolls a row that
-    // is already fully visible, which drags the surrounding viewport on every
-    // arrow press, and `smooth` animates that displacement so the list is still
-    // moving when the next key arrives. `nearest` scrolls only when the row is
-    // actually out of view, which is the whole requirement.
+    // `nearest` and nothing else, and the two obvious alternatives are defects
+    // rather than preferences: `center` re-scrolls a row that is already fully
+    // visible, which drags the surrounding viewport on every arrow press, and
+    // `smooth` animates that displacement so the list is still moving when the
+    // next key arrives. `nearest` scrolls only when the row is actually out of
+    // view, which is the whole requirement.
     it('should scroll a newly focused row into view without displacing the viewport', () => {
       advance();
 
@@ -1519,10 +1519,10 @@ describe('GfModuleCatalogComponent', () => {
     });
   });
 
-  // A row whose click reveals a module already on the canvas used to be
-  // indistinguishable from one that adds a new module, so the same gesture did
-  // two different things with no way to tell which. The distinction is carried
-  // three ways on purpose: a visible marker, a state class for the leading-edge
+  // A row whose click reveals a module already on the canvas would otherwise be
+  // indistinguishable from one that adds a new module, leaving the same gesture
+  // doing two different things with no way to tell which. The distinction is
+  // carried three ways on purpose: a visible marker, a state class for the leading-edge
   // rule, and - the one that matters most - a different accessible name, since
   // the visible marker is hidden from assistive technology precisely so the name
   // is not announced twice.
@@ -1721,11 +1721,11 @@ describe('GfModuleCatalogComponent', () => {
    * The canvas mounts this panel in a Material drawer configured `mode="side"`, and
    * such a drawer manages focus in neither direction: its `autoFocus` resolves to
    * `'dialog'` for that mode, and both the take-focus and restore-focus paths return
-   * immediately for that value. So a viewer who opened the catalog from the keyboard
-   * was left on the trigger behind the panel, able to reach a row only by tabbing
-   * through the whole canvas. The canvas decides *when* focus should come here - it
-   * deliberately does not for the unprompted first-visit open - and this component
-   * decides *where* it lands.
+   * immediately for that value. Without the hand-over asserted here a viewer who
+   * opened the catalog from the keyboard stays on the trigger behind the panel, able
+   * to reach a row only by tabbing through the whole canvas. The canvas decides
+   * *when* focus should come here - it deliberately does not for the unprompted
+   * first-visit open - and this component decides *where* it lands.
    *
    * Every assertion reads `document.activeElement`, because `focus()` on a detached
    * or hidden element is a silent no-op: a spy would report a call that moved
@@ -1838,12 +1838,12 @@ describe('GfModuleCatalogComponent', () => {
     it('should render no in-application address', () => {
       advance();
 
-      // The URL no longer selects a screen, so a row is a button rather than a
-      // link. This is also why no router API, link directive or route constant is
-      // named anywhere in this file: the component is created here without one
-      // being provided, so reintroducing a dependency on the router would fail
-      // this suite outright with an injection error. Please read a failure of that
-      // kind as the guard working rather than as a missing provider.
+      // The URL selects no screen, so a row is a button rather than a link. This
+      // is also why no router API, link directive or route constant is named
+      // anywhere in this file: the component is created here without one being
+      // provided, so reintroducing a dependency on the router fails this suite
+      // outright with an injection error - which is the guard working rather than
+      // a missing provider.
       expect(queryElements('a')).toHaveLength(0);
       expect(queryElement('[href]')).toBeNull();
 

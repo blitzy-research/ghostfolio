@@ -1,6 +1,3 @@
-// Material system tokens require fallbacks because the current theme does not emit
-// the --mat-sys layer.
-//
 // Every state beyond resting is distinguished by a border colour clearing 3:1
 // against the row surface (WCAG 2.2 SC 1.4.11); the background steps are secondary
 // cues. `grabbing` and `dashed` are literals because they are behavioural rather
@@ -42,7 +39,7 @@
       --mat-button-text-container-shape: var(--mat-sys-corner-medium, 4px);
 
       // The variant's own default label colour is the brand primary, which on
-      // this surface is the ~1.9:1 teal-on-white the report flagged elsewhere.
+      // this surface would be a low-contrast teal on white.
       // A catalog row is body text on a card, so it takes the on-surface
       // foreground and clears 4.5:1.
       --mat-button-text-label-text-color: var(

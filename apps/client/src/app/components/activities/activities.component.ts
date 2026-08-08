@@ -172,9 +172,6 @@ export class GfActivitiesComponent implements OnInit {
         }
       });
 
-    // Re-evaluated once the device is known, so a request that was already on the
-    // URL when this module was created is honoured now that it can be honoured
-    // correctly.
     this.applyQueryParams();
   }
 
@@ -202,34 +199,20 @@ export class GfActivitiesComponent implements OnInit {
         this.dataSource = new MatTableDataSource(activities);
         this.totalItems = count;
 
-        // Nothing opens a dialog from here, and the omission is the point.
+        // Nothing opens a dialog from here, and the omission is the point. This
+        // module is one card among many that all load at once, so opening the
+        // create dialog for a viewer with no activities would dim and block the
+        // whole canvas behind a scrim nobody asked for - and because this fetch
+        // runs on every load, it would do so on every visit. The accounts module
+        // makes the same offer for the same viewer at the same moment, so the two
+        // would stack.
         //
-        // A viewer with no activities used to have the create dialog opened for
-        // them at the end of this fetch. On the route-per-screen shell that was a
-        // helpful shortcut: the activities screen was the only thing on it, the
-        // viewer had deliberately navigated there, and the form they were obviously
-        // after appeared. On one canvas the same code is an ambush. This module is
-        // one card among many that all load at once, nobody asked for it in
-        // particular, and the dialog it opened dimmed and blocked the entire canvas
-        // behind a full-viewport scrim - measured at 1440x900 as a 100% scrim over
-        // an 800x720 panel, with every other module unreachable behind it. The
-        // accounts module makes the same offer for the same viewer at the same
-        // moment, so which response arrived first decided whether one onboarding
-        // dialog appeared or two appeared stacked - an outcome the previous shell
-        // could not produce.
-        //
-        // Nor was it a one-off: the fetch runs on every load, so the modal returned
-        // on every visit, measured re-appearing 847 ms into a reload of a URL
-        // carrying no parameters at all, because the component re-created them
-        // itself. A viewer who had not yet recorded a first activity could not reach
-        // their own dashboard without dismissing a form first.
-        //
-        // The invitation is not lost, only made voluntary: the table still renders
-        // its "add your first activity" call to action for exactly this viewer,
-        // reaching {@link onCreateActivity}, and the module still carries its
-        // floating add button. Both route through the same query-parameter intent
-        // this used to fire unbidden, so the dialog is one click away - opened when
-        // it is asked for, which is what the call below serves.
+        // The invitation is voluntary instead: the table renders its "add your
+        // first activity" call to action for exactly this viewer, reaching
+        // {@link onCreateActivity}, and the module carries its floating add
+        // button. Both route through the same query-parameter intent, so the
+        // dialog is one click away - opened when it is asked for, which is what
+        // the call below serves.
         this.applyQueryParams();
         this.changeDetectorRef.markForCheck();
       });
@@ -272,10 +255,9 @@ export class GfActivitiesComponent implements OnInit {
    * Opens the create-activity dialog on behalf of the empty-state call to
    * action rendered by the activities table.
    *
-   * That control used to be an anchor carrying its own router link. It now
-   * raises an output instead, which the table bubbles up as
-   * `createActivityClicked`, so the intent has to be turned back into the
-   * dialog request here — without this handler the button is inert.
+   * That control raises an output rather than navigating anywhere, which the
+   * table bubbles up as `createActivityClicked`, so the intent has to be turned
+   * into the dialog request here — without this handler the button is inert.
    *
    * The payload is deliberately identical to the floating action button's in this
    * component's own template, and it merges while explicitly nulling the two keys
@@ -524,14 +506,10 @@ export class GfActivitiesComponent implements OnInit {
     const { activityId, createDialog, dialogModule, editDialog } =
       this.queryParams ?? {};
 
-    // On the single-canvas shell every module observes the same query
-    // parameters at once, so `createDialog` and `editDialog` carry no
-    // indication of who they were meant for. `dialogModule` does, and
-    // testing it first makes this handler fail-safe: an unqualified
-    // or foreign-qualified flag - the accounts module's floating action
-    // button, or the account-access module's edit link - opens nothing
-    // here. See the same gate in
-    // `components/user-account-access/user-account-access.component.ts`.
+    // `createDialog` and `editDialog` name no dialog of their own, so they are
+    // honoured only when `dialogModule` addresses this module - the accounts
+    // module's floating action button and the account-access module's edit link
+    // both raise the same two flags. See `GfAppQueryParams`.
     //
     // Not addressed here is treated as *nothing requested* rather than returned
     // on, so that the final branch still forgets what was last served. Returning

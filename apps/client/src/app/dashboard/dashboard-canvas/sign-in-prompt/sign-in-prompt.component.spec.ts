@@ -22,33 +22,30 @@ import { GfSignInPromptComponent } from './sign-in-prompt.component';
 
 /**
  * The unauthenticated state of the single root route - the first and only screen a
- * signed-out visitor meets now that the public marketing surface is gone.
+ * signed-out visitor meets.
  *
  * It is the sole home of three flows, and each of them fails silently rather than
  * loudly if it regresses, which is why they are asserted here rather than left to
  * the canvas suite that merely mounts this component:
  *
- * 1. **Access-token sign-in.** One of the six capabilities rescued from the deleted
- *    page chrome. The sibling toolbar deliberately does *not* carry it - it renders
- *    only once a viewer has resolved, so a sign-in control there would be
- *    unreachable - and asserts its own absence. That makes this the only place the
- *    capability exists, and therefore the only place it can be exercised.
+ * 1. **Access-token sign-in.** The sibling toolbar deliberately does *not* carry it
+ *    - it renders only once a viewer has resolved, so a sign-in control there would
+ *    be unreachable - and asserts its own absence. That makes this the only place
+ *    the capability exists, and therefore the only place it can be exercised.
  * 2. **The five deployment capability probes.** `enableAuthGoogle`, `enableAuthOidc`,
  *    `enableAuthToken`, `enableSubscription` and `createUserAccount` are read once,
  *    synchronously, and handed to the dialog that renders the corresponding
  *    authentication paths. A dropped probe does not fail - it quietly hides a
- *    sign-in route for every deployment that enables it, and the OIDC probe in
- *    particular exists nowhere else in the application since the chrome was removed.
- * 3. **Account registration.** Relocated here from the deleted register page, and
- *    carrying a deliberate asymmetry against {@link GfSignInPromptComponent.setToken}:
- *    a freshly issued token is persisted with stay-signed-in forced on, without
- *    consulting the preference at all.
+ *    sign-in path for every deployment that enables it, and the OIDC probe in
+ *    particular exists nowhere else in the application.
+ * 3. **Account registration**, carrying a deliberate asymmetry against
+ *    {@link GfSignInPromptComponent.setToken}: a freshly issued token is persisted
+ *    with stay-signed-in forced on, without consulting the preference at all.
  *
- * Two negative assertions carry as much weight as the positive ones. The register
- * page called `userService.signOut()` from its **constructor**, which was harmless
- * on a dedicated `/register` route and catastrophic on the root route, where a
- * transient render would wipe a live session; `performs no session mutation while
- * being constructed` is the committed guard that the call was not carried over. And
+ * Two negative assertions carry as much weight as the positive ones. Calling
+ * `userService.signOut()` from a **constructor** is catastrophic on the root route,
+ * where a transient render would wipe a live session; `performs no session mutation
+ * while being constructed` is the committed guard against it. And
  * `reports an incorrect token and leaves the flow usable` is what proves the failure
  * branch returns `EMPTY` rather than re-throwing: a re-throw would kill the
  * subscription, so the alert would appear once and every subsequent attempt would be
@@ -474,11 +471,10 @@ describe('GfSignInPromptComponent', () => {
     it('performs no session mutation while being constructed', async () => {
       await createComponent({ globalPermissions: allGlobalPermissions });
 
-      // The register page this flow came from signed the viewer out from its
-      // constructor. That was harmless on a dedicated route reached only by a
-      // signed-out visitor; on the root route it would wipe the session of anyone
-      // who rendered this component transiently. Nothing may be adopted, discarded
-      // or re-read merely by initialising.
+      // Signing the viewer out from a constructor is harmless on a route only a
+      // signed-out visitor reaches; on the root route it wipes the session of
+      // anyone who renders this component transiently. Nothing may be adopted,
+      // discarded or re-read merely by initialising.
       expect(userServiceMock.signOut).not.toHaveBeenCalled();
       expect(userServiceMock.get).not.toHaveBeenCalled();
       expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
@@ -823,10 +819,10 @@ describe('GfSignInPromptComponent', () => {
 
       await component.openShowAccessTokenDialog();
 
-      // The asymmetry against `setToken` is deliberate and inherited from the
-      // register page: a freshly created account is kept signed in regardless of the
-      // preference, which is why the preference must not even be consulted here. The
-      // forced re-read is what makes the canvas transition out of this state.
+      // The asymmetry against `setToken` is deliberate: a freshly created account
+      // is kept signed in regardless of the preference, which is why the preference
+      // must not even be consulted here. The forced re-read is what makes the canvas
+      // transition out of this state.
       expect(tokenStorageServiceMock.saveToken).toHaveBeenCalledWith(
         'an-issued-token',
         true
@@ -937,30 +933,12 @@ describe('GfSignInPromptComponent', () => {
     });
   });
   /**
-   * Both credential paths persist the token *before* the viewer belonging to it is
-   * read, which is the right order - the read authenticates with that token - and
-   * which makes a failing read the interesting case rather than a footnote. The
-   * viewer store keeps whatever it last held when a forced read fails, and while this
-   * prompt is on screen that is nothing, so the canvas is never told to leave its
-   * signed-out branch. Without a handler the viewer is left facing a sign-in prompt
-   * for an account that exists and whose token is already stored, with no control on
-   * screen able to retry: every control here creates or adopts a *new* credential
-   * rather than re-reading the current one. Reloading is what recovers it, because it
-   * discards every in-memory cache and restarts resolution from the stored token -
-   * precisely the step that failed.
-   *
-   * The reload is observed rather than intercepted: jsdom implements
-   * `window.location` and its members as `[LegacyUnforgeable]`, so spying on
-   * `reload` throws. What it does emit is the same virtual-console report that
-   * {@link navigationAttempts} already collects.
-   */
-  /**
    * Loading a dialog's own chunk, when that takes time or fails.
    *
-   * Collapsing the route table moved chunk loading out of the router - which handled
-   * both cases - and into two controls a visitor can press twice. Both live on one
-   * card and there is one visitor, so while either chunk is resolving neither control
-   * should start a second load.
+   * Chunk loading happens behind two controls a visitor can press twice, with no
+   * router in between to absorb a repeat. Both live on one card and there is one
+   * visitor, so while either chunk is resolving neither control should start a
+   * second load.
    */
   describe('resolving a dialog on demand', () => {
     it('opens one dialog however many times a control is pressed while loading', async () => {
@@ -1074,6 +1052,24 @@ describe('GfSignInPromptComponent', () => {
     );
   });
 
+  /**
+   * Both credential paths persist the token *before* the viewer belonging to it is
+   * read, which is the right order - the read authenticates with that token - and
+   * which makes a failing read the interesting case rather than a footnote. The
+   * viewer store keeps whatever it last held when a forced read fails, and while this
+   * prompt is on screen that is nothing, so the canvas is never told to leave its
+   * signed-out branch. Without a handler the viewer is left facing a sign-in prompt
+   * for an account that exists and whose token is already stored, with no control on
+   * screen able to retry: every control here creates or adopts a *new* credential
+   * rather than re-reading the current one. Reloading is what recovers it, because it
+   * discards every in-memory cache and restarts resolution from the stored token -
+   * precisely the step that failed.
+   *
+   * The reload is observed rather than intercepted: jsdom implements
+   * `window.location` and its members as `[LegacyUnforgeable]`, so spying on
+   * `reload` throws. What it does emit is the same virtual-console report that
+   * {@link navigationAttempts} already collects.
+   */
   describe('recovering from a viewer that cannot be read', () => {
     /** Makes the next forced read fail, without disturbing the recorded ordering. */
     const failTheViewerRead = () => {

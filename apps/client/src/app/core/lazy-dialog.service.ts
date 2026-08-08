@@ -7,34 +7,22 @@ import { inject, Injectable } from '@angular/core';
  * Resolves a dialog's own chunk on demand, once, and tells the viewer when that
  * cannot be done.
  *
- * Collapsing the route table onto a single canvas removed every route boundary the
- * application used to split its bundle at, so each dialog that reaches a large
- * graph of its own is now loaded with a dynamic `import()` at the point it is
- * opened. That is the right shape - and it introduced a failure mode the route
- * loader used to handle: a chunk request is a network request, so it can be slow
- * and it can fail.
+ * The application splits its bundle at dynamic `import()` boundaries rather than at
+ * route boundaries, so each dialog that reaches a large graph of its own is loaded
+ * at the point it is opened. That makes opening one a network request: it can be
+ * slow and it can fail.
  *
- * Three consequences follow, and each is handled here rather than at every call
- * site, because a per-site copy is a per-site opportunity to omit one:
- *
- * - **A slow load stacks dialogs.** `import()` resolves on a later tick, so a
- *   second activation - an impatient second click, or two producers asking for the
- *   same dialog at once - starts a second open while the first is still resolving.
- *   Requests are therefore deduplicated by key: concurrent callers share one
- *   attempt and one resolution.
- * - **A rejected load is silent.** An unhandled rejection leaves the viewer with a
- *   control that did nothing and no explanation. Every failure is reported through
- *   the sanitized channel and surfaced to the viewer as an alert.
- * - **A rejected load must not be sticky.** The pending entry is released whichever
- *   way the attempt settles, so a transient failure costs one attempt rather than
- *   the affordance itself - pressing the control again genuinely tries again.
+ * Deduplicating those requests, reporting a rejection and releasing the pending
+ * entry are therefore handled here rather than at every call site, because a
+ * per-site copy is a per-site opportunity to omit one.
  *
  * It resolves the dialog's COMPONENT and opens nothing. Which dialog to open, with
  * what data and what to do with its result stays with the caller, which is what
  * keeps this free of any knowledge of the dialogs it loads.
  *
  * Placed in `core/` alongside the other application-wide collaborators, and free of
- * any import from `dashboard/` for the same reason `DashboardIntentService` is.
+ * any import from `dashboard/` so that a module can open a dialog without
+ * depending on the canvas layer.
  */
 @Injectable({ providedIn: 'root' })
 export class LazyDialogService {

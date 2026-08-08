@@ -8,13 +8,12 @@
   content with auto margins instead. Centring a flex column whose content is
   taller than the box distributes the overflow to BOTH ends, and the half that
   lands above the start edge is unreachable: it is not counted in `scrollHeight`
-  and a negative `scrollTop` is clamped to zero. Measured here at 8x6 before the
-  change: 569.19px of content in a 479px box put 45.09px - including the top of
-  the chart canvas, and with it every tooltip drawn near the top - permanently off
-  the top of the module, and scrolling the one available direction doubled it to
-  90.09px. Auto margins centre exactly as well when there IS free space and
-  collapse to zero when there is not, so the overflow can only ever go downward,
-  where it is scrollable.
+  and a negative `scrollTop` is clamped to zero. This content is routinely taller
+  than the cell it is placed in, so centring would put the top of the chart canvas
+  - and with it every tooltip drawn near the top - permanently above that edge.
+  Auto margins centre exactly as well when there IS free space and collapse to zero
+  when there is not, so the overflow can only ever go downward, where it is
+  scrollable.
 -->
 <div
   class="align-items-center container-fluid d-flex flex-column h-100 overview p-0 position-relative"

@@ -1,10 +1,10 @@
 <!--
   A shared link that could not be resolved is reported rather than navigated away
-  from: this component is hosted by the root route itself, so the redirect the
-  former page performed has nowhere left to go. Suppressing the portfolio markup
-  in the same breath is the point - every binding below tolerates an absent
-  response, so leaving it rendered would greet the visitor with a portfolio
-  shell bearing somebody's name and no figures instead of an explanation.
+  from: this component is hosted by the root route itself, so a redirect would
+  target the route it is already on. Suppressing the portfolio markup in the same
+  breath is the point - every binding below tolerates an absent response, so
+  leaving it rendered would greet the visitor with a portfolio shell bearing
+  somebody's name and no figures instead of an explanation.
 -->
 @if (hasError) {
   <div class="row">

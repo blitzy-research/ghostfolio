@@ -121,9 +121,9 @@ export class GfSignInPromptComponent implements OnInit {
     // Resolved on demand rather than imported at the top of the file. This dialog
     // carries the whole alternative-credential surface - including the WebAuthn
     // client - and it is opened only when a visitor asks to sign in, so a static
-    // reference would put all of it in the initial bundle for every visitor.
-    // With the route table collapsed onto one canvas there is no route boundary
-    // left to do this for us.
+    // reference would put all of it in the initial bundle for every visitor. The
+    // application has a single route, so there is no route boundary to do this
+    // for us.
     //
     // The load goes through the shared loader, which deduplicates concurrent
     // requests, reports a rejected chunk through the sanitized channel and tells the
@@ -351,10 +351,10 @@ export class GfSignInPromptComponent implements OnInit {
           if (userLanguage && document.documentElement.lang !== userLanguage) {
             window.location.href = `../${userLanguage}`;
           } else {
-            // Voided deliberately rather than awaited. The request is already
-            // satisfied on the collapsed route table, so it resolves immediately
-            // and there is nothing to sequence after it; the re-read of the viewer
-            // above is what the canvas rehydrates from.
+            // Voided deliberately rather than awaited. `/` is the route already
+            // active, so the request resolves immediately and there is nothing to
+            // sequence after it; the re-read of the viewer above is what the canvas
+            // rehydrates from.
             void this.router.navigate(['/']);
           }
         }

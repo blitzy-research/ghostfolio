@@ -14,16 +14,14 @@ import { SubscriptionService } from './subscription.service';
 /**
  * The Stripe return leg, and specifically where it sends the browser afterwards.
  *
- * It used to land on the membership screen, which no longer owns a URL: account
- * membership became a module on the single canvas. The redirect therefore targets
- * the locale root, and that target is a template string a compiler cannot check -
- * a drift back to the retired path would still build, still pass every layout
- * test, and only surface as a dead page for whoever had just paid.
+ * Account membership is a module on the single canvas and owns no URL, so the
+ * redirect targets the locale root. That target is a template string a compiler
+ * cannot check - a drift to an internal path would still build, still pass every
+ * layout test, and only surface as a dead page for whoever had just paid.
  *
  * The handler is exercised directly rather than over HTTP, because nothing here
- * concerns the request pipeline: the guard stack on this route is untouched by the
- * refactor, and the layout controller's own suite already covers guard behaviour
- * end to end.
+ * concerns the request pipeline: the layout controller's own suite already covers
+ * guard behaviour end to end.
  */
 describe('SubscriptionController', () => {
   const checkoutSessionId = 'cs_test_a1b2c3';
@@ -113,8 +111,9 @@ describe('SubscriptionController', () => {
 
       const [target] = redirect.mock.calls[0] as [string];
 
-      // Membership is a module now, not a screen. `account` covers the retired
-      // account route the membership tab used to live under.
+      // Membership is a module rather than a screen, so no internal path may
+      // appear here - `account` included, since that is where a membership tab
+      // would sit.
       for (const retired of ['/account', '/home', '/pricing', '/zen']) {
         expect(target).not.toContain(retired);
       }

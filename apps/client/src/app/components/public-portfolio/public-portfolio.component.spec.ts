@@ -14,15 +14,9 @@ import { GfPublicPortfolioComponent } from './public-portfolio.component';
 /**
  * The consumer half of the public share link.
  *
- * This component is the relocated leaf of the deleted public page, and the one
- * thing the relocation changed is where it gets its identifier from: the retired
- * `/<language>/p/<id>` route supplied it as a *route parameter*, and the root route
- * supplies it as the `accessId` *query parameter*. Everything downstream of that
- * read is carried over unchanged.
- *
- * That read is the whole subject here, and it is more delicate than it looks,
- * because the root route's query parameters now belong to every co-mounted module
- * at once. They change for reasons that have nothing to do with a shared
+ * The identifier arrives as the root route's `accessId` *query parameter*, and that
+ * read is the whole subject here. It is more delicate than it looks, because the
+ * root route's query parameters belong to every co-mounted module at once. They change for reasons that have nothing to do with a shared
  * portfolio - a dialog flag, a symbol, a spent token being cleared - so the stream
  * is narrowed to a defined value and deduplicated. Get either wrong and the
  * component either loses the identifier it captured or refetches somebody else's
@@ -130,8 +124,8 @@ describe('GfPublicPortfolioComponent', () => {
 
       // The single most consequential assertion in this file: the argument is the
       // identifier, unwrapped and unprefixed. A component that passed the whole
-      // parameter object, or a residue of the retired route parameter, would fetch
-      // nothing and show an empty portfolio without any error.
+      // parameter object, or a prefixed value, would fetch nothing and show an empty
+      // portfolio without any error.
       expect(requestedAccessIds()).toEqual([accessId]);
       expect(isReportingError(component)).toBeFalsy();
     });

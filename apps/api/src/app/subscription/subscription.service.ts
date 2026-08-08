@@ -52,25 +52,21 @@ const SUBSCRIPTION_PROVISIONING_FAILED_EVENT =
  * operator needs while naming neither the payer, the session, the price, nor
  * anything the provider's own error text would have volunteered about the
  * account or the request.
+ *
+ * Two names are narrower than they read. `modeUnexpected` means the session was
+ * not created by this application's checkout flow at all, and
+ * `currencyInconsistent` covers a session that settled in no currency as well as
+ * one that settled in several.
  */
 const SUBSCRIPTION_REFUSAL_REASONS = {
-  /** The session was already turned into a subscription; this is a replay. */
   alreadyProvisioned: 'ALREADY_PROVISIONED',
-  /** `amount_total` was absent, so no price could be recorded. */
   amountMissing: 'AMOUNT_MISSING',
-  /** The paid amount disagrees with the allowlisted offer's own price. */
   amountMismatch: 'AMOUNT_MISMATCH',
-  /** The session settled in no currency, or in more than one. */
   currencyInconsistent: 'CURRENCY_INCONSISTENT',
-  /** The session was not created by this application's checkout flow. */
   modeUnexpected: 'MODE_UNEXPECTED',
-  /** No line item resolved to an offer this deployment actually sells. */
   offerNotAllowlisted: 'OFFER_NOT_ALLOWLISTED',
-  /** The session carries no payment, or one that never completed. */
   paymentNotSettled: 'PAYMENT_NOT_SETTLED',
-  /** The session names no account to grant the entitlement to. */
   referenceMissing: 'REFERENCE_MISSING',
-  /** Checkout was abandoned or expired rather than completed. */
   sessionIncomplete: 'SESSION_INCOMPLETE'
 } as const;
 
@@ -129,9 +125,9 @@ export class SubscriptionService {
 
     const stripeCheckoutSessionCreateParams: Stripe.Checkout.SessionCreateParams =
       {
-        // The locale root, because `/<language>/account` no longer resolves: the
-        // membership screen is a canvas module now, not a route, and a cancelled
-        // checkout would have landed on a URL that the wildcard redirects away
+        // The locale root, because `/<language>/account` resolves to nothing: the
+        // membership screen is a canvas module rather than a route, so a cancelled
+        // checkout aimed there would land on a URL the wildcard redirects away
         // from - an avoidable extra navigation on the one path a user takes after
         // deciding not to pay.
         //

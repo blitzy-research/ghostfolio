@@ -255,12 +255,12 @@
             </th>
             <!--
               The glyph carries a real piece of information - this profile has a note
-              attached and the others do not - and with the glyph decorative there was
-              nothing left to carry it. The column heading alone cannot: it names
+              attached and the others do not - and the glyph is decorative, so the
+              text below is what carries it. The column heading alone cannot: it names
               every cell in the column identically, including the empty ones, so a
-              reader could not tell which rows have a note. The text below says only
-              that one thing; the note's contents are read through the asset profile
-              dialog, exactly as they are for a sighted reader here.
+              reader could not tell which rows have a note. The text says only that one
+              thing; the note's contents are read through the asset profile dialog,
+              exactly as they are for a sighted reader here.
             -->
             <td *matCellDef="let element" class="px-1" mat-cell>
               @if (element.comment) {

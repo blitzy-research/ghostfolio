@@ -23,13 +23,12 @@ import { GfUserAccountSettingsComponent } from './user-account-settings.componen
 
 /**
  * Switching language, which is the one place in this component that leaves the
- * application, and therefore the one place the single-route collapse could break.
+ * application, and therefore the one place a single-route table could break.
  *
  * Ghostfolio is deployed per locale under a `/<code>/` base href, so changing
  * language means a real document load rather than an Angular navigation. The
- * destination used to be `../<code>/<account route>` - a path built from a route
- * constant that no longer resolves. It is now the locale root, which is the only
- * address the application still answers.
+ * destination is the locale root, which is the only address this application
+ * answers - not `../<code>/<some path>`, which no route resolves.
  *
  * The failure this guards against is quiet and total: a stale path would still be
  * a well-formed URL, the browser would still load it, and the wildcard would still
@@ -43,8 +42,8 @@ import { GfUserAccountSettingsComponent } from './user-account-settings.componen
  * reports on the virtual console as an `Error`.
  *
  * *Where* it departs to is asserted from the component's source, because in jsdom
- * it cannot be observed at all. This was measured rather than assumed: the
- * navigation report carries no URL (`Not implemented: navigation (except hash
+ * it cannot be observed at all, for three separate reasons: the navigation report
+ * carries no URL (`Not implemented: navigation (except hash
  * changes)` and nothing more), `Location.href` is `[LegacyUnforgeable]` so
  * redefining it throws `Cannot redefine property: href`, and assigning
  * `window.location` outright is silently ignored. The destination is a string
@@ -263,9 +262,9 @@ describe('GfUserAccountSettingsComponent', () => {
       'start',
       'zen'
     ])('names no retired %s route', (retired) => {
-      // The former destination appended the account route path. Every retired
-      // route is checked rather than only that one, because the failure mode is any
-      // stale path segment surviving in this string.
+      // Every internal route name is checked rather than only the account one,
+      // because the failure mode is any path segment at all surviving in this
+      // string.
       expect(componentSource).not.toContain(`\${aValue}/${retired}`);
     });
 

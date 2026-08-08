@@ -149,19 +149,19 @@
         <span class="sr-only" i18n>Import status</span>
       </th>
       <!--
-        This cell is what tells a reviewer that a row of an import cannot be
-        accepted, and it said so in two ways neither of which reaches a screen reader
-        or the keyboard: a red glyph, and a `matTooltip` attached to a plain `div`.
-        Material only wires a tooltip's `aria-describedby` to the element it sits on,
-        and a non-focusable, non-interactive `div` is never described to anybody -
-        the tooltip is a pointer-hover affordance and nothing more. With the glyph
-        marked decorative the cell was left announcing nothing at all, so a row that
-        will be rejected was indistinguishable from one that will import cleanly.
+        This cell is what tells the person reviewing an import that a row cannot be
+        accepted, and the two things that say so visually reach neither a screen
+        reader nor the keyboard: a red glyph, which is decorative, and a
+        `matTooltip` on a plain `div`. Material wires a tooltip's `aria-describedby`
+        only to the element it sits on, and a non-focusable, non-interactive `div` is
+        never described to anybody - the tooltip is a pointer-hover affordance and
+        nothing more. Without the text below, a row that will be rejected would be
+        indistinguishable from one that will import cleanly.
 
-        The message itself is exposed as text rather than as a name for the glyph,
-        because it is the actual reason and it is what the reviewer has to act on -
-        the checkbox beside it is disabled precisely because of it. `.sr-only` keeps
-        the visual cell exactly as it was: one red glyph with a hover tooltip.
+        The message is exposed as text rather than as a name for the glyph, because
+        it is the actual reason and it is what has to be acted on - the checkbox
+        beside it is disabled precisely because of it. `.sr-only` keeps the visual
+        cell to one red glyph with a hover tooltip.
       -->
       <td *matCellDef="let element" class="px-1" mat-cell>
         @if (element.error) {

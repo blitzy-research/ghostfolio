@@ -79,9 +79,9 @@ export class GfLineChartComponent
     // registering them here keeps this component's bundle to the chart type it
     // actually draws. Plugins (including `Filler` and `Tooltip`) and the date
     // adapter belong to the shared chart registry, which installs them at
-    // module-evaluation time; registering a plugin from here is what previously
-    // left this very chart blank when another chunk registered one after it had
-    // already been constructed. See `registerChartConfiguration`.
+    // module-evaluation time; registering a plugin from here leaves this very
+    // chart blank when another chunk registers one after it has already been
+    // constructed. See `registerChartConfiguration`.
     Chart.register(
       LineController,
       LineElement,

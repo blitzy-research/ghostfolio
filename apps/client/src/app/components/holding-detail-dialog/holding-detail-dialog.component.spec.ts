@@ -33,9 +33,10 @@ import { GfHoldingDetailDialogComponent } from './holding-detail-dialog.componen
  * the activity the user just created, which reads as a lost write.
  *
  * Two of the four destinations are also permission-gated in the template. That
- * gating is what replaced the deleted header's admin check, so it is asserted here
- * rather than assumed - a UI-exposure regression, since the API keeps enforcing
- * the permission independently either way.
+ * gating is the only client-side admin check standing between this dialog and an
+ * administration module, so it is asserted here rather than assumed - the exposure
+ * it prevents is a UI one, since the API enforces the permission independently
+ * either way.
  */
 describe('GfHoldingDetailDialogComponent', () => {
   const holding = { dataSource: 'YAHOO', symbol: 'AAPL' };
@@ -333,7 +334,7 @@ describe('GfHoldingDetailDialogComponent', () => {
     it('is withheld from a viewer without the admin permission', async () => {
       await createComponent({ hasPermissionToAccessAdminControl: false });
 
-      // This template gate is what replaced the deleted header's admin check.
+      // This template gate is the client-side admin check for this action.
       expect(actionButton('Asset Profile')).toBeUndefined();
     });
   });

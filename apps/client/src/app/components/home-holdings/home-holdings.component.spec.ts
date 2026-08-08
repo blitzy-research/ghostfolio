@@ -14,16 +14,15 @@ import { BehaviorSubject, of } from 'rxjs';
 import { GfHomeHoldingsComponent } from './home-holdings.component';
 
 /**
- * The two kinds of cross-screen departure this component used to make, now that
- * neither has a screen to depart to.
+ * The two kinds of cross-module request this component makes, neither of which
+ * has a screen to depart to.
  *
  * They are deliberately different mechanisms and the distinction is the point of
  * this suite. Managing activities is a *module* destination: nothing is carried,
  * so it becomes a reveal-module intent and produces no URL change at all. Opening
  * a holding is a *dialog* destination: it carries a payload, so it stays a query
- * parameter write on the current route - the route-agnostic convention that
- * survives the single-route collapse untouched, because `navigate([])` names no
- * route to begin with.
+ * parameter write on the current route - a route-agnostic convention that holds on
+ * a single-route table, because `navigate([])` names no route to begin with.
  *
  * Conflating the two is the failure this guards against. Turning the holding
  * dialog into an intent would silently drop the identifier and open nothing;

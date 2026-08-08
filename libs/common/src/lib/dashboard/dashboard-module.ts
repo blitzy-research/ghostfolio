@@ -153,16 +153,16 @@ export interface DashboardModule {
 export const dashboardModules = {
   // Seven rows rather than six because this module's height requirement is
   // deterministic, so a default can actually satisfy it. Its chart is pinned to a
-  // 16:9 box capped at 50rem, which at this width is exactly 450px, and the
-  // performance figures below it add 4px of margin plus 115px - 569px in total,
-  // against the 479px of body six rows leaves. The result was that the headline
-  // value and the performance percentage sat entirely below the fold on a
-  // freshly added module. Seven rows give 620px of cell and 569px of body: an
-  // exact fit, with nothing hidden and no scrolling required.
+  // 16:9 box capped at 50rem - exactly 450px at this width - and the performance
+  // figures below it add 4px of margin plus 115px, so the content is 569px tall.
+  // Six rows leave 479px of body, which puts the headline value and the
+  // performance percentage below the fold on a freshly added module. Seven rows
+  // give 620px of cell and 569px of body: an exact fit, with nothing hidden and no
+  // scrolling required.
   //
-  // The data-driven modules are deliberately NOT treated this way. What a
-  // holdings table or an admin list needs depends on the viewer's own data - the
-  // users table measured 2,334px, which no sane default can accommodate - so
+  // The data-driven modules are deliberately NOT treated this way. What a holdings
+  // table or an admin list needs depends on the viewer's own data - an admin users
+  // table runs to thousands of pixels, which no sane default can accommodate - so
   // there the honest answer is the scroll hint on the module chrome, not a taller
   // default that would be wrong for the next viewer.
   [DashboardModuleType.PORTFOLIO_OVERVIEW]: {
@@ -177,11 +177,10 @@ export const dashboardModules = {
   // requirement that is deterministic even though its vertical one is not. Its
   // header row is `min-width: max-content` per column - the rule that stops a
   // label being squeezed to "Sta" - so the columns it shows have a hard combined
-  // floor of 720px, measured identically at every viewport. Six columns gave the
-  // body 591px at a 1280px viewport, so the trailing performance column rendered
-  // as a lone "P" and the ± figure beside it was cut off entirely. Eight give it
-  // 803px: the whole table, with nothing clipped and no scrolling required, from
-  // 1280px upward.
+  // floor of 720px at every viewport. Six columns leave the body 591px at a 1280px
+  // viewport, which renders the trailing performance column as a lone "P" and cuts
+  // off the ± figure beside it entirely. Eight leave it 803px: the whole table,
+  // with nothing clipped and no scrolling required, from 1280px upward.
   //
   // The ROW count is deliberately left where it is, for the reason set out above:
   // how tall a holdings table needs to be depends on how many holdings the viewer
@@ -317,17 +316,18 @@ export const dashboardModules = {
   },
   // Eight columns and six rows, and the minimum height raised with them.
   //
-  // Its table was the worst case on the canvas: the trailing actions column -
-  // the only way to edit or revoke a grant - sat entirely outside the visible
-  // area at 1280px and below, so a control the feature depends on was reachable
-  // only by discovering a horizontal scroll. Two things were wrong at once and
-  // both are fixed: the share address in the details column had no width cap, so
-  // it alone set an 858px floor that no viewport could reduce (capped in
-  // `access-table.component.scss`), and six columns were too few even for the
-  // reduced floor. Eight give the body 803px against a floor of roughly 574px.
+  // Its table is the widest on the canvas, and its trailing actions column is the
+  // only way to edit or revoke a grant, so a footprint that pushes that column
+  // outside the visible area makes a control the feature depends on reachable only
+  // by discovering a horizontal scroll. Two things have to hold for it not to: the
+  // share address in the details column is width-capped in
+  // `access-table.component.scss`, without which it alone sets an 858px floor no
+  // viewport can reduce; and the default is eight columns rather than six, which
+  // gives the body 803px against the capped floor of roughly 574px.
   //
-  // Six rows rather than five for the vertical half of the same defect: five left
-  // 389px of body against 428px of content, so the last grant's row was cut off.
+  // Six rows rather than five for the vertical half of the same requirement: five
+  // leave 389px of body against 428px of content, which cuts off the last grant's
+  // row.
   //
   // `minItemRows` moves from three to four because three could not work: a
   // 3-row cell is 260px, and once the card header and the module gutter are taken

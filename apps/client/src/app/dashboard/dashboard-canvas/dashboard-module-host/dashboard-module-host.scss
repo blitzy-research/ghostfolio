@@ -1,6 +1,3 @@
-// Material system tokens require fallbacks because the current theme does not
-// emit the --mat-sys layer.
-
 :host {
   // Custom-element hosts are inline by default; fill the grid cell without
   // viewport sizing.
@@ -34,23 +31,22 @@
   }
 
   // The floor is the whole point of this rule. A flex item whose overflow is not
-  // visible contributes an automatic minimum size of ZERO, so the title box was
-  // free to be squeezed away entirely: in a four-column module at 375px it
-  // measured 1.7px wide and the module rendered completely unlabelled, while the
-  // handle and the actions trigger kept their full 32px and 40px. Growing as well
-  // as shrinking, because this is now the only element in the header that absorbs
-  // free space - the trigger below removes itself from that competition instead of
-  // a spacer taking half of it.
+  // visible contributes an automatic minimum size of ZERO, so without a floor the
+  // title box is free to be squeezed away entirely and the module renders
+  // unlabelled while the handle and the actions trigger keep their full widths.
+  // Growing as well as shrinking, because this is the only element in the header
+  // that absorbs free space - the trigger below removes itself from that
+  // competition instead of a spacer taking half of it.
   .module-title {
     flex: 1 1 auto;
     min-inline-size: 1rem;
     overflow: hidden;
   }
 
-  // Pushes itself to the trailing edge, which is what a growing spacer used to do
-  // at the cost of half the header's spare width. Its own internal padding is the
-  // gap between a truncated title and the glyph, so no margin is spent on the
-  // title side either.
+  // Pushes itself to the trailing edge rather than being placed by a growing
+  // spacer, which would cost the title half the header's spare width. Its own
+  // internal padding is the gap between a truncated title and the glyph, so no
+  // margin is spent on the title side either.
   .module-actions {
     margin-inline-start: auto;
   }
@@ -70,16 +66,15 @@
   // stylesheet resets focus outlines.
   //
   // The handle's rendered contrast is a product of tone AND stroke coverage, so
-  // both are set here. `reorder-two-outline` is a stroked glyph with a 32/512
-  // stroke: at the 0.875rem type size the global grid partial gives this handle
-  // that stroke lands on a 0.875px line, no pixel ever reaches full coverage,
-  // and the darkest rendered pixel measured only 2.68:1 - below the 3:1 non-text
-  // minimum (WCAG 2.2 SC 1.4.11) - even though the tone itself computed 4.61:1.
-  // Stepping the glyph up one tokenised type-scale step puts the stroke on a
-  // whole 1px line so it renders at its nominal tone, and resting on the
-  // stronger of the two surface-text tokens raises that nominal tone as well.
-  // Both values are system tokens with repository-traceable fallbacks; the icon
-  // sizing follows the same `*-size` token form the toolbar already uses.
+  // both are set here. `reorder-two-outline` is a stroked glyph, and at the type
+  // size the global grid partial gives this handle its stroke lands on a
+  // sub-pixel line: no pixel ever reaches full coverage, so the darkest rendered
+  // pixel falls below the 3:1 non-text minimum (WCAG 2.2 SC 1.4.11) even where
+  // the tone itself passes. Stepping the glyph up one tokenised type-scale step
+  // puts the stroke on a whole pixel line so it renders at its nominal tone, and
+  // resting on the stronger of the two surface-text tokens raises that nominal
+  // tone as well. The icon sizing follows the same `*-size` token form the
+  // toolbar uses.
   .gf-dashboard-module-drag-handle {
     background: transparent;
     border: 0;
@@ -93,26 +88,20 @@
       font-size: var(--mat-sys-title-medium-size, 1rem);
     }
 
-    // Pointer feedback on the ONLY element that can move a module.
+    // Pointer feedback on the ONLY element that can move a module. The grid
+    // matches this handle's class and `ignoreContent` keeps every other press
+    // inside the module inert, so without a hover state the one draggable element
+    // on the card is pixel-indistinguishable from an untouched one.
     //
-    // Its absence was not a missing flourish. This handle is the single entry
-    // point for dragging - the grid matches its class and `ignoreContent` keeps
-    // every other press inside the module inert - yet hovering it changed nothing
-    // measurable at all: tone, background, opacity, transform, shadow, radius and
-    // the glyph itself were identical before and after, so a hovered handle was
-    // pixel-indistinguishable from an untouched one. Every sibling control this
-    // refactor introduced already answers a pointer, which made this handle the
-    // odd one out rather than a consistent choice.
-    //
-    // The treatment is deliberately the catalog row's, not a new invention: a
-    // filled surface one step above the card plus a stronger tone, from the same
-    // two tokens with the same repository-traceable fallbacks. So the two
-    // grab-to-move affordances on the canvas answer a pointer the same way, and a
-    // theme change moves both together.
+    // The treatment is deliberately the catalog row's rather than a new
+    // invention: a filled surface one step above the card plus a stronger tone,
+    // from the same two tokens with the same fallbacks. So
+    // the two grab-to-move affordances on the canvas answer a pointer the same
+    // way, and a theme change moves both together.
     //
     // `cursor: move` above is retained rather than replaced. It is what the
-    // gesture actually is, it is already correct, and it is the one part of the
-    // affordance that never depended on this rule.
+    // gesture actually is, and it is the one part of the affordance that never
+    // depended on this rule.
     &:hover {
       background-color: var(--mat-sys-surface-container-high, #f5f5f5);
       color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
@@ -132,9 +121,9 @@
     }
   }
 
-  // Positioning context for the scroll hints, and the element that now carries
-  // the body's share of the card height. The hints cannot live inside the
-  // scrolling element itself - see the note in the template.
+  // Positioning context for the scroll hints, and the element that carries the
+  // body's share of the card height. The hints cannot live inside the scrolling
+  // element itself - see the note in the template.
   .gf-dashboard-module-body {
     display: flex;
     flex: 1 1 auto;
@@ -151,10 +140,10 @@
   // This class must match gridster's ignoreContentClass so module controls
   // remain interactive; internal scrolling contains tall content.
   .gridster-item-content {
-    // Explicit because this region now carries the module gutter: with a
-    // content-box sizing the padding would be added OUTSIDE the height the flex
-    // line hands it, so the body would push past the card by exactly the gutter
-    // instead of scrolling inside it.
+    // Explicit because this region carries the module gutter: with a content-box
+    // sizing the padding would be added OUTSIDE the height the flex line hands
+    // it, so the body would push past the card by exactly the gutter instead of
+    // scrolling inside it.
     box-sizing: border-box;
 
     flex: 1 1 auto;
@@ -162,11 +151,11 @@
     overflow: auto;
 
     // Tones the platform scrollbar where the platform paints one at all. This is
-    // a refinement, not the affordance: measurement showed these regions reserve
-    // no gutter and composite no scrollbar pixels here, so the discoverability
-    // fix is the pair of painted hints the template draws instead. Kept because
-    // it costs nothing and puts the scrollbar on the same token as the rest of
-    // the chrome wherever it does show.
+    // a refinement, not the affordance: these regions reserve no gutter and
+    // composite no scrollbar pixels on this platform, so the discoverability fix
+    // is the pair of painted hints the template draws instead. Kept because it
+    // costs nothing and puts the scrollbar on the same token as the rest of the
+    // chrome wherever it does show.
     //
     // Standard properties rather than the `::-webkit-scrollbar` pseudo-elements:
     // Chromium honours one or the other, never both - a non-`auto` standard value
@@ -178,15 +167,11 @@
     // Header labels stop wrapping so that Material's own truncation can work.
     // Material gives every table cell `overflow: hidden; text-overflow: ellipsis`
     // but declares no `white-space`, so it computes to `normal` - and
-    // `text-overflow` has no effect on content that is allowed to wrap. Proven
-    // rather than assumed: an isolated probe at this exact font and padding wrapped
-    // a multi-word header onto THREE lines and painted no ellipsis, while the same
-    // cell with `nowrap` ellipsized correctly. The consequence in a narrow module
-    // was silent - ten of the labels here are multi-word, so they could never
-    // ellipsize however far the column was squeezed; they simply reflowed and grew
-    // the row. With `nowrap` a squeezed header shows a real ellipsis, and the
-    // columns that no longer fit become reachable through the horizontal scrollbar
-    // the rule above now makes visible.
+    // `text-overflow` has no effect on content that is allowed to wrap. A
+    // multi-word header therefore reflows onto further lines and grows the row
+    // instead of ellipsizing, however far the column is squeezed. With `nowrap` a
+    // squeezed header shows a real ellipsis, and the columns that no longer fit
+    // become reachable through the horizontal scrollbar.
     //
     // Header cells only. Data cells are left free to wrap, which is what keeps a
     // long asset name readable in a narrow cell instead of forcing the whole table
@@ -202,15 +187,15 @@
       // the second half of the same defect and the half `nowrap` alone cannot
       // reach. Material gives every cell `overflow: hidden`, and a cell with a
       // non-visible overflow contributes a min-content width of ZERO to its
-      // column - so the table happily compressed a 99px "Status" header into
-      // 48.95px and the reader was left with "Sta". Restoring a real minimum
-      // means the column can only ever be as narrow as the text it holds; if the
-      // sum no longer fits, the table overflows and is scrolled instead, and
-      // every label stays legible at every module width.
+      // column - so a table will happily compress a header until only its first
+      // few characters survive. A real minimum means the column can only ever be
+      // as narrow as the text it holds; if the sum no longer fits, the table
+      // overflows and is scrolled instead, and every label stays legible at every
+      // module width.
       //
       // This is why no `title` attribute is needed to expose the full label: the
       // label is never shortened in the first place, so there is nothing for a
-      // tooltip to reveal - and the fix reaches the shared library tables too,
+      // tooltip to reveal - and the rule reaches the shared library tables too,
       // which a per-template attribute could not. `text-overflow: ellipsis`,
       // which Material already sets, is left in place as the safety net for a
       // cell that is constrained by something else.
@@ -222,32 +207,30 @@
     // Collapses a module's inner horizontal scroller into this one, so a module
     // has exactly one scrolling region.
     //
-    // Eight of the table templates wrap themselves in a `.overflow-x-auto` div.
+    // Several of the table templates wrap themselves in a `.overflow-x-auto` div.
     // On a full-width page that is invisible and harmless, but inside a module it
-    // swallowed the overflow before this region ever saw it - Market Data measured
-    // `scrollWidth === clientWidth` on the body while the table inside it hid
-    // 719px, five whole columns, in a nested scroller that reserved no gutter and
-    // painted nothing. Two stacked invisible scrollers is worse than one: neither
-    // the browser nor the hints above could advertise the inner one, because the
-    // hints watch the element they are positioned against.
+    // swallows the overflow before this region ever sees it, hiding whole columns
+    // in a nested scroller that reserves no gutter and paints nothing. Two stacked
+    // invisible scrollers is worse than one: neither the browser nor the hints
+    // above can advertise the inner one, because the hints watch the element they
+    // are positioned against.
     //
     // Letting the overflow through means this region scrolls the table, which is
     // the region that already reports its own edges - so the columns become both
-    // reachable and advertised, with a single scroll gesture instead of two
-    // nested ones. Scoped to module content, so the same tables keep their inner
-    // scroller wherever else they are used.
+    // reachable and advertised, with a single scroll gesture instead of two nested
+    // ones. Scoped to module content, so the same tables keep their inner scroller
+    // wherever else they are used.
     ::ng-deep .overflow-x-auto {
       overflow-x: visible;
     }
 
     // Releases pinned table columns, which cost more than they earn in a grid
-    // cell. Three of these tables end in a `stickyEnd` actions column; pinned to
+    // cell. Several of these tables end in a `stickyEnd` actions column; pinned to
     // the right of a full-width page that is a convenience, but pinned to the
     // right of a module a few hundred pixels wide it parks an opaque block over
-    // whatever is scrolled underneath it - which is how a header ended up reading
-    // "Sta" instead of "Status". Letting the column scroll with its own table
-    // means nothing is ever covered, and the row actions stay reachable at the
-    // far right where the table ends.
+    // whatever is scrolled underneath it. Letting the column scroll with its own
+    // table means nothing is ever covered, and the row actions stay reachable at
+    // the far right where the table ends.
     //
     // `!important` is unavoidable rather than lazy: Material declares
     // `.mat-mdc-table-sticky { position: sticky !important }` in its own
@@ -276,10 +259,10 @@
     pointer-events: none;
     position: absolute;
 
-    // The bar rests on the stronger of the two surface-text tokens rather than
-    // the outline token, for the same reason the resize handle does: the outline
-    // fallback composites to 2.68:1 against the card, and an affordance nobody
-    // can see is the defect this is fixing.
+    // The bar rests on the stronger of the two surface-text tokens rather than the
+    // outline token, for the same reason the resize handle does: the outline
+    // fallback composites below the 3:1 non-text minimum against the card, and an
+    // affordance nobody can see is the defect this is fixing.
     &::after {
       background: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
       border-radius: var(--mat-sys-corner-full, 999px);
@@ -305,8 +288,8 @@
   // Horizontal continuation: a strip down the full height, with the bar upright,
   // so the two axes are told apart by the shape of the mark rather than only by
   // where it sits. These earn their place because releasing the header minimum
-  // above lets a narrow module overflow sideways where it previously just
-  // compressed its columns - which would have traded a truncated header for an
+  // above lets a narrow module overflow sideways rather than compress its
+  // columns, which would otherwise trade a truncated header for an
   // undiscoverable one.
   .gf-dashboard-module-scroll-hint-start,
   .gf-dashboard-module-scroll-hint-end {
@@ -445,8 +428,7 @@
     );
   }
 
-  // Dark already measured 4.86:1 before this change; it is restated only because
-  // the fallback differs and the fallback is what paints.
+  // Restated because the fallback differs and the fallback is what paints.
   .gf-dashboard-module-drag-handle {
     color: var(--mat-sys-on-surface, #ffffff);
 

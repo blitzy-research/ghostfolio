@@ -1,46 +1,17 @@
-// Layout adaptation only. The screen this module hosts is unchanged and still
-// carries the page-scale layout it was authored with, so undoing that layout is
-// this wrapper's job rather than the screen's - which is what keeps the screen
-// usable anywhere else and keeps every grid concern on this side of the boundary.
-//
-// `::ng-deep` is required and is not a shortcut: the declarations below target
-// markup that belongs to the hosted component, which this wrapper's own
-// emulated-encapsulation attributes never reach. The repository already styles
-// hosted markup this way.
-//
-// No colour, type or elevation is set here, so no design token is involved; every
-// value is either a removal or one of the neutral literals (`0`, `none`, `auto`,
-// `inherit`) that carry no design decision.
-
 :host {
   display: block;
 
-  // Bootstrap's `.container` is a centred column capped at a per-breakpoint
-  // width. Inside a grid cell the cell already is that column, so only the cap
-  // is lifted; the gutter is left alone, which leaves the module reading exactly
-  // like `.container-fluid`.
   ::ng-deep .container {
     max-width: none;
   }
 
-  // The screen opens with its own page title, which the module chrome already
-  // draws above this body. Suppressing the duplicate here leaves the screen's own
-  // markup untouched for any other host.
-  //
-  // `!important` is required rather than preferred, and was established by
-  // measuring the cascade in a browser: the hosted heading carries Bootstrap's
-  // `d-none d-sm-block`, whose `.d-sm-block { display: block !important }`
-  // applies at every viewport this canvas is used at and outranks any
-  // non-important declaration however specific. The neighbouring container and
-  // column overrides in this file deliberately carry no `!important`, because
-  // the Bootstrap declarations they replace carry none either.
+  // `!important` is required: the hosted heading carries Bootstrap's
+  // `d-none d-sm-block`, and `.d-sm-block { display: block !important }` outranks
+  // any non-important declaration however specific.
   ::ng-deep .container > h1 {
     display: none !important;
   }
 
-  // The screen centres its content in a narrower column and offsets it by the
-  // remainder. A grid cell is already as wide as the module is meant to be, so
-  // the column spans it fully and the offset is dropped.
   ::ng-deep .col-md-10.offset-md-1 {
     flex: 0 0 100%;
     margin-left: 0;

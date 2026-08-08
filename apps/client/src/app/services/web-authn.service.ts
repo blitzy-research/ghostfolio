@@ -21,11 +21,10 @@ export class WebAuthnService {
    * Loads the WebAuthn browser client on first use instead of at start-up.
    *
    * This service is reachable from the viewer store, which every page load
-   * resolves, so a static import placed the whole credential library in the
+   * resolves, so a static import would place the whole credential library in the
    * initial bundle for every visitor - including the overwhelming majority who
-   * never enrol a device. Since the route table collapsed onto a single canvas
-   * there is no longer a route boundary to keep it out, so the boundary is
-   * declared here.
+   * never enrol a device. The application has a single route, so there is no route
+   * boundary to keep it out and the boundary is declared here instead.
    *
    * The promise is memoised, so the module is fetched at most once per session
    * and a second enrolment attempt resolves immediately. `isSupported()` and

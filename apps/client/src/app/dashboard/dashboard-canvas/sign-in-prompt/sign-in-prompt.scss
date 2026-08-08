@@ -1,7 +1,3 @@
-// Material Design 3 system tokens, each paired with a repository-traceable
-// fallback taken from the design-token table. This workspace themes through
-// the legacy mat.define-theme() path, which leaves the --mat-sys-* layer
-// unpopulated at runtime, so the value after each comma is what paints.
 :host {
   // The canvas stretches this host with `flex: 1 1 auto`, so a column
   // formatting context is declared here instead of a percentage height: the
@@ -16,17 +12,6 @@
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   }
-
-  // No label-colour override lives here any more, and its removal is the point.
-  //
-  // This card once carried one, to lift the filled button's label off 1.92:1
-  // against the brand fill. It never took effect: the global stylesheet forces
-  // `color` on `.mat-mdc-unelevated-button.mat-primary` with `!important`, so
-  // redefining the token that Material's own non-important `color` reads was
-  // overridden before it could apply. The rule compiled, shipped, and did
-  // nothing - and being scoped here, it also implied the problem was local to
-  // this card when in fact every filled primary button and every primary FAB in
-  // the light theme was affected. Corrected at that global rule instead.
 }
 
 :host-context(.theme-dark) {

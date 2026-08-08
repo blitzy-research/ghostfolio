@@ -114,7 +114,7 @@ export class GfAiChatModuleComponent implements OnInit {
     // confidently wrong one.
     //
     // Reconciling it the other way round - honouring the impersonation - is not
-    // available here. The endpoint is outside this refactor's scope, and
+    // available here. The endpoint is not this module's to change, and
     // Ghostfolio withholds another user's monetary values by redacting them from
     // responses, which is something that can be done to a numeric field and
     // cannot be done to a paragraph of generated prose. Passing impersonation

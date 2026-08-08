@@ -410,8 +410,8 @@ describe('itemValidateCallback', () => {
  * capability, and the single navigation it is entitled to is asserted down to its
  * exact arguments: the empty command array, one nulled parameter and a merge. No
  * route table, `provideRouter` or router testing module is configured anywhere in
- * this file - please do not add one to "fix" a failure, because the URL no longer
- * selects a screen.
+ * this file, because the URL selects no screen: an injection failure here is the
+ * guard working rather than a missing provider.
  *
  * **No timer is faked and none is needed.** The canvas does not debounce; the five
  * hundred millisecond window belongs to `GfDashboardLayoutService`, whose own spec
@@ -1585,10 +1585,9 @@ describe('GfDashboardCanvasComponent', () => {
    * subscription, a revoked role - and the store re-emits the same viewer when it
    * does.
    *
-   * These are therefore the tests for the *second* time the gate closes. Without
-   * them, deleting the navigation chrome would have replaced a permanent gate
-   * with one that only ever screens once, and the module it used to hide would
-   * stay on screen for the rest of the session.
+   * These are therefore the tests for the *second* time the gate closes. A gate
+   * that only ever screens once leaves a module the viewer has just lost
+   * entitlement to on screen for the rest of the session.
    *
    * The two directions are asserted separately because they draw on different
    * sources: a revocation is answered from what is on the canvas now, a grant from
@@ -1978,8 +1977,8 @@ describe('GfDashboardCanvasComponent', () => {
       paint();
 
       // Consuming only the failure channel would leave the canvas with no viewer,
-      // no arrangement and none of its four states matching - a blank screen for
-      // anyone who followed a share link and then dismissed it.
+      // no arrangement and none of its states matching - a blank screen for anyone
+      // who followed a share link and then dismissed it.
       expect(component.isPublicPortfolio).toBe(false);
       expect(component.isSignedOut).toBe(false);
       expect(component.isInitialized).toBe(true);
@@ -2940,10 +2939,10 @@ describe('GfDashboardCanvasComponent', () => {
 
       requestMove(0, { deltaCols: 1, deltaRows: 0 });
 
-      // Rule 2 in its structural form: one array, one item object per cell, mutated
-      // in place by the engine. A canvas that answered a step by rebuilding either
-      // would remount every module on the grid and lose the engine's own handle on
-      // the item it was told to move.
+      // One array, one item object per cell, mutated in place by the engine. A
+      // canvas that answered a step by rebuilding either would remount every module
+      // on the grid and lose the engine's own handle on the item it was told to
+      // move.
       expect(component.modules).toBe(before);
       expect(holdings()).toBe(movedItem);
       expect(markets()).toBe(untouchedItem);
@@ -3590,10 +3589,10 @@ describe('GfDashboardCanvasComponent', () => {
 
       shouldReloadContentSubject.next();
 
-      // The heart of this finding's fix. Re-reading data is not a change to the
-      // arrangement, so a refresh must leave every cell where it is and must not
-      // reach the write path at all - otherwise the control would quietly cost a
-      // request against the layout endpoint every time it was pressed.
+      // Re-reading data is not a change to the arrangement, so a refresh must
+      // leave every cell where it is and must not reach the write path at all -
+      // otherwise the control would quietly cost a request against the layout
+      // endpoint every time it was pressed.
       expect(placedGeometry()).toEqual(geometryBefore);
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
@@ -3909,11 +3908,11 @@ describe('GfDashboardCanvasComponent', () => {
           layout: of(layout as unknown as UserDashboardLayout)
         });
 
-        // Both would previously have been walked straight into: the first throws
-        // while it is iterated, inside the success handler of the read - the one
-        // place a failure must not surface, because the canvas has already
-        // concluded the read succeeded - and the second would let this build
-        // rewrite a document a newer one wrote, in an older shape.
+        // Unscreened, both are walked straight into: the first throws while it is
+        // iterated, inside the success handler of the read - the one place a
+        // failure must not surface, because the canvas has already concluded the
+        // read succeeded - and the second would let this build rewrite a document
+        // a newer one wrote, in an older shape.
         //
         // The error state is the safe answer to both. It offers a retry and
         // permits no write at all, so the stored arrangement survives; reporting
@@ -4689,12 +4688,12 @@ describe('GfDashboardCanvasComponent', () => {
      * The canvas outlives its grid, which is the case the teardown above does not
      * cover.
      *
-     * Four states draw no grid at all - a shared portfolio, a signed-out viewer, a
-     * failed viewer read and a failed layout read - so entering any of them
-     * destroys the `gridster` child while this component carries on. Releasing the
-     * observer only when the whole canvas dies therefore left a detached host
-     * element and a dead engine held for as long as the viewer stayed on such a
-     * state, and the engine's own teardown hook is what closes that.
+     * Every state that draws no grid - a shared portfolio, a signed-out viewer, a
+     * failed viewer read, a failed layout read and the interval before the viewer
+     * resolves - destroys the `gridster` child while this component carries on.
+     * Releasing the observer only when the whole canvas dies would leave a detached
+     * host element and a dead engine held for as long as the viewer stayed on such
+     * a state, and the engine's own teardown hook is what closes that.
      */
     it('should stop watching when the grid goes away but the canvas does not', async () => {
       await createCanvas({ layout: of(placedLayout) });
@@ -4788,10 +4787,10 @@ describe('GfDashboardCanvasComponent', () => {
 
     // The host must NOT carry `page`. That class is for a screen that flows and
     // scrolls the document, and above the small breakpoint it insets its host by 2rem
-    // top and bottom - which on a shell exactly one viewport tall left an empty band
-    // above the control bar and pushed it 32px off the top of the screen. Everything
-    // else it supplied is either already on this component's own host or contradicted
-    // by it.
+    // top and bottom - which on a shell exactly one viewport tall puts an empty band
+    // above the control bar and pushes the bar off the top of the screen. Everything
+    // else that class supplies is either already on this component's own host or
+    // contradicted by it.
     it('should not carry the page class, but must keep the grid-scoping one', async () => {
       await createCanvas();
       paint();
@@ -5107,7 +5106,7 @@ describe('GfDashboardCanvasComponent', () => {
       await settleFocus();
 
       // The queued task is cancelled on teardown. Without that it would ask a
-      // destroyed view for chrome that no longer exists.
+      // destroyed view for chrome that is already gone.
       expect(requests).toEqual([]);
     });
 

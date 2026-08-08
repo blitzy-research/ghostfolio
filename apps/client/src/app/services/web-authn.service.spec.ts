@@ -27,13 +27,12 @@ jest.mock('@simplewebauthn/browser', () => {
  * The console is not a private place: everything written to it is readable by every
  * script on the page, is captured verbatim by error-reporting and session-replay
  * tooling, and survives in a saved log long after the session. Both failure paths
- * here used to write a raw `HttpErrorResponse`, which carries the request URL and
- * the response body - and for the enrolment path that body is the output of a
- * credential ceremony. The deregistration path additionally interpolated the
- * WebAuthn device identifier into the message, which is this browser's persistent
- * credential handle: it does not change between sessions, so it joins every log
- * line it appears in into one device's history, which is what makes it a tracking
- * identifier rather than diagnostic detail.
+ * here must therefore write neither a raw `HttpErrorResponse` - which carries the
+ * request URL and the response body, and for the enrolment path that body is the
+ * output of a credential ceremony - nor the WebAuthn device identifier, which is
+ * this browser's persistent credential handle: it does not change between sessions,
+ * so it joins every log line it appears in into one device's history, which is what
+ * makes it a tracking identifier rather than diagnostic detail.
  *
  * These tests therefore assert on what actually reaches the console, not on how the
  * reporting helper is called - a spy on the helper would pass just as happily while
@@ -118,9 +117,9 @@ describe('WebAuthnService', () => {
     it('never writes the device identifier anywhere', () => {
       deregister();
 
-      // The single assertion this whole finding comes down to. The identifier is in
-      // the request URL as well as the old message, so it is asserted against the
-      // entire console transcript rather than one call's arguments.
+      // The identifier appears in the request URL as well as in any message, so it
+      // is asserted against the entire console transcript rather than one call's
+      // arguments.
       expect(consoleOutput()).not.toContain(deviceId);
     });
 

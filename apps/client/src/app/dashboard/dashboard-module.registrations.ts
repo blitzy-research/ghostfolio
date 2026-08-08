@@ -8,10 +8,10 @@ import type { DashboardModuleRegistration } from './interfaces/interfaces';
  *
  * Three constraints govern it.
  *
- * 1. **Loaders, not component references.** These thunks are the application's only
- *    code-splitting seam, so holding component *types* here would pull every module
- *    tree into the initial chunk and breach the production `initial` budget (2 MB
- *    warning, 5 MB error).
+ * 1. **Loaders, not component references.** These thunks are the only
+ *    code-splitting seam for module wrappers, so holding component *types* here
+ *    would pull every module tree into the initial chunk and breach the production
+ *    `initial` budget (2 MB warning, 5 MB error).
  * 2. **No metadata duplication.** Display names, default and minimum cell dimensions
  *    and the optional visibility permission are authoritative in the
  *    framework-neutral `dashboardModules` map in `@ghostfolio/common/dashboard`,

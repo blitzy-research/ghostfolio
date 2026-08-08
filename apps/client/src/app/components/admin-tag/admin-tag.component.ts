@@ -120,9 +120,6 @@ export class GfAdminTagComponent implements OnInit {
   public ngOnInit() {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
 
-    // Re-evaluated once the device is known, so a request that was already on the
-    // URL when this component was created is honoured now that it can be honoured
-    // correctly.
     this.applyQueryParams();
 
     this.fetchTags();
@@ -153,9 +150,9 @@ export class GfAdminTagComponent implements OnInit {
       });
 
       // A tag that cannot be found is the only outcome besides opening the dialog.
-      // Passing it on regardless destructured `undefined` and threw, which is
-      // exactly what an `editTagDialog` naming a tag that had since been deleted
-      // used to do.
+      // Passing it on regardless would destructure `undefined` and throw, which is
+      // what an `editTagDialog` naming a tag that has since been deleted would
+      // otherwise produce.
       if (tag) {
         this.serveDialogRequest(`editTagDialog:${tag.id}`, () => {
           this.openUpdateTagDialog(tag);
@@ -228,11 +225,8 @@ export class GfAdminTagComponent implements OnInit {
   }
 
   public onUpdateTag({ id }: Tag) {
-    // Merged, not replaced. Replacing the whole map discarded every parameter the
-    // rest of the canvas had put there - a sibling module's open dialog, the
-    // shared-portfolio access identifier, the sign-in token hand-off - as a side
-    // effect of opening this one dialog. `createTagDialog` is nulled because it is
-    // tested first, so a stale one would open a blank form instead of this tag.
+    // `createTagDialog` is nulled because it is tested first, so a stale one would
+    // open a blank form instead of this tag.
     void this.router.navigate([], {
       queryParams: {
         createTagDialog: null,

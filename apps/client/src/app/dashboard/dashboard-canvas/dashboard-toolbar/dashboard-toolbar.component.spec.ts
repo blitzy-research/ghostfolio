@@ -36,8 +36,8 @@ import { GfDashboardToolbarComponent } from './dashboard-toolbar.component';
 // `@ionic/angular/standalone` re-exports `@ionic/core`, which ships plain `.js`
 // ES modules rather than `.mjs`; both this project's and `libs/ui`'s Jest
 // transforms name the `@ionic` and `@stencil` families explicitly so that it
-// parses, so this stand-in is no longer what makes the bar importable. It is
-// kept deliberately all the same: the bar's glyphs carry no behaviour this
+// parses, so this stand-in is not what makes the bar importable. It is kept
+// deliberately all the same: the bar's glyphs carry no behaviour this
 // suite asserts, and standing them in keeps the whole Stencil runtime - and its
 // custom-element registration - out of a suite about a control bar, while the
 // rendered markup keeps the same shape.
@@ -61,7 +61,7 @@ jest.mock('@ionic/angular/standalone', () => {
 });
 
 /**
- * Unit specification for the non-navigational dashboard control bar.
+ * The non-navigational dashboard control bar.
  *
  * Three things about this environment shape almost every decision below, and
  * each was established by measurement rather than assumption.
@@ -832,8 +832,8 @@ describe('GfDashboardToolbarComponent', () => {
 
     it('offers a real viewer no module the registry gates away from them', () => {
       // The bar's default viewer holds no administration permission, so the gated
-      // modules must not be offered at all. Deleting the page chrome removed the only
-      // client-side admin gate, which is what makes this filter load-bearing rather
+      // modules must not be offered at all. This filter is the only client-side
+      // admin gate the application has, which is what makes it load-bearing rather
       // than cosmetic.
       renderWithRealAssistant();
 
@@ -1037,9 +1037,9 @@ describe('GfDashboardToolbarComponent', () => {
 
         expect(mark().textContent).toContain('Ghostfolio');
 
-        // No `aria-label`, on purpose. One of "Refresh dashboard" replaced the
-        // visible word wholesale, which leaves a speech-input user unable to
-        // address the control by the word they can see.
+        // No `aria-label`, on purpose. One reading "Refresh dashboard" would
+        // replace the visible word wholesale, leaving a speech-input user unable
+        // to address the control by the word they can see.
         expect(mark().hasAttribute('aria-label')).toBe(false);
         expect(accessibleName(mark())).toContain('Ghostfolio');
       });
@@ -1401,7 +1401,7 @@ describe('GfDashboardToolbarComponent', () => {
       component.hasPermissionToAccessAssistant = true;
     });
 
-    it('opens the assistant on the shortcut the former chrome established', () => {
+    it('opens the assistant on its keyboard shortcut', () => {
       const event = dispatchKeydownFrom('div', '/');
 
       expect(assistant.setIsOpen).toHaveBeenCalledTimes(1);
@@ -1506,12 +1506,11 @@ describe('GfDashboardToolbarComponent', () => {
       expect(callOrder).toEqual(['releasePendingSave', 'signOut', 'navigate']);
     });
 
-    // The finding this addresses: an arrangement change made inside the debounce
-    // window and followed immediately by signing out was simply lost. Losing it to
-    // a closed tab is a window this design accepts - nothing can be issued from a
-    // document that is going away on its own - but signing out is the application's
-    // own doing, so it is the one departure that can and must carry the write with
-    // it.
+    // An arrangement change made inside the debounce window and followed
+    // immediately by signing out would otherwise be lost. Losing it to a closed tab
+    // is a window this design accepts - nothing can be issued from a document that
+    // is going away on its own - but signing out is the application's own doing, so
+    // it is the one departure that can and must carry the write with it.
     it('releases the pending arrangement before anything else happens', () => {
       document.documentElement.lang = 'de';
 
@@ -1810,8 +1809,8 @@ describe('GfDashboardToolbarComponent', () => {
       // Every capability here acts in place. The only two that leave the page do
       // so deliberately and by replacing the document - switching identity and
       // signing out - and neither is exercised above. Nothing routes, ever: this
-      // component no longer injects a router at all, and the stand-in supplied to
-      // the subtree records that no child rendered with it does either.
+      // component injects no router at all, and the stand-in supplied to the
+      // subtree records that no child rendered with it does either.
       expect(routerMock.navigate).not.toHaveBeenCalled();
       expect(navigationAttempts).toHaveLength(0);
     });
@@ -1829,13 +1828,12 @@ describe('GfDashboardToolbarComponent', () => {
 
       createComponent();
 
-      // Signing in is the one capability of the deleted chrome that this bar
-      // deliberately does not carry: in the chrome it existed only in the
-      // signed-out branch, and on this canvas that branch is a sibling component
-      // which owns the dialog, the exchange and the stay-signed-in preference.
-      // This bar renders only for a resolved viewer, so a second copy here could
-      // never be reached. Asserted against a deployment that grants all three
-      // paths, because that is the input under which an unreachable copy would
+      // Signing in is the one capability this bar deliberately does not carry: it
+      // belongs to the signed-out branch of the canvas, and that branch is a sibling
+      // component which owns the dialog, the exchange and the stay-signed-in
+      // preference. This bar renders only for a resolved viewer, so a second copy
+      // here could never be reached. Asserted against a deployment that grants all
+      // three paths, because that is the input under which an unreachable copy would
       // look alive.
       for (const member of Object.keys(component)) {
         expect(member).not.toMatch(/auth/i);

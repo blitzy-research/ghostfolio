@@ -195,7 +195,7 @@ export class AuthController {
    * narrow the exposure; they do not remove it. A token in a URL still reaches
    * browser history and any access log that records request targets, and only
    * moving the hand-off out of the URL closes that — a change to the
-   * authentication mechanism itself, which this refactor does not make.
+   * authentication mechanism itself, which is out of scope here.
    *
    * @param response the Express response the redirect is about to be written to.
    */

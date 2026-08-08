@@ -72,9 +72,8 @@ describe('OidcStateStore', () => {
   });
 
   it('is not reproducible from a seeded Math.random', async () => {
-    // Pinned rather than merely stubbed: if the generator still consulted
-    // `Math.random()`, every handle would now be the same string. This is the
-    // assertion that would have failed before the change and passes after it.
+    // Pinned rather than merely stubbed: if the generator consulted `Math.random()`
+    // at all, every handle produced under this spy would be the same string.
     const mathRandom = jest.spyOn(Math, 'random').mockReturnValue(0.5);
 
     try {

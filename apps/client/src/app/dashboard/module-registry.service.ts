@@ -29,8 +29,10 @@ const sharedDashboardModules: Record<DashboardModuleType, DashboardModule> =
  * How a module type reaches the dashboard canvas: the canvas resolves a persisted
  * `moduleType` discriminator here, awaits the definition's loader and hands the
  * resulting component type to `NgComponentOutlet`, so it imports no module
- * component and no module component imports it. Routing every module through this
- * map is the convention that keeps that true; nothing in the build enforces it.
+ * component and no module component imports it. That is checked mechanically
+ * rather than left to convention - `dashboard-modules.architecture.spec.ts` scans
+ * both dependency directions and fails on a direct wrapper reference from the
+ * canvas layer.
  *
  * A definition is composed from two sources, neither of which duplicates the other,
  * so a module's declared minimum footprint has exactly one definition site and the

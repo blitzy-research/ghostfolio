@@ -27,11 +27,10 @@ import { TokenStorageService } from './services/token-storage.service';
 import { UserService } from './services/user/user.service';
 
 /**
- * The application shell, which is what survived the removal of the navigation
- * chrome.
+ * The application shell.
  *
- * Three responsibilities were absorbed into it and each of them is a silent
- * failure waiting to happen:
+ * It owns three responsibilities, and each of them is a silent failure waiting to
+ * happen:
  *
  * 1. **The holding-detail dialog is opened from a query parameter.** This is the
  *    workspace's route-agnostic dialog convention: a producer anywhere in the
@@ -40,13 +39,12 @@ import { UserService } from './services/user/user.service';
  *    and its clean-up nulls exactly three parameters while merging the rest -
  *    dropping the merge would close every co-mounted module's dialog along with
  *    this one.
- * 2. **Account registration moved here from the deleted register page.** Its two
- *    dialog inputs, its device-dependent sizing and - most importantly - the
- *    token adoption followed by a *forced* viewer re-fetch, which is what
- *    dismisses the live-demo banner.
+ * 2. **Account registration.** Its two dialog inputs, its device-dependent sizing
+ *    and - most importantly - the token adoption followed by a *forced* viewer
+ *    re-fetch, which is what dismisses the live-demo banner.
  * 3. **A system message is surfaced without navigating.** Its optional
- *    `routerLink` is deliberately ignored, because there is no screen left to
- *    address; honouring it would resolve to a route that no longer exists.
+ *    `routerLink` is deliberately ignored, because this application addresses no
+ *    screen; honouring it would resolve to nothing.
  *
  * The `Router` is a recording stub throughout, because on a single-canvas shell
  * no navigation selects a screen - the query parameters are the whole message.
@@ -419,7 +417,7 @@ describe('GfAppComponent', () => {
     // `addEventListener`/`removeEventListener` are what the shell calls, and both
     // halves are provided deliberately: the removal is the only way to assert that
     // the listener is released with the component, which the deprecated
-    // `addListener` form the shell used to call offered no way to do at all.
+    // `addListener`/`removeListener` pair offers no way to do.
     originalMatchMedia = window.matchMedia;
     window.matchMedia = jest.fn(() => ({
       addEventListener: (
@@ -640,7 +638,7 @@ describe('GfAppComponent', () => {
 
       expect(answers).toHaveLength(2);
 
-      // Both chunks arrive, oldest last - which is the order that used to leave two
+      // Both chunks arrive, oldest last - the order that would otherwise leave two
       // dialogs stacked with the abandoned asset on top.
       answers[1](GfHoldingDetailDialogComponent);
 
@@ -748,8 +746,7 @@ describe('GfAppComponent', () => {
 
       const { component: dialogComponent, config } = openedDialog();
 
-      // The gate used to live on the register page, which owned this flow before
-      // the shell absorbed it.
+      // The shell owns this flow, so the permission gate on it lives here.
       expect(dialogComponent).toBe(GfUserAccountRegistrationDialogComponent);
       expect(config.data).toEqual({
         deviceType: 'desktop',
@@ -785,9 +782,8 @@ describe('GfAppComponent', () => {
 
       await component.onCreateAccount();
 
-      // Both halves matter and so does their order. The token is persisted with
-      // `staySignedIn` forced on, matching the register page's deliberate decision
-      // not to consult the setting for a freshly created account; and the forced
+      // Both halves matter and so does their order. `staySignedIn` is forced on
+      // because a freshly created account has no setting to consult; and the forced
       // re-read is what drives the viewer subscription to recompute
       // `canCreateAccount`, which is what dismisses the live-demo banner. An
       // unforced read would be served the cached anonymous viewer and the banner
@@ -850,8 +846,8 @@ describe('GfAppComponent', () => {
     /**
      * The registration dialog's chunk, when it is slow or when it fails.
      *
-     * Collapsing the route table moved this load out of the router, which used to
-     * handle both cases, and into a control the visitor can press twice.
+     * The chunk is loaded from a control the visitor can press twice, with no
+     * router in between to absorb the repeat or report the failure.
      */
     it('opens one dialog however many times the control is pressed while loading', async () => {
       const component = await createComponent();
@@ -1270,10 +1266,10 @@ describe('GfAppComponent', () => {
       expect(document.body.classList.contains('theme-light')).toBe(true);
     });
 
-    // The theme is applied on EVERY emission of the viewer's record, and the
-    // appearance control in the toolbar refreshes that record on every use - so
-    // registering the system listener alongside the theme it applies added one more
-    // listener each time, none of them ever removed, each re-running the same work.
+    // The theme is applied on EVERY emission of the viewer's record, and that
+    // record is re-emitted by anything that changes a setting - so registering the
+    // system listener alongside the theme it applies would add one more listener
+    // each time, none of them ever removed, each re-running the same work.
     it('watches the operating system once, however many times the viewer record arrives', async () => {
       await createComponent();
 

@@ -24,14 +24,12 @@ import {
  * The assistant's public result contract, asserted from inside the library that owns
  * it.
  *
- * The single-canvas refactor changed what an activated search result *is*. A result
- * used to carry a `routerLink` and the consumer navigated to it; there is no screen
- * left to address, so a result now carries a `moduleType` drawn from the shared
- * dashboard module vocabulary and the consumer surfaces that module instead. That is
- * a rename across a library boundary, and it is exactly the kind of change that
- * regresses silently: this library cannot import the application that hosts the
- * modules, so nothing in the compiler relates what is emitted here to what the
- * consumer resolves. The consumer's own suite additionally stands the assistant in
+ * An activated search result names a module rather than an address: it carries a
+ * `moduleType` drawn from the shared dashboard module vocabulary, and the consumer
+ * surfaces that module instead of navigating to a `routerLink`. That contract spans
+ * a library boundary and can regress silently, because this library cannot import
+ * the application that hosts the modules - so nothing in the compiler relates what
+ * is emitted here to what the consumer resolves. The consumer's own suite additionally stands the assistant in
  * for a hand-written double, which is the right call for testing the consumer and
  * the reason the producer needs a guard of its own.
  *
@@ -44,11 +42,11 @@ import {
  * 2. **Every discriminator is one the shared vocabulary declares.** An emitted value
  *    outside `DashboardModuleType` resolves to nothing in the registry, so the row
  *    would look live and do nothing when activated.
- * 3. **Gated modules are filtered by the viewer's own permissions.** Deleting the
- *    page chrome removed the only client-side admin gate, so this filter is now part
- *    of what keeps administration out of an unentitled viewer's reach. The gated
- *    cases are derived from the shared map rather than listed, so a module gated
- *    later is covered without this file being touched.
+ * 3. **Gated modules are filtered by the viewer's own permissions.** This filter is
+ *    part of what keeps administration out of an unentitled viewer's reach, there
+ *    being no navigation chrome to gate it instead. The gated cases are derived from
+ *    the shared map rather than listed, so a module gated later is covered without
+ *    this file being touched.
  *
  * The component is driven through its real search pipeline - `setValue` on the search
  * control, the real 300 ms debounce, the real `fuse.js` index over the real shared
@@ -629,8 +627,8 @@ describe('GfAssistantComponent', () => {
       const row = firstRow();
 
       // The row is activated by its click handler alone. An `href` here would mean a
-      // link directive had resolved a route, and the collapsed route table has none
-      // to resolve.
+      // link directive had resolved a route, and this application declares none for
+      // it to resolve.
       expect(row?.getAttribute('href')).toBeNull();
     });
   });

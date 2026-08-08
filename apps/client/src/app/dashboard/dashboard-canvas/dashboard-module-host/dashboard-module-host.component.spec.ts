@@ -266,9 +266,9 @@ describe('GfDashboardModuleHostComponent', () => {
   it('should qualify a module whose name the registry reuses, everywhere the chrome names it', async () => {
     // Two registry entries share the name `Settings` and two share `Markets`, each
     // pair distinguished only by a `context`. Both of a pair can be placed at once,
-    // and before this the chrome said `Settings` in all four places - so a reader
-    // met two identical regions, two identical drag handles and two identical
-    // action menus, one of which removes the wrong arrangement.
+    // so chrome that said `Settings` in all four places would leave a reader with
+    // two identical regions, two identical drag handles and two identical action
+    // menus, one of which removes the wrong arrangement.
     //
     // The qualifier is asserted in all four places at once, because agreeing with
     // itself is the point: the visible title, the region name and both controls have
@@ -523,9 +523,9 @@ describe('GfDashboardModuleHostComponent', () => {
 
     const handle = query<HTMLButtonElement>('.gf-dashboard-module-drag-handle');
 
-    // The handle was already focusable before it did anything, which is the exact
-    // shape of a dead tab stop: reachable, announced, and leading nowhere. It is a
-    // button now because it genuinely acts on keys, and it says which ones.
+    // A focusable element that does nothing is a dead tab stop: reachable,
+    // announced, and leading nowhere. This is a button because it genuinely acts on
+    // keys, and it says which ones.
     expect(handle.tagName).toBe('BUTTON');
     expect(handle.disabled).toBe(false);
 

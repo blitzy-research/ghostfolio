@@ -98,9 +98,9 @@ export class GfAssistantListItemComponent
         dialogModule: this.item.moduleType
       };
 
-      // The dialog is addressed by query parameter rather than by screen, so
-      // the empty command array keeps the activation on the current URL instead
-      // of navigating to a screen that no longer exists.
+      // The dialog is addressed by query parameter rather than by screen, so the
+      // empty command array keeps the activation on the current URL instead of
+      // navigating anywhere.
       this.routerLink = [];
       this.hasRouterLink = true;
     } else if (this.item?.mode === SearchMode.ASSET_PROFILE) {
@@ -178,11 +178,8 @@ export class GfAssistantListItemComponent
     // other kind either has a shell-owned reader or no parameters at all, and
     // keeps applying them through the template's router link.
     if (this.item?.mode === SearchMode.ASSET_PROFILE) {
-      // Merged, not replaced. Replacing the whole map discarded every parameter the
-      // rest of the canvas had put there - a sibling module's open dialog, the
-      // shared-portfolio access identifier, the sign-in token hand-off - as a side
-      // effect of opening this one dialog. What this request takes over it nulls
-      // explicitly instead; see `ngOnChanges`.
+      // What this request takes over it nulls explicitly instead; see
+      // `ngOnChanges`.
       void this.router.navigate([], {
         queryParams: this.queryParams,
         queryParamsHandling: 'merge',

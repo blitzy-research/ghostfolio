@@ -15,12 +15,11 @@ import { AuthGuard } from './auth.guard';
 /**
  * The guard on the one route the application has left.
  *
- * It stopped being a gate - it resolves `true` unconditionally, because every
- * target it used to divert to was deleted with the navigation surface, and because
- * the root host is what decides between the shared portfolio, the signed-out
- * prompt, the empty canvas and a hydrated one. What it kept are three side
- * effects, none of which is a routing concern and each of which fails silently
- * when it breaks:
+ * It is not a gate: it resolves `true` unconditionally, because there is no second
+ * route to divert to and because the root host is what decides between the shared
+ * portfolio, the signed-out prompt, the empty canvas and a hydrated one. What it
+ * carries are three side effects, none of which is a routing concern and each of
+ * which fails silently when it breaks:
  *
  * 1. **Adopting a handed-off token, before the viewer is requested.** The API's
  *    Google and OpenID Connect callbacks land on `/<locale>/?jwt=<token>` and the
@@ -40,7 +39,7 @@ import { AuthGuard } from './auth.guard';
  * `window.location` and its members as `[LegacyUnforgeable]`, so
  * `Object.defineProperty(window, 'location', …)` throws `Cannot redefine
  * property: location` and `jest.spyOn(window.location, 'reload')` throws `Cannot
- * assign to read only property 'reload'` - measured here, not assumed. What jsdom
+ * assign to read only property 'reload'`. What jsdom
  * does emit is a report on its virtual console, which arrives as a
  * `console.error`; {@link reloadAttempts} collects those and everything else is
  * forwarded to the real `console.error`, so a genuine framework error is never

@@ -29,12 +29,12 @@ import { DataSource } from '@prisma/client';
  * The server answers 404 whenever an asset profile carries no `url`. The client
  * cannot know that in advance, so one instance has to find out - but only one,
  * and only once, which is what the pending state is for. Sharing only the settled
- * answer is not enough on a cold load, and that is measured rather than assumed:
- * the two tables mount roughly 300ms apart, but an `<img>` `error` event arrives
- * 220-320ms after its 404 actually landed, because the main thread is busy with a
- * 177kB payload and chart construction in between. The second table therefore
- * issued its twelve requests 7-50ms BEFORE the first error event fired, so an
- * answer-only register was still empty at the moment it was needed.
+ * answer is not enough on a cold load: the two tables mount a few hundred
+ * milliseconds apart, but an `<img>` `error` event arrives later still than its
+ * 404 did, because the main thread is busy with the payload and chart
+ * construction in between. The second table therefore issues its twelve requests
+ * BEFORE the first error event fires, so an answer-only register is still empty at
+ * the moment it is needed.
  *
  * Not keyed by user, because whether a logo exists is a property of the asset
  * profile rather than of the viewer, and discarded with the page, so editing a

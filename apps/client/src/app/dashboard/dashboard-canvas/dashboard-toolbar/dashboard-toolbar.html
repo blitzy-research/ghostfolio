@@ -1,62 +1,22 @@
-<!--
-  COMPONENT CONTRACT - this template requires `accountLabel`, `deviceType`,
-  `hasFilters`, `hasImpersonationId`, `hasPermissionForSubscription`,
-  `hasPermissionToAccessAdminControl`, `hasPermissionToAccessAssistant`,
-  `hasPermissionToChangeDateRange`, `hasPermissionToChangeFilters`,
-  `hasPromotion`, `impersonationId`, `impersonationStatusLabel`, `isMenuOpen`,
-  `pricingUrl`, `user` and `assistantElement`,
-  plus the handlers `closeAssistant()`,
-  `impersonateAccount()`, `onDateRangeChange()`, `onFiltersChanged()`,
-  `onLogoClick()`, `onMenuClosed()`, `onMenuOpened()`, `onOpenAssistant()`,
-  `onSelectModule()` and `onSignOut()`. Every one of them is
-  defined on the class - this list is verifiable rather than aspirational,
-  because `strictTemplates` is off in this project and a binding to a member
-  that does not exist compiles, lints and ships in silence.
-  It imports GfAssistantComponent,
-  GfLogoComponent, GfPremiumIndicatorComponent, IonIcon, MatBadgeModule,
-  MatButtonModule, MatMenuModule and MatToolbarModule alongside
-  CUSTOM_ELEMENTS_SCHEMA, and registers the menu, identity and assistant glyphs
-  this template renders.
-
-  This is a control surface, not a way of getting somewhere. The application
-  resolves to one canvas, so each capability rescued from the deleted page
-  chrome - the assistant, the date range, the portfolio filters, identity
-  switching, the plan upgrade and signing out - is invoked in place and nothing
-  here addresses a screen. The single address that survives leaves this
-  application altogether for the hosted plan page, which is why it is an
-  ordinary external target rather than an internal one.
-
-  Panel state, cell coordinates and cell sizes are owned by the canvas that
-  mounts this component, so none of them is read or written here, this file
-  offers no way to open or close the catalog, and no arrangement is ever saved
-  from it.
-
-  Only the signed-in half of the former page chrome lives here: the signed-out
-  state is a sibling component the canvas renders in place of the canvas body,
-  which is why the guard below has no companion branch. The guard is still
-  required, because the viewer is resolved asynchronously and the bar has to
-  render as empty chrome until it arrives rather than fault on the first pass.
-
-  Keyboard focus on every control below - the mark, the assistant trigger, the
-  identity trigger and each menu row - draws an explicit ring, declared in
-  `dashboard-toolbar.scss`. It has to be declared: the global stylesheet resets
-  `button:focus` and this theme does not opt into Material's strong focus
-  indicators, leaving only a state layer that measures roughly 1.2:1 against the
-  surface behind it. The ring is scoped to this template's own elements, so it
-  neither leaks into child components nor depends on a theme change.
--->
 <mat-toolbar class="px-0">
+  <!--
+    Only the signed-in half of the control surface lives here: the signed-out
+    state is a sibling component the canvas renders in place of the canvas body,
+    which is why this guard has no companion branch. The guard is still required,
+    because the viewer is resolved asynchronously and the bar has to render as
+    empty chrome until it arrives rather than fault on the first pass.
+  -->
   @if (user) {
     <!--
       A button rather than a link, because activating the mark reloads every
       module on the canvas in place instead of going anywhere.
 
       It deliberately carries NO `aria-label`. The mark renders the visible word
-      "Ghostfolio", and an `aria-label` of "Refresh dashboard" replaced that name
-      wholesale - so the accessible name no longer contained the visible label,
-      which is a WCAG 2.2 SC 2.5.3 (Label in Name) failure and leaves a
+      "Ghostfolio", and an `aria-label` of "Refresh dashboard" would replace that
+      name wholesale, leaving an accessible name that does not contain the visible
+      label - a WCAG 2.2 SC 2.5.3 (Label in Name) failure that leaves a
       speech-input user unable to address the control by the word they can see.
-      Letting the name come from the mark's own text restores that, and the action
+      Letting the name come from the mark's own text avoids that, and the action
       is carried by the tooltip instead, which is also exposed as the control's
       accessible DESCRIPTION rather than competing with its name.
     -->
@@ -136,16 +96,16 @@
       @if (hasPromotion) {
         <li class="d-inline-flex list-inline-item">
           <!--
-            The counterpart of the discount mark the deleted page chrome showed
-            beside its plan link. There is no plan screen to point at any more,
-            so it is an ordinary external target to the hosted plan page and
-            opens in its own tab rather than taking the canvas away with it.
+            The discount mark, shown to a viewer who has an offer waiting. The
+            plan page is hosted outside this application, so this is an ordinary
+            external target and opens in its own tab rather than taking the canvas
+            away with it.
 
             The mark itself is decorative and hidden from assistive technology,
             because it says nothing the control's own name does not already say;
             the name is what an offer actually means rather than how it is drawn,
-            and it reuses the wording of the plan row in the menu below so that
-            no new source message is introduced for it.
+            and it reuses the wording of the plan row in the menu below so that no
+            new source message is introduced for it.
           -->
           <a
             aria-label="Upgrade Plan"
@@ -169,20 +129,20 @@
           menu is closed.
 
           It is its own list item rather than the contents of the identity
-          trigger, and both halves of that matter. Rendered INSIDE the trigger it
-          replaced the trigger's glyph, leaving a blank 24x28 button as the only
+          trigger, and both halves of that matter. Rendered inside the trigger it
+          would replace the trigger's glyph, leaving a blank button as the only
           way to reach the identity menu - and the app's single sign-out path with
-          it. And a live region is not something to nest inside a control: its
-          job is to announce a state change, whereas the control's job is to be
-          named and operated, and merging the two makes the announcement part of
-          the button's name.
+          it. And a live region is not something to nest inside a control: its job
+          is to announce a state change, whereas the control's job is to be named
+          and operated, and merging the two makes the announcement part of the
+          button's name.
 
           The wording is held on the class rather than declared here because a
           bound attribute cannot be localized with `i18n-`, and the element needs
           real text content for a reason that is not cosmetic: the pill is a flex
           box with no intrinsic height, so with nothing but whitespace inside it
-          it measured exactly 0px tall and painted nothing at all despite being
-          fully styled and reported as visible.
+          it has no block size at all and paints nothing despite being fully
+          styled and reported as visible.
         -->
         <li class="d-inline-flex list-inline-item">
           <span
@@ -232,21 +192,18 @@
             hasPermissionForSubscription && user?.subscription?.type === 'Basic'
           ) {
             <!--
-              The plan page is hosted outside this application, so this row is
-              an ordinary external address and opens in its own tab rather than
-              taking the canvas away with it. The indicator beside the wording
-              is told not to link, so the row offers exactly one target instead
-              of two overlapping ones - and because the disabled indicator now
-              renders a decorative span rather than a second anchor, the row
-              contains no nested interactive content at all. Both wordings are
-              reused unchanged from the chrome this bar replaces, which keeps
-              their existing translations.
+              The plan page is hosted outside this application, so this row is an
+              ordinary external address and opens in its own tab rather than
+              taking the canvas away with it. The indicator beside the wording is
+              told not to link, so the row offers exactly one target instead of
+              two overlapping ones - and because the disabled indicator renders a
+              decorative span rather than a second anchor, the row contains no
+              nested interactive content at all. Both wordings are existing source
+              messages, which keeps their translations.
 
-              The percentage badge is the promotion affordance the deleted
-              chrome carried beside its pricing link, restored verbatim - same
-              element, same classes, same symbol - so that a viewer on the free
-              plan who has an offer waiting is told so, instead of seeing only
-              the generic premium glyph that every free-plan viewer sees.
+              The percentage badge tells a viewer on the free plan who has an
+              offer waiting that they have one, rather than leaving them the
+              generic premium glyph that every free-plan viewer sees.
             -->
             <a
               class="d-flex"

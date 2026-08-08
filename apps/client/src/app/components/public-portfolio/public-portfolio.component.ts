@@ -49,18 +49,13 @@ import {
 /**
  * Read-only presentation of a portfolio shared through a public access link.
  *
- * This is the relocated leaf of the former public page. It no longer owns a
- * route of its own: the shared link is resolved from the `accessId` query
- * parameter of the single root route (`/<languageCode>/?accessId=<id>`) instead
- * of the retired `/<languageCode>/p/<id>` route parameter. Permission
- * evaluation, geographic/sector derivation and the table/chart contracts
- * consumed by the template are carried over unchanged.
- *
- * Two things necessarily differ, both because a query parameter is not a route
- * parameter. The read is driven by the parameter stream rather than taken once,
- * because the identifier can change while this component stays mounted; and a
- * failed read is reported in place rather than redirected away from, because the
- * route it used to redirect to is the one now hosting this component.
+ * The link is resolved from the `accessId` query parameter of the single root
+ * route (`/<languageCode>/?accessId=<id>`), and two consequences follow from
+ * that being a query parameter rather than a route parameter. The read is driven
+ * by the parameter stream rather than taken once, because the identifier can
+ * change while this component stays mounted; and a failed read is reported in
+ * place rather than redirected away from, because this component is hosted by
+ * the route any redirect would target.
  */
 @Component({
   imports: [
@@ -93,10 +88,9 @@ export class GfPublicPortfolioComponent implements OnInit {
    * Whether the shared link could not be resolved, either because the
    * identifier is not a well-formed access identifier or because the server did
    * not recognise it. Rendered as an explicit notice by the template, which is
-   * the whole point: the former page navigated away on a failed read, and on a
-   * single-canvas shell there is nowhere to navigate to, so a visitor following
-   * a stale link would otherwise be shown a portfolio-shaped surface with
-   * nothing in it and no explanation.
+   * the whole point: every binding below tolerates an absent response, so a
+   * visitor following a stale link would otherwise be shown a portfolio-shaped
+   * surface with nothing in it and no explanation.
    */
   protected hasError = false;
 
@@ -184,10 +178,9 @@ export class GfPublicPortfolioComponent implements OnInit {
 
           return this.dataService.fetchPublicPortfolio(accessId).pipe(
             catchError((error: HttpErrorResponse) => {
-              // Reported to the visitor instead of navigated away from. The
-              // former page redirected to the root on a failed read, which this
-              // component is already hosted by, so the redirect would be a
-              // no-op at best and re-entrant at worst.
+              // Reported to the visitor instead of navigated away from: this
+              // component is hosted by the root route, so redirecting there
+              // would be a no-op at best and re-entrant at worst.
               reportSanitizedError('GF-PUBLIC-PORTFOLIO-FETCH-FAILED', error);
 
               this.hasError = true;
@@ -218,10 +211,10 @@ export class GfPublicPortfolioComponent implements OnInit {
    *
    * The other half of what a failed link needs. Reporting the failure explains
    * it, but the identifier is what keeps this component mounted in the first
-   * place, so while it is there the visitor has nowhere to go: the shell used to
-   * redirect them to the root, and the root is now here. Removing just that one
-   * parameter hands them back to whichever surface the shell would normally show
-   * them, without assuming a locale or naming a screen.
+   * place, so while it is there the visitor has nowhere to go - a redirect to the
+   * root would land on this very component. Removing just that one parameter hands
+   * them back to whichever surface the shell would normally show them, without
+   * assuming a locale or naming a screen.
    */
   protected onDismissError() {
     void this.router.navigate([], {

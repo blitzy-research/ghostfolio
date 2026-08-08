@@ -7,18 +7,17 @@ import { LazyDialogService } from './lazy-dialog.service';
 /**
  * Loading a dialog's own chunk on demand.
  *
- * Everything asserted here exists because collapsing the route table removed the
- * route boundaries the application used to code-split at, which moved chunk loading
- * from the router - where slowness and failure were already handled - into the
- * components that open dialogs, where they were not.
+ * Chunk loading happens in the components that open dialogs rather than in the
+ * router, so the slowness and the failure the router would have absorbed have to be
+ * handled here instead.
  *
  * Three properties are worth a test each, and none of them is visible in a type:
  *
  * 1. **Deduplication.** `import()` settles on a later tick, so a second activation
- *    while the first is still resolving used to start a second open. That is not a
- *    hypothetical: it is one impatient second click.
- * 2. **A reported, visible failure.** A rejected chunk left an unhandled rejection
- *    and a control that had appeared to do nothing.
+ *    while the first is still resolving would otherwise start a second open. That
+ *    is not a hypothetical: it is one impatient second click.
+ * 2. **A reported, visible failure.** An unhandled rejection leaves a control that
+ *    appeared to do nothing.
  * 3. **Release on settlement.** A failure must cost one attempt, not the
  *    affordance: the next press has to genuinely try again.
  */
@@ -124,7 +123,7 @@ describe('LazyDialogService', () => {
     const second = service.load('test-dialog', loader.load);
 
     // One chunk request between them. Two would open two copies of the same
-    // dialog, which is what an impatient second click used to do.
+    // dialog, which is what an impatient second click would otherwise cause.
     expect(loader.load).toHaveBeenCalledTimes(1);
 
     loader.resolve(component);

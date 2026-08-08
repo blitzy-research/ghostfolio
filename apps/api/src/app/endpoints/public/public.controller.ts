@@ -125,9 +125,9 @@ export class PublicController {
             // when - which is the showcase the feature exists for - and not the
             // exact fee, quantity, unit price or value, which together reconstruct
             // the size of somebody's position and what they paid for it. Those are
-            // the most sensitive numbers in the payload and, before this, the
-            // default `READ_RESTRICTED` link carried all of them for the ten most
-            // recent trades.
+            // the most sensitive numbers in the payload, and a default
+            // `READ_RESTRICTED` link that carried them would disclose all of them
+            // for the ten most recent trades.
             //
             // Redacted to `null` rather than omitted, deliberately: `null` is this
             // application's established redaction marker, which the value component

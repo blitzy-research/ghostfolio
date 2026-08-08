@@ -1,24 +1,3 @@
-<!--
-  COMPONENT CONTRACT - this template requires `definition`, `resolvedComponent`,
-  `hasLoadError`, `onDragHandleKeydown($event)` and `onRemove()`, and the class
-  emits `move`, `resize` and `remove`; it imports IonIcon, MatButtonModule,
-  MatCardModule, MatMenuModule, NgComponentOutlet and NgxSkeletonLoaderModule
-  alongside CUSTOM_ELEMENTS_SCHEMA, and registers the ellipsisHorizontal,
-  reorderTwoOutline and trashOutline glyphs.
-
-  No module is named here: one is resolved at runtime and mounted into the body
-  region below, so every module gets identical chrome. The module name is already
-  translated where the shared metadata declares it, so it is interpolated
-  verbatim, and the failure notice reuses an existing source message
-  character-for-character. No string here carries a custom identifier.
-
-  Everything that identifies WHICH module this is goes through `qualifiedName`, so
-  the region, the visible title and both controls agree with each other and with
-  the catalog row the viewer added it from. That matters because two registry
-  entries can share a name - `Markets` and `Settings` each appear twice - and both
-  of a pair can be on the canvas at once, at which point a bare name identifies
-  nothing.
--->
 <mat-card
   appearance="outlined"
   role="region"
@@ -26,12 +5,11 @@
   [attr.aria-label]="qualifiedName"
 >
   <!--
-    The narrower inline padding is measured, not a preference. In a four-column
-    module at a 375px viewport the header has 112px to spend; the handle takes 32
-    and the actions trigger 40, and at the wider step the title was left flexing
-    to 1.7px - the module rendered with no readable name at all. Reclaiming the
-    two inline steps here, and the handle's trailing margin below, hands those
-    pixels to the title, which now also refuses to shrink past a floor.
+    Inline padding is kept narrow here, and the drag handle carries no trailing
+    margin, so that a four-column module at a small viewport still has header
+    width left for its title once the handle and the actions trigger have taken
+    theirs. The title also refuses to shrink past a floor - see `.module-title`
+    in `dashboard-module-host.scss`.
   -->
   <mat-card-header class="align-items-center px-2 py-2">
     <!--
@@ -42,11 +20,11 @@
       a drag - a mismatch compiles and lints cleanly and then fails silently.
     -->
     <!--
-      A real button, because the handle now does something when operated by
-      keyboard: arrow keys move the module and Shift with an arrow resizes it,
-      which is what `aria-keyshortcuts` advertises. It stays the pointer drag
-      handle at the same time - the grid matches the class above by walking up
-      from the pressed element, so which element carries it is irrelevant.
+      A real button, because the handle acts on the keyboard as well as under the
+      pointer: arrow keys move the module and Shift with an arrow resizes it,
+      which is what `aria-keyshortcuts` advertises. It is the pointer drag handle
+      at the same time - the grid matches the class above by walking up from the
+      pressed element, so which element carries it is irrelevant.
 
       `type="button"` matters here: the handle sits in no form, but the default
       submit type would still make Enter and Space do something other than
@@ -61,18 +39,17 @@
       reader's fingers.
     -->
     <!--
-      Named from its own CONTENT rather than from an `aria-label`, and that is what
+      Named from its own CONTENT rather than from an `aria-label`, which is what
       lets the module's name into the name of the control without inventing a
-      message. A label attribute can only hold one string, so saying which module
-      this handle belongs to would have meant a new parameterised source message and
-      an untranslated string in twelve locales. Clipped content costs nothing: the
-      action wording is the same already-translated message it always was, and the
-      module name is interpolated data.
+      message: a label attribute can hold only one string, so saying which module
+      this handle belongs to would have meant a new parameterised source message
+      and an untranslated string in twelve locales. The action wording stays an
+      already-translated message and the module name is interpolated data.
 
       Worth saying which module, because on a canvas holding both `Settings`
       modules there would otherwise be two handles announced identically, and a
-      handle is exactly the control whose effect a reader cannot see. `title` stays
-      as the pointer affordance and becomes the accessible description.
+      handle is exactly the control whose effect a reader cannot see. `title`
+      stays as the pointer affordance and becomes the accessible description.
     -->
     <button
       #dragHandle
@@ -94,16 +71,16 @@
       Keep the title nested: direct MatCardTitle projection reorders the header,
       and overflow clipping is required for flex truncation. The wrapper carries a
       class rather than utilities because it needs a shrink floor as well as the
-      clipping - a clipped flex item contributes a minimum size of ZERO, which is
-      exactly how the title collapsed to nothing in a narrow module.
+      clipping - a clipped flex item contributes an automatic minimum size of
+      ZERO, so without a floor the title can be squeezed away to nothing in a
+      narrow module.
     -->
     <!--
       The qualifier is shown rather than only announced, because the ambiguity is
-      visual first: a viewer looking at two cards both headed `Settings` cannot tell
-      which is the account one either. It appears on exactly the three registry
+      visual first: a viewer looking at two cards both headed `Settings` cannot
+      tell which is the account one either. It appears on exactly the registry
       entries that declare a context - the two `Settings` modules and the premium
-      `Markets` one - so every other title is unchanged, and `text-truncate` handles
-      a narrow module as it already did.
+      `Markets` one - and `text-truncate` handles a narrow module.
     -->
     <div class="module-title">
       <mat-card-title class="mb-0 text-truncate">{{
@@ -112,11 +89,11 @@
     </div>
 
     <!--
-      No spacer element sits between the title and this trigger any more. A spacer
-      that grows shares the free space with the title, which grows too, so half of
-      every module's spare header width was being spent on nothing while long
-      names ellipsized early. The trigger pushes itself to the trailing edge
-      instead, which leaves the title everything that is left over.
+      No spacer element between the title and this trigger. A spacer that grows
+      shares the free space with the title, which grows too, so half of every
+      module's spare header width would go to nothing while long names ellipsize
+      early. The trigger pushes itself to the trailing edge instead, which leaves
+      the title everything that is left over.
     -->
     <!--
       Named from content for the same reason as the handle above, and it matters more
@@ -158,14 +135,13 @@
   -->
   <div class="gf-dashboard-module-body">
     <!--
-      The gutter belongs to this region rather than to what it holds. Every module
-      body measured zero padding on all four sides, so where a module's first
-      element brought none of its own the content sat 1-2px from the card edge and
-      the top line touched the header rule; where it did bring its own the inset
-      was whatever that module happened to use, which is why the same dashboard
-      showed first-content offsets ranging from 1px to 33px. Padding the region
-      once gives every module the same inset regardless of what it renders - and
-      is why neither branch below adds an inset of its own any more.
+      The gutter belongs to this region rather than to what it holds. Modules
+      bring no consistent inset of their own: where a module's first element
+      brings none the content sits against the card edge and the top line touches
+      the header rule, and where it brings its own the inset is whatever that
+      module happens to use. Padding the region once gives every module the same
+      inset regardless of what it renders - and is why neither branch below adds
+      an inset of its own.
     -->
     <div #moduleContent class="gridster-item-content p-3">
       @if (resolvedComponent) {
@@ -200,20 +176,16 @@
     </div>
 
     <!--
-      Says out loud that a module continues past its edge. Every module body
-      already scrolled - measured reaching 100% of its overflow, 1,765px in the
-      tallest - but nothing on screen admitted it: this platform paints overlay
-      scrollbars, so a pixel census of the right edge of an overflowing module
-      found only the card fill and the card border, identical to a module with
-      nothing hidden at all. The only cue anywhere was an accidental one, a row
-      sliced by the fold, and where a row happened to end flush - Market Data,
-      with its paginator 1,359px below - the module looked complete.
+      Says out loud that a module continues past its edge, which nothing else on
+      screen does: this platform paints overlay scrollbars, so the trailing edge
+      of an overflowing module composites identically to one with nothing hidden,
+      and the only accidental cue is a row that happens to be sliced by the fold.
 
-      Deliberately not left to the browser's own scrollbar. The hints are ordinary
-      painted elements, so they survive overlay scrollbars, `--hide-scrollbars`
-      and any platform that hides scrollbars until a scroll is already in
-      progress - which is exactly the class of environment where the defect was
-      invisible in the first place.
+      Deliberately not left to the browser's own scrollbar. The hints are
+      ordinary painted elements, so they survive overlay scrollbars,
+      `--hide-scrollbars` and any platform that hides scrollbars until a scroll is
+      already in progress - exactly the environments where an overflowing module
+      looks complete.
 
       Rendered only when there really is something in that direction, so a module
       that fits carries no marking at all and the marking itself means something.

@@ -12,11 +12,10 @@ import { GfBenchmarkComparatorComponent } from './benchmark-comparator.component
  * The one cross-module destination this comparator offers, and the fact that it
  * needs nothing but the intent bus to offer it.
  *
- * Choosing "Manage Benchmarks" used to navigate to the admin market data screen.
- * It now publishes a reveal-module intent, and the discriminator matters: the
- * activities module is the one every other producer in this refactor reveals, so
- * `ADMIN_MARKET_DATA` is the odd one out and the easiest to get wrong by copying
- * a neighbour.
+ * Choosing "Manage Benchmarks" publishes a reveal-module intent, and the
+ * discriminator matters: the activities module is the one every other producer
+ * reveals, so `ADMIN_MARKET_DATA` is the odd one out and the easiest to get wrong
+ * by copying a neighbour.
  *
  * The suite also pins what this component is *not* injected with. It takes a single
  * constructor dependency - the intent bus - and no `Router`, no registry and no
@@ -67,8 +66,8 @@ describe('GfBenchmarkComparatorComponent', () => {
   it('reveals the market data module and not the activities module', () => {
     component.onOpenAdminMarketData();
 
-    // Stated explicitly because every other producer in this refactor reveals the
-    // activities module, which makes this the entry most likely to be copied wrong.
+    // Stated explicitly because every other producer reveals the activities
+    // module, which makes this the entry most likely to be copied wrong.
     expect(revealedModules).not.toContain(DashboardModuleType.ACTIVITIES);
   });
 

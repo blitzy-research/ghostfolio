@@ -36,13 +36,13 @@ jest.mock('@ionic/angular/standalone', () => {
  * something other than the answer it got: a request that never arrives, and a
  * portfolio that is not the signed-in one.
  *
- * A response that never settles used to be indistinguishable from one that was
- * merely slow: the card kept its loading skeleton for as long as the page stayed
- * open, the copy action stayed disabled, the failure state - which is written and
- * translated - was unreachable, and nothing was written to the console. The
- * failure was therefore invisible in every channel a viewer or a developer would
- * look at, which is precisely what makes it worth a test: a hang leaves no trace
- * to notice a regression by.
+ * Without a deadline a response that never settles is indistinguishable from one
+ * that is merely slow: the card keeps its loading skeleton for as long as the page
+ * stays open, the copy action stays disabled, the failure state - which is written
+ * and translated - is unreachable, and nothing is written to the console. Such a
+ * failure is invisible in every channel a viewer or a developer would look at,
+ * which is precisely what makes it worth a test: a hang leaves no trace to notice a
+ * regression by.
  *
  * The deadline is exercised with fake timers rather than by waiting, and the
  * request is driven by observables this suite controls, because "never settles"

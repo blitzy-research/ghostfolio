@@ -722,12 +722,12 @@ describe('GfDashboardLayoutService', () => {
     });
 
     it('settles a release whose arrangement was superseded rather than leaving it to time out', () => {
-      // The other half of what abandoning a request used to cost. A superseded write
-      // produced no outcome at all, so a caller awaiting the release of that
-      // arrangement - signing out is held open until it settles - waited out the
-      // whole five-second bound and was then told the save had failed. Every
-      // snapshot the dispatcher takes now announces an outcome, including the ones
-      // it declines to send.
+      // The other half of what abandoning a request costs. A superseded write that
+      // produced no outcome would leave a caller awaiting the release of that
+      // arrangement - signing out is held open until it settles - waiting out the
+      // whole five-second bound only to be told the save had failed. Every
+      // snapshot the dispatcher takes announces an outcome, including the ones it
+      // declines to send.
       const acknowledge: (() => void)[] = [];
 
       dataServiceMock.patchUserDashboardLayout.mockImplementation(
@@ -1123,8 +1123,8 @@ describe('GfDashboardLayoutService', () => {
 
       // The release travels the one pipeline a debounced save travels — it ends the
       // quiet period, and nothing else. There is no second projection, no second
-      // request builder and no second call to the facade; the single `switchMap` is
-      // what issues this request too. Closing the browser tab inside the window
+      // request builder and no second call to the facade; the single `concatMap`
+      // issues this request too. Closing the browser tab inside the window
       // therefore remains an accepted loss window rather than an excuse to invent a
       // transport, because the endpoint takes PATCH and no fire-and-forget
       // transport can issue one.
@@ -1473,9 +1473,9 @@ describe('GfDashboardLayoutService', () => {
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
 
-      // The snapshot survives the failure. It used to be discarded before the
-      // request was even made, which left the viewer's last arrangement
-      // unrecoverable: no retry could reach it and no later flush could send it.
+      // The snapshot survives the failure. Discarded before the request was even
+      // made, it would leave the viewer's last arrangement unrecoverable: no retry
+      // could reach it and no later flush could send it.
       service.retryFailedSave();
 
       jest.advanceTimersByTime(500);

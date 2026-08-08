@@ -368,7 +368,7 @@ describe('GfBenchmarkComponent', () => {
       const extras = navigationExtras(0);
 
       // An empty command list addresses the current route, which is the canvas -
-      // naming a segment is what used to discard every other parameter on it.
+      // naming a segment is what would discard every other parameter on it.
       expect(commands).toEqual([]);
       expect(extras.queryParamsHandling).toBe('merge');
       expect(extras.relativeTo).toBe(activatedRouteMock);

@@ -138,10 +138,10 @@ export class AuthGuard {
    * Connect links record that in session storage immediately before navigating
    * away, and that record survives the journey to the provider and back with the
    * tab — while a link pasted into a fresh tab, or followed out of an email, has
-   * no such record. Without this the parameter was adoptable on its own merits, so
-   * `/?jwt=<the sender's own token>` sent to any signed-out visitor silently
-   * signed them into the *sender's* account: every activity, account and holding
-   * they then entered was being written into somebody else's portfolio, and was
+   * no such record. Without it the parameter would be adoptable on its own merits,
+   * so `/?jwt=<the sender's own token>` sent to any signed-out visitor would
+   * silently sign them into the *sender's* account: every activity, account and
+   * holding they then entered would be written into somebody else's portfolio and
    * readable by them. The mark is spent whether or not it was valid, so one
    * started sign-in authorises exactly one hand-off and a reload of the same URL
    * is refused.
@@ -154,8 +154,8 @@ export class AuthGuard {
    * in a URL, where it reaches browser history and any access log that records
    * request targets. Closing that requires a single-use code bound to the provider
    * transaction, or a session cookie — a change to the authentication mechanism
-   * itself, which this refactor does not make (AAP §0.2.8). The residual exposure
-   * is narrowed on both sides instead: the API marks the redirect no-store and
+   * itself, which is out of scope here. The residual exposure is narrowed on both
+   * sides instead: the API marks the redirect no-store and
    * no-referrer, and the root host replaces the address rather than adding it to
    * history. An adopted token that turns out not to authenticate needs no
    * unwinding here either — the response interceptor signs out on the resulting

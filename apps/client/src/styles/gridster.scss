@@ -20,11 +20,11 @@
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
 
-    // Elevation while the user drags or resizes. `box-shadow` is deliberately
-    // the only declaration made here: on these same two selectors the library
-    // zeroes the 0.3s easing it otherwise applies to an item, so the element
-    // tracks the pointer frame-synchronously. Re-declaring that easing here
-    // would break the sub-100 ms drag and resize budget, so it is left alone.
+    // Elevation while the user drags or resizes. `box-shadow` is deliberately the
+    // only declaration made here: on these same two selectors the library zeroes
+    // the 0.3s easing it otherwise applies to an item, so the element tracks the
+    // pointer frame-synchronously. Re-declaring that easing here would put a lag
+    // between the pointer and the item it is moving, so it is left alone.
     &.gridster-item-moving,
     &.gridster-item-resizing {
       box-shadow: var(--mat-sys-level3, 0 6px 10px rgba(0, 0, 0, 0.14));
@@ -32,21 +32,19 @@
 
     // Gridster draws the southeast handle as a CSS triangle: a 10px box whose
     // bottom and left borders are the only thing painted, so the bottom edge's
-    // colour IS the handle. The library leaves that colour `transparent` until
-    // the item is hovered, which measured as literally zero pixels of ink at
-    // rest - all four border colours `rgba(0, 0, 0, 0)`, and a pixel probe inside
-    // the handle returning the card fill exactly. Every module was resizable and
-    // nothing said so; the affordance only existed for someone who already knew
-    // to go looking in that corner. Declaring the resting state is what says so.
-    // `handle-s` and `handle-e` are deliberately left alone: they carry
-    // `border-width: 0` and are pure hit areas, so they have no triangle to tint
-    // in either state.
+    // colour IS the handle. The library leaves that colour `transparent` until the
+    // item is hovered, which paints no ink at all at rest - so every module is
+    // resizable and nothing says so, and the affordance exists only for someone
+    // who already knows to look in that corner. Declaring the resting state is
+    // what says so. `handle-s` and `handle-e` are deliberately left alone: they
+    // carry `border-width: 0` and are pure hit areas, so they have no triangle to
+    // tint in either state.
     //
-    // The token is `--mat-sys-outline` with the fallback AAP 0.3.3 prescribes for
-    // it, and that mapping is semantically right as well as specified: a resize
-    // handle is a boundary, so it belongs to the outline family rather than to the
-    // surface-text family, and borrowing a text tone would make the handle read as
-    // loud as a module's own title.
+    // The token is `--mat-sys-outline` with its repository-traceable fallback, and
+    // that mapping is semantically right: a resize handle is a boundary, so it
+    // belongs to the outline family rather than to the surface-text family, and
+    // borrowing a text tone would make the handle read as loud as a module's own
+    // title.
     //
     // The hover block restates the same token deliberately, and it is not
     // redundant. The library ships
@@ -69,11 +67,11 @@
     // text-selection behavior.
     //
     // The resting tone is the stronger of the two surface-text tokens, and the
-    // glyph is stepped up one tokenised type-scale step, because this is where
-    // the handle's type size is established: the glyph is stroked at 32/512, so
-    // at the smaller step its stroke lands on a sub-pixel line and renders below
-    // the 3:1 non-text minimum however dark the nominal tone is. The module host
-    // restates both so the two files cannot drift apart.
+    // glyph is stepped up one tokenised type-scale step, because this is where the
+    // handle's type size is established: the glyph is thinly stroked, so at the
+    // smaller step its stroke lands on a sub-pixel line and renders below the 3:1
+    // non-text minimum however dark the nominal tone is. The module host restates
+    // both so the two files cannot drift apart.
     .gf-dashboard-module-drag-handle {
       color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
       cursor: move;
@@ -109,9 +107,9 @@
       border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
       color: var(--mat-sys-on-surface, #ffffff);
 
-      // Restated for the dark fallback AAP 0.3.3 prescribes, which is what
-      // actually paints while the `--mat-sys` layer is unpopulated. Both states
-      // again, for the same specificity reason as in the light branch.
+      // Restated for the dark fallback, which is what actually paints while the
+      // `--mat-sys` layer is unpopulated. Both states again, for the same
+      // specificity reason as in the light branch.
       .gridster-item-resizable-handler.handle-se {
         border-bottom-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
       }

@@ -15,10 +15,10 @@ import { HealthService } from './health.service';
  *
  * A deep probe is not a cheap read. `hasResponseFromDataEnhancer` and
  * `hasResponseFromDataProvider` each start a fresh, deliberately uncached request
- * to a third party with a thirty-second request timeout, and before this the route
- * in front of them was public. One cheap request therefore bought thirty seconds
- * of a socket, a slot in the event loop and a slice of this deployment's provider
- * quota, with nothing capping how many could be outstanding at once.
+ * to a third party with a thirty-second request timeout. Unguarded, one cheap
+ * request buys thirty seconds of a socket, a slot in the event loop and a slice of
+ * this deployment's provider quota, with nothing capping how many can be
+ * outstanding at once.
  *
  * Guarding the route narrows *who* can ask. These assertions are about the other
  * half: that asking repeatedly, or concurrently, does not multiply the outbound

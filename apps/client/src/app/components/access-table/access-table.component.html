@@ -75,14 +75,12 @@
         full, and that is a sizing fix rather than a cosmetic one.
 
         This cell holds an unbreakable 70-character URL and the row forbids
-        wrapping, so its own text set the table's MINIMUM width: the column
-        measured 536px of a 858px table, and because a nowrap cell cannot give
-        any of that back, the figure was identical at every viewport from 375px
-        to 1748px. On this component's former full-width page that never showed.
-        Inside a dashboard module a few hundred pixels wide it pushed the
-        trailing actions column - the per-grant edit and revoke menu - clean off
-        the visible area at every ordinary desktop width, reachable only by
-        discovering a horizontal scroll.
+        wrapping, so without a cap its own text sets the table's MINIMUM width -
+        and a nowrap cell can give none of that back, so the floor holds at every
+        viewport. Inside a dashboard module a few hundred pixels wide, that floor
+        pushes the trailing actions column - the per-grant edit and revoke menu -
+        clean off the visible area at every ordinary desktop width, reachable only
+        by discovering a horizontal scroll.
 
         Capping the two addresses is what lowers that floor, and nothing is lost
         by it: the anchor still carries the complete address as its `href`, the

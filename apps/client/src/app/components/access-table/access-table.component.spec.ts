@@ -10,17 +10,16 @@ import { GfAccessTableComponent } from './access-table.component';
 /**
  * The producer half of the public share link.
  *
- * The link changed shape with the single-canvas refactor: `/<language>/p/<id>`
- * addressed a route, and that route was deleted along with the rest of the
- * navigation surface, so the identifier now travels as a query parameter of the
- * root route instead - `/<language>/?accessId=<id>`. The consumer of that link is
- * covered by the public portfolio's own spec; this one covers the producer.
+ * The identifier travels as a query parameter of the root route -
+ * `/<language>/?accessId=<id>` - because this application serves no path that
+ * could address it. The consumer of that link is covered by the public portfolio's
+ * own spec; this one covers the producer.
  *
  * It is asserted through the rendered anchor rather than by calling the method,
  * for two reasons. The method is `protected`, so reaching it would mean reaching
  * around the component's own contract; and the anchor's `href` is the thing a
  * viewer copies out of the page, so the rendered attribute *is* the link. A drift
- * in either - the retired path returning, the locale segment disappearing, the
+ * in either - a path segment appearing, the locale segment disappearing, the
  * parameter being renamed - would compile, would pass every layout test, and would
  * break every link this table has ever handed out.
  */
@@ -160,15 +159,16 @@ describe('GfAccessTableComponent', () => {
       expect(link.textContent.trim()).toBe(link.getAttribute('href'));
     });
 
-    it('addresses none of the paths the refactor deleted', async () => {
+    it('addresses none of the paths this application does not serve', async () => {
       await createComponent();
 
       const [link] = renderedLinks();
       const href = link.getAttribute('href');
 
-      // `/p/` was the retired public route. It is the one that would silently keep
-      // working in development, where the wildcard redirect hides a dead link behind
-      // the canvas, and fail as a 404 for every recipient of a copied URL.
+      // `/p/` is the path a share link would most plausibly acquire, and the one
+      // that would silently keep working in development, where the wildcard
+      // redirect hides a dead link behind the canvas, while failing as a 404 for
+      // every recipient of a copied URL.
       expect(href).not.toContain('/p/');
       expect(href).not.toContain('/public/');
     });

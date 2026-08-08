@@ -124,11 +124,10 @@ export class GfUserAccountAccessComponent implements OnInit {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
-        // On the single-canvas shell every module observes the same query
-        // parameters, so the generic dialog flags are only honoured when the
-        // producer explicitly addressed this module. Bailing out first makes
-        // the handler fail-safe: an unqualified `createDialog` or `editDialog`
-        // emitted by any other module opens nothing here.
+        // The generic dialog flags are honoured only when the producer addressed
+        // this module. Bailing out first makes the handler fail-safe: an
+        // unqualified `createDialog` or `editDialog` raised by any other module
+        // opens nothing here. See `GfAppQueryParams`.
         if (params['dialogModule'] !== DashboardModuleType.ACCOUNT_ACCESS) {
           return;
         }

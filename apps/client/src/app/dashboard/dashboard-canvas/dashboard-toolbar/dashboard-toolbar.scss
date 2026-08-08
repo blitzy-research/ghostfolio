@@ -1,13 +1,9 @@
-// Material system tokens require fallbacks because the current theme does not
-// emit the --mat-sys layer.
-
 // Keyboard focus ring for every control this bar declares.
 //
 // Two things remove it otherwise: the global stylesheet resets `button:focus`,
 // and this theme builds with `mat.define-theme()` rather than opting into
-// Material's strong focus indicators, leaving only the state layer - which
-// measures roughly 1.2:1 against the surface behind it, far short of the 3:1
-// advisory for a non-text indicator.
+// Material's strong focus indicators, leaving only a state layer that falls far
+// short of the 3:1 advisory for a non-text indicator.
 //
 // Deliberately NOT nested inside `:host`. The menu rows declared in this
 // template are moved into an overlay attached to the document body, so no
@@ -15,30 +11,24 @@
 // stamps them as this component's content, which is what keeps a bare `button`
 // selector from leaking: it matches the elements this template writes, in the bar
 // and in its menus, and nothing a child component renders.
-// The colour is `currentColor`, and that is the only value which actually works
-// for BOTH of the places this rule has to reach. Measured: it paints
-// rgb(25, 28, 28) on the light bar for 17.15:1, and rgb(224, 227, 226) on the
-// dark bar for 11.71:1 - because the bar sets a themed `color` that every
+//
+// The colour is `currentColor`, which is the only value that works for BOTH of
+// the places this rule has to reach: the bar sets a themed `color` that every
 // control inherits, and a menu row inherits the themed colour of the panel it
-// sits in. One declaration, correct in both themes and in the overlay, with
-// nothing left to keep in step.
+// sits in, so one declaration is correct in both themes and in the overlay with
+// nothing left to keep in step. A literal ink plus a `.theme-dark { … }` mirror
+// cannot do the same job - emulated encapsulation rewrites that mirror to
+// `.theme-dark[_ngcontent-x] button[_ngcontent-x]`, and `.theme-dark` sits on the
+// document body, which carries no content attribute of this component, so it
+// matches nothing while compiling, linting and shipping cleanly.
 //
-// What stood here before was a literal light-theme ink plus a `.theme-dark { … }`
-// mirror, and the mirror was inert. Emulated encapsulation rewrites it to
-// `.theme-dark[_ngcontent-x] button[_ngcontent-x]`, but `.theme-dark` sits on the
-// document body, which carries no content attribute of this component - so it
-// matched nothing while compiling, linting and shipping perfectly cleanly. The
-// dark bar therefore kept painting the light ink, which composites to
-// rgb(5, 5, 5) over rgb(38, 38, 38): a 1.35:1 ring, geometrically present and
-// visually invisible, short of the 3:1 non-text minimum by a factor of 2.2.
-//
-// `:host-context(.theme-dark)` would have fixed the bar and NOT the menus, which
-// is the trap worth recording: it tests the ancestors of the host, and a menu
-// panel is attached to the document body outside this component's host
-// altogether. That asymmetry is exactly why a theme-conditional rule is the
-// wrong shape here and an inherited value is the right one. `currentColor` is
-// also among the values the design-system rules name as exempt from resolving
-// through a token, so this is compliant rather than an escape hatch.
+// `:host-context(.theme-dark)` would reach the bar and NOT the menus, which is
+// the trap worth recording: it tests the ancestors of the host, and a menu panel
+// is attached to the document body outside this component's host altogether.
+// That asymmetry is why a theme-conditional rule is the wrong shape here and an
+// inherited value is the right one. `currentColor` is also among the values the
+// design-system rules name as exempt from resolving through a token, so this is
+// compliant rather than an escape hatch.
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid currentColor;
@@ -83,17 +73,16 @@ a:focus-visible {
       }
     }
 
-    // The discount mark. Drawn rather than delegated to the utility class the
-    // deleted page chrome used, because that class carries a literal colour of
-    // its own and every value here has to resolve through a system token first.
+    // The discount mark. Drawn rather than delegated to the shared utility class,
+    // because that class carries a literal colour of its own and every value here
+    // has to resolve through a system token first.
     //
-    // The fallbacks are that class's own values, so the mark is
-    // indistinguishable from the one it replaces until the theme populates the
-    // system layer: the amber the shared stylesheet defines for a warning, and
-    // the dark ink that same stylesheet contrasts it with. They are deliberately
-    // not mirrored for the dark theme - the pair is already legible against both
-    // surfaces and the chrome this bar replaces drew it identically in both, so
-    // splitting it would introduce a difference rather than preserve one.
+    // The fallbacks are that class's own values, so the mark paints exactly as
+    // the shared stylesheet would draw it until the theme populates the system
+    // layer: the amber that stylesheet defines for a warning, and the dark ink it
+    // contrasts that amber with. They are deliberately not mirrored for the dark
+    // theme - the pair is legible against both surfaces, so splitting it would
+    // introduce a difference rather than remove one.
     .gf-promotion-mark {
       background: var(--mat-sys-tertiary-container, #ffc107);
       border-radius: var(--mat-sys-corner-small, 4px);

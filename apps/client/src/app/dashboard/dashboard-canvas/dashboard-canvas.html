@@ -1,93 +1,24 @@
-<!--
-  COMPONENT CONTRACT - this template requires the five state members
-  `isPublicPortfolio`, `isSignedOut`, `isInitialized`, `hasLayoutError` and
-  `isCatalogOpen`, the grid members `options`, `modules` and
-  `getModuleDefinition()`, and the handlers `onAddModule()`,
-  `onCatalogOpenedChange()`, `onOpenCatalog()`, `onRemoveModule()`,
-  `onRetryLayout()` and `onToggleCatalog()`. It imports Gridster, GridsterItem,
-  GfDashboardModuleHostComponent, GfDashboardToolbarComponent,
-  GfEmptyCanvasStateComponent, GfModuleCatalogComponent,
-  GfPublicPortfolioComponent, GfSignInPromptComponent, IonIcon, MatButtonModule,
-  MatCardModule, MatSidenavModule and NgxSkeletonLoaderModule alongside
-  CUSTOM_ELEMENTS_SCHEMA, and registers exactly two glyphs: addOutline and
-  closeOutline. GfPublicPortfolioComponent is listed in `imports` but is used
-  ONLY inside the `@defer` block below, which is what makes Angular emit it as
-  its own chunk rather than part of the initial bundle - referencing it anywhere
-  else in this template would silently undo that.
-
-  Three obligations of that contract are load-bearing rather than stylistic:
-
-  - `options` must already hold the configuration minted by
-    `createDashboardCanvasConfig()` before this template first renders, because
-    `options` is a *required signal input* on `gridster` and the grid reads it
-    during its own initialisation. Assign it in a field initialiser or the
-    constructor, never in `ngOnInit`.
-  - `modules` must be a `DashboardLayoutItem[]` that starts as an empty array,
-    because the repeater below iterates it directly and the empty branch is
-    decided from its length. Both readings are written to survive a null anyway -
-    the repeater treats one as empty and the length is reached optionally - so a
-    contract slip degrades to the empty notice instead of faulting the canvas.
-  - `getModuleDefinition()` must hand back the registry's own definition object
-    for a module type - the *same reference* on every call. The host it feeds
-    resolves the lazy module class per definition identity, so returning a fresh
-    object would re-resolve, and re-mount, every module on every
-    change-detection pass.
-
-  Four states, evaluated top to bottom, and the order is part of the behaviour.
-  The shared-portfolio state is tested first so a link handed to a stranger wins
-  over whatever the viewer's own session would otherwise draw, and the paint of
-  the signed-in canvas is held behind `isInitialized` so no state is shown
-  speculatively - which is also what keeps the catalog from flickering open for a
-  returning user before their saved arrangement has arrived. `isInitialized` is
-  also lowered again whenever the viewer changes, so one viewer's arrangement is
-  never left on screen while the next viewer's is being read.
-
-  Inside the signed-in state a fifth condition splits the canvas in two: an
-  arrangement that could not be READ is a different thing from an arrangement
-  that is EMPTY, and only the latter may present the first-visit treatment.
-
-  Nothing here addresses a screen. There is no in-application link, no route
-  markup and no outlet: the router still owns the one root route, and it mounts
-  this canvas rather than the canvas mounting it. No cell coordinate and no cell
-  size is written by this file either - `[item]` on `gridster-item` is the single
-  carrier of geometry, and the grid mutates those objects in place.
-
-  Two pieces of markup are deliberately absent, and both would be actively
-  harmful. The resize affordances and the drop preview are rendered by the grid
-  itself and are only ever *styled*, by the global partial, so authoring an
-  element for either would duplicate library-owned chrome. And the drag handle
-  belongs to the module host, which is what keeps it outside the content wrapper
-  the grid is told to ignore; a second handle here would sit outside every card
-  it was meant to move.
--->
 @if (isPublicPortfolio) {
   <!--
-    Each wrapper does one job the component cannot do for itself. Its rows are
-    Bootstrap rows, which bleed past the viewport on their negative margins without
-    a container, so the inner element supplies one. The outer element is this
-    branch's scroll region: the host clips its own overflow to keep the grid's
-    scrolling contained, so a scroller has to be reintroduced here, and declaring
-    the overflow is also what lets this branch shrink to the height available.
+    The inner container is required because the hosted component's Bootstrap rows
+    bleed past the viewport on their negative margins without one. The outer
+    element is this branch's scroll region: the host clips its own overflow to
+    keep the grid's scrolling contained, so a scroller has to be reintroduced
+    here.
   -->
   <div class="flex-grow-1 overflow-auto">
     <div class="container">
       <!--
-        Deferred, and the reason is measurable rather than stylistic. This
-        component is the one branch of the canvas a signed-in viewer never sees,
-        yet it reaches the widest dependency graph of anything here - two data
-        tables, the proportion charts and the world map, and through them the
-        charting and map libraries. Referenced eagerly it dragged all of that into
-        the initial bundle for every visitor, which is what pushed the initial
-        graph to 3.21 MB against a 1.17 MB pre-refactor baseline. `@defer` makes
-        Angular emit it as its own chunk instead, because it is used nowhere else
-        in this template, restoring the code-splitting boundary the collapsed
-        route table used to provide for it.
+        This is the one branch a signed-in viewer never sees, yet it reaches the
+        widest dependency graph here - two data tables, the proportion charts and
+        the world map, and through them the charting and map libraries. `@defer`
+        is what keeps all of that out of the initial bundle for every visitor, and
+        it only works while this component is referenced nowhere else in the
+        template.
 
         `when isPublicPortfolio` rather than a viewport or interaction trigger:
-        this branch is already guarded on exactly that condition, so the chunk is
-        requested precisely when the branch is drawn and never otherwise. The
-        placeholder is the same skeleton treatment the module bodies use, so the
-        wait reads as loading rather than as an empty page.
+        the branch is already guarded on exactly that condition, so the chunk is
+        requested precisely when the branch is drawn and never otherwise.
       -->
       @defer (when isPublicPortfolio) {
         <gf-public-portfolio />
@@ -107,13 +38,10 @@
   <gf-sign-in-prompt />
 } @else if (hasViewerError) {
   <!--
-    The viewer could not be read, and not because they are signed out - an
-    unauthorized answer arrives through the viewer store instead, as an explicit
-    absence, and is handled by the branch above. This is a request that went
-    wrong, so it offers the one thing that can help: asking again. No canvas and
-    no control bar is drawn, because neither has a viewer to act for; the wording
-    is reused character for character from the notices the application already
-    shows for a failed request, so no new translation is minted for it.
+    A request that went wrong, not a sign-out: an unauthorized answer arrives
+    through the viewer store as an explicit absence and is handled by the branch
+    above. No canvas and no control bar is drawn, because neither has a viewer to
+    act for.
   -->
   <div class="align-items-center d-flex flex-grow-1 justify-content-center p-3">
     <mat-card appearance="outlined">
@@ -135,27 +63,20 @@
   </div>
 } @else if (isInitialized) {
   <!--
-    The control bar sits outside the drawer container on purpose. It spans the
-    full width and the container takes the height left beneath it, so the catalog
-    opens below the bar rather than across it, and the bar stays put while the
-    canvas beneath it scrolls.
-
-    It is drawn for the failed-read state as well: the capabilities on it - the
-    assistant, the date range, the filters, identity switching, signing out -
-    have nothing to do with the arrangement, so a read that failed is no reason
-    to withhold them.
+    Outside the drawer container on purpose: it spans the full width and the
+    container takes the height left beneath it, so the catalog opens below the bar
+    rather than across it and the bar stays put while the canvas scrolls. Drawn
+    for the failed-read state too, because nothing on it concerns the arrangement.
   -->
   <gf-dashboard-toolbar />
 
   @if (hasLayoutError) {
     <!--
-      The saved arrangement could not be read. This is deliberately NOT the empty
-      notice: an arrangement that failed to load is not an arrangement with
-      nothing in it, and saying so would open the catalog as though this were a
-      first visit and let the next module added be written out as the viewer's
-      whole dashboard, erasing what could not be fetched. So neither the grid nor
-      the catalog trigger is drawn - there is nothing here that can mutate an
-      arrangement this component does not have.
+      Deliberately NOT the empty notice: an arrangement that failed to load is not
+      an arrangement with nothing in it, and saying so would open the catalog as
+      though this were a first visit and let the next module added be written out
+      as the viewer's whole dashboard. Neither the grid nor the catalog trigger is
+      drawn, so nothing here can mutate an arrangement this component never read.
     -->
     <div
       class="align-items-center d-flex flex-grow-1 justify-content-center p-3"
@@ -165,19 +86,11 @@
           <div class="mb-1" i18n>Oops! Something went wrong.</div>
           <div class="mb-3 secondary-text" i18n>Please try again later.</div>
           <!--
-            One way out, and deliberately only one: asking again. It costs the
-            viewer nothing and it is the answer to a read that failed for a
-            transient reason - the request was dropped, the service was briefly
-            away.
-
-            There is deliberately NO action here that empties the arrangement and
-            writes the emptied one back. A layout write may originate only from a
-            grid state change - drag, resize, add or remove - and a control on a
-            notice is none of those, so such an action would be a fifth
-            persistence trigger and a second write origin however it was plumbed.
-            It would also be the only affordance in the application able to
-            overwrite an arrangement the canvas has never successfully read, which
-            is precisely the arrangement the failed-read state exists to protect.
+            Asking again is deliberately the only way out. A layout write may
+            originate only from a grid state change - drag, resize, add or remove
+            - so any action here that emptied the arrangement and wrote it back
+            would be a second write origin, and the only affordance able to
+            overwrite an arrangement the canvas has never successfully read.
           -->
           <div class="d-flex justify-content-center">
             <button
@@ -194,11 +107,10 @@
     </div>
   } @else {
     <!--
-      The arrangement on screen could not be stored. Announced politely rather
-      than as an alert, because nothing the viewer is doing is interrupted and
-      what they see is still correct - it is only unsaved. The retry hands the
-      request back to the layout service, which still holds the snapshot, so this
-      adds no second way of writing a layout.
+      Announced politely rather than as an alert, because nothing is interrupted
+      and what the viewer sees is still correct - it is only unsaved. The retry
+      hands the request back to the layout service, which still holds the
+      snapshot, so this adds no second way of writing a layout.
     -->
     @if (hasSaveError) {
       <div
@@ -213,19 +125,12 @@
     }
 
     <!--
-      The grid declined to place a module because the arrangement has no room
-      left for it. Said in the open, because the alternative is what this fixes:
-      the engine simply adds nothing, so a viewer clicking a catalog row sees no
-      module appear, no message, and no reason - and clicks again.
-
-      A plain notice rather than an alert or a dialog: nothing is broken, no
-      request failed, and the state is fully within the viewer's control. The
-      remedy names both ways out - make a module smaller, or take one off - and
-      the notice clears itself the moment either is done, so it can never linger
-      after the condition has gone. `role="status"` announces it politely without
-      moving focus; the sentence is deliberately the same one written to the
-      canvas's live region, so a sighted and a screen-reader user are told the
-      same thing.
+      The engine declines silently when the arrangement has no room left, so
+      without this a viewer clicking a catalog row sees no module, no message and
+      no reason. A plain `role="status"` notice rather than an alert, because
+      nothing is broken and the state is within the viewer's control; the sentence
+      is the same one written to the canvas's live region so both audiences are
+      told the same thing.
     -->
     @if (hasCapacityError) {
       <div
@@ -241,28 +146,20 @@
 
     <mat-sidenav-container>
       <!--
-      `mode="side"` is not a preference. An `over` or `push` drawer lays a
+      `mode="side"` is not a preference: an `over` or `push` drawer lays a
       backdrop over the container, and that backdrop swallows the browser's own
       `dragover` and `drop` events - the very events the grid listens for - so
       dragging a row out of the catalog would quietly stop adding anything.
-      `position="end"` keeps the panel on the trailing edge. Neither may change.
 
       The open state is owned here rather than by the catalog, which renders no
-      drawer of its own. It is bound in both directions on purpose: the library
-      closes a drawer on Escape, and a viewer dismissing the panel that way would
-      otherwise leave this flag - and with it the trigger's glyph - claiming the
-      panel was still open.
+      drawer of its own, and is bound in both directions because the library
+      closes a drawer on Escape.
 
       `openedChange` also carries the focus lifecycle, because a `side` drawer
-      manages focus in neither direction - see `onCatalogOpenedChange`. Note that
+      manages focus in neither direction - see `onCatalogOpenedChange`.
       `autoFocus` is deliberately left unset: its default for this mode is what
-      makes the drawer keep its hands off focus, and naming a value here would
-      either change nothing or make the panel seize focus on the unprompted
-      first-visit open as well.
-
-      Referenced so the canvas can ask whether focus is still inside the panel
-      when it closes, which is what keeps returning focus to the trigger from
-      taking it away from somewhere the viewer put it themselves.
+      makes the drawer keep its hands off focus. The drawer element is referenced
+      so the canvas can ask whether focus is still inside the panel as it closes.
     -->
       <mat-sidenav
         #catalogDrawer
@@ -273,13 +170,10 @@
         (openedChange)="onCatalogOpenedChange($event)"
       >
         <!--
-          Two projections for display, and nothing more. The placed types let a row
-          say that its module is already on the canvas; the unavailable types let a
-          row say the grid has no room for it, so a viewer is not invited to click
-          something that cannot succeed. Both are lists of discriminators - never a
-          coordinate and never a size - so the grid stays the sole authority on
-          geometry, and the second is computed by the canvas precisely because
-          answering it requires geometry the catalog must not hold.
+          Both inputs are lists of discriminators - never a coordinate and never a
+          size - so the grid stays the sole authority on geometry. The unavailable
+          types are computed by the canvas precisely because answering that
+          question requires geometry the catalog must not hold.
         -->
         <gf-module-catalog
           [placedModuleTypes]="placedModuleTypes"
@@ -292,27 +186,18 @@
 
       <mat-sidenav-content>
         <!--
-        Shown whenever there is nothing placed - a viewer who has never saved an
-        arrangement, one whose saved arrangement was empty, and one whose saved
-        arrangement named only module types the registry no longer knows all
-        reach the same notice. The grid stays mounted underneath it rather than
-        being swapped out, so the drop target a dragged catalog row needs exists
-        on a canvas that is still empty, which is precisely when it is most
-        likely to be used.
+        The grid stays mounted underneath this notice rather than being swapped
+        out, so the drop target a dragged catalog row needs exists on a canvas
+        that is still empty - precisely when it is most likely to be used.
       -->
         @if (!modules?.length) {
           <gf-empty-canvas-state class="p-3" (openCatalog)="onOpenCatalog()" />
         }
 
         <!--
-          Announces the outcome of a keyboard move or resize, which has no visual
-          equivalent for a screen reader: the module visibly shifts and nothing
-          otherwise says where it went, or that a step was refused.
-
-          Polite rather than assertive because a repositioning is never urgent
-          enough to interrupt, and outside the grid because anything inside it
-          would be laid out as a cell. `sr-only` is Bootstrap's own utility, which
-          this application loads globally.
+          Outside the grid, because anything inside it would be laid out as a
+          cell. Polite rather than assertive: a repositioning is never urgent
+          enough to interrupt.
         -->
         <div aria-live="polite" class="sr-only" role="status">
           {{ canvasAnnouncement }}
@@ -320,36 +205,29 @@
 
         <gridster [options]="options">
           <!--
-          Tracked by module type: it is unique across the registry and stable for
-          the life of a placement, so each cell keeps its element - and with it
-          the module already resolved into that element - while its neighbours
-          are added, moved or removed. Tracking by index would instead re-key
-          every cell after the removed one and re-resolve their modules.
+          Tracked by module type, which is unique across the registry and stable
+          for the life of a placement, so each cell keeps its element - and the
+          module already resolved into it - while neighbours are added, moved or
+          removed. Tracking by index would re-key every cell after a removal.
 
-          No grid output is bound here: the change, resize, init and remove callbacks
-          are declared once in the grid configuration, so binding any of them again
-          would report the same change twice.
+          No grid output is bound here: the change, resize, init and remove
+          callbacks are declared once in the grid configuration, so binding any of
+          them again would report the same change twice.
         -->
           @for (item of modules; track item.moduleType) {
             <!--
-            Guarded on every pass, not only when the arrangement was fetched. A
-            permission travels with the viewer's record and can be withdrawn while
-            they are signed in, so a module admitted at hydration may stop being
-            theirs to see moments later. The canvas also removes it from the
-            arrangement, but that is a separate concern: this condition is what
-            guarantees it is not PAINTED in the interval, and it holds equally for
-            a module type the registry has since stopped knowing.
+            Guarded on every pass, not only when the arrangement was fetched: a
+            permission can be withdrawn while the viewer is signed in. The canvas
+            also removes the module from the arrangement, but this condition is
+            what guarantees it is not PAINTED in the interval.
           -->
             @if (isModuleRenderable(item)) {
               <gridster-item [item]="item">
                 <!--
-                The one place a module reaches the canvas, and it arrives as
-                metadata rather than as a class: the host awaits the lazy loader
-                on the definition and mounts whatever it resolves to. Nothing
-                about where or how large the cell is passes through here - the
-                grid item above already carries all of it - and removal only
-                reports itself, leaving the arrangement and the write that follows
-                it to the canvas.
+                A module arrives as metadata rather than as a class: the host
+                awaits the lazy loader on the definition and mounts whatever it
+                resolves to. Nothing about where or how large the cell is passes
+                through here - the grid item above carries all of it.
               -->
                 <gf-dashboard-module-host
                   [definition]="getModuleDefinition(item.moduleType)"
@@ -365,43 +243,32 @@
     </mat-sidenav-container>
 
     <!--
-    The only genuinely floating control on the canvas, and the only way back to
-    the catalog once an arrangement exists. Drawn only alongside a readable
-    arrangement, because it exists to add modules to one: offering it over a
-    failed read would let the first module added be written out as the viewer's
-    entire dashboard. It carries its own global class
-    instead of the wrapper the feature leaves use: every one of those leaves is
-    now mounted at once, so sharing their class would stack this trigger on top
-    of theirs at the same coordinate.
+    Drawn only alongside a readable arrangement, because offering it over a failed
+    read would let the first module added be written out as the viewer's entire
+    dashboard. It carries its own global class rather than the wrapper the feature
+    components use, because several of those can be mounted at once and sharing
+    their class would stack this trigger on top of theirs at the same coordinate.
 
-    As a disclosure control it is named once and reports its state rather than
-    renaming itself, and the wording is reused character for character from the
-    catalog's empty-state action so both share one translation. The glyph is hidden
-    from assistive technology because the button is already named.
+    As a disclosure control it is named once and reports its state through
+    `aria-expanded` rather than renaming itself.
   -->
     <div
       class="gf-dashboard-catalog-trigger"
       [class.is-catalog-open]="isCatalogOpen"
     >
       <!--
-        No `color="primary"`. That attribute is the Material 2 palette API, which
-        this version keeps only for backwards compatibility, and here it was
-        actively harmful: it adds a `mat-primary` class that a global stylesheet
-        keys an `!important` foreground colour off, forcing the glyph to plain
-        white over the brand teal container. Measured, that pairing is 1.92:1 -
-        below the 3:1 that WCAG 2.2 SC 1.4.11 requires of a control - and no
-        amount of token work on this button could win against it. Dropping the
-        attribute lets the foreground token resolve normally and takes the glyph
-        to roughly 9:1 in both themes. The teal container is unaffected, since it
-        comes from the theme's own fab override keyed on the theme class rather
-        than on the palette class.
+        Deliberately no `color="primary"`. That attribute adds a `mat-primary`
+        class that a global stylesheet keys an `!important` foreground colour off,
+        forcing the glyph to plain white over the brand teal container and putting
+        the pair below the contrast a control requires - which no token work on
+        this button can outrank. Without it the foreground token resolves normally.
+        The teal container is unaffected, because it comes from the theme's own fab
+        override keyed on the theme class rather than on the palette class.
       -->
       <!--
-        Referenced so it can be the last resort for focus after a module is
-        removed by keyboard. It earns that role by being the only control on this
-        surface that is always drawn and never removed by anything the viewer does
-        to the arrangement - including emptying it completely, which is exactly the
-        case where no module handle is left to receive focus.
+        Referenced so it can be the last resort for focus after a module is removed
+        by keyboard: it is the only control here that nothing the viewer does to
+        the arrangement can remove, including emptying it completely.
       -->
       <button
         #catalogTrigger
@@ -416,13 +283,9 @@
         (click)="onToggleCatalog()"
       >
         <!--
-          A grid glyph rather than a plus, and the distinction is the point. Five
-          feature modules render their own circular `mat-fab` with a plus - "Add
-          activity", "Add account" and so on - and all of them can now be on the
-          canvas at once, so a plus here was one more identical teal disc with no
-          way to tell which one added what. A grid says what this control actually
-          opens, and it agrees with the button's own name, "Browse modules".
-          `close-outline` while open is unambiguous either way.
+          A grid glyph rather than a plus: several feature modules render their own
+          circular `mat-fab` with a plus and can all be on the canvas at once, so a
+          plus here would be indistinguishable from them.
         -->
         <ion-icon
           aria-hidden="true"

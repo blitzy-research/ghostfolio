@@ -115,13 +115,11 @@ export class GfBenchmarkComparatorComponent implements OnChanges, OnDestroy {
   }
 
   /**
-   * Surfaces the market data module, which is where benchmarks are managed. The
-   * option used to carry a route link to the admin market data screen. That
-   * screen no longer owns a URL of its own, so the intent is published on the
-   * neutral bus and the canvas decides how to reveal the module. Nothing about
-   * authorization changes: the template still gates the option behind
-   * `hasPermissionToAccessAdminControl` and the API keeps enforcing the
-   * permission independently.
+   * Surfaces the market data module, which is where benchmarks are managed. That
+   * module owns no URL, so the intent is published on the neutral bus and the
+   * canvas decides how to reveal it. Authorization is unaffected: the template
+   * gates the option behind `hasPermissionToAccessAdminControl` and the API
+   * enforces the permission independently.
    */
   public onOpenAdminMarketData() {
     this.dashboardIntentService

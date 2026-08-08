@@ -1,6 +1,4 @@
-// Material system tokens require fallbacks because the current theme does not
-// emit the --mat-sys layer. Gridster-owned internals are styled globally in
-// styles/gridster.scss.
+// Gridster-owned internals are styled globally in styles/gridster.scss.
 
 :host {
   // Painted on the host as well as on the scrolling region so the shell's page
@@ -10,8 +8,8 @@
 
   // A router-inserted host element carries no encapsulation attribute, so only the
   // routed component can size itself. `min-height: 0` clears the automatic minimum
-  // size so the canvas scrolls internally — in the drawer's content region, not on
-  // the host — instead of pushing the shell past one viewport.
+  // size so the canvas scrolls internally, in the drawer's content region rather
+  // than on the host.
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -24,47 +22,34 @@
 
   // Keeps a module's own floating action button in normal flow inside its cell.
   //
-  // Re-homed here from the global `.page` class, which this host no longer carries
-  // because that class also inset the canvas by 2rem and pushed the control bar off
-  // the top of the screen. The rule itself is still required: five feature
-  // components (activities, watchlist, admin market data, account access and
-  // accounts) render a `.fab-container`, ALL of them can be mounted at once now, and
-  // the global `.fab-container` position is `fixed` - so left pinned they would
-  // stack every one of those buttons on the same viewport coordinate with only the
-  // topmost reachable. Trailing alignment keeps each button inside its own module's
-  // scrolling box at any cell size.
+  // Five feature components render a `.fab-container`, all of them can be mounted
+  // at once, and the global `.fab-container` position is `fixed` - so left pinned
+  // they would stack every one of those buttons on the same viewport coordinate
+  // with only the topmost reachable. Trailing alignment keeps each button inside
+  // its own module's scrolling box at any cell size.
   //
   // `::ng-deep` is required rather than stylistic: `.fab-container` is written in
   // those components' own templates, so it never carries this component's content
-  // attribute and an ordinary nested rule would compile to a selector that matches
-  // nothing. The ancestor chain above it stays scoped to this host, so the rule
-  // cannot reach a `.fab-container` outside the canvas.
+  // attribute and an ordinary nested rule would match nothing. The ancestor chain
+  // above it stays scoped to this host.
   ::ng-deep .fab-container {
     display: flex;
     justify-content: flex-end;
 
     // Reserves the floating catalog trigger's own corner so a module's button can
-    // never be buried underneath it. Measured before this line existed: the
-    // Activities module's "Add activity" overlapped the trigger by 35px x 52px
-    // with the trigger on top, and `elementFromPoint` at the centre of "Add
-    // activity" returned "Browse modules" - the control was 79% covered and
-    // unreachable by pointer.
+    // never be buried underneath it.
     //
     // The gutter has to be unconditional rather than applied to whichever module
     // sits in the corner, because these buttons are trailing-aligned INSIDE the
     // grid's scrolling content: every one of them travels through the trigger's
-    // coordinates at some scroll offset, so there is no cell position that is
-    // safe without it.
+    // coordinates at some scroll offset.
     //
-    // Reserving it makes the collision arithmetically impossible instead of
-    // merely unlikely, in BOTH drawer states, and that generalises for a reason
-    // rather than by luck: opening the drawer narrows the grid by exactly the
-    // drawer's width and steps the trigger aside by exactly the same width, so
-    // `trigger.left` is `grid.right - footprint` either way. A trailing-aligned
-    // button's right edge is `grid.right - itemMargin - footprint`, which is
-    // short of that by the item margin, so the two boxes cannot intersect
-    // horizontally - and without horizontal overlap there is no occlusion at any
-    // vertical offset.
+    // Reserving it makes the collision arithmetically impossible in both drawer
+    // states: opening the drawer narrows the grid by exactly the drawer's width and
+    // steps the trigger aside by the same width, so `trigger.left` is
+    // `grid.right - footprint` either way, while a trailing-aligned button's right
+    // edge is `grid.right - itemMargin - footprint`. Without horizontal overlap
+    // there is no occlusion at any vertical offset.
     //
     // Bottom padding on `gridster` would have been the more usual way to clear a
     // floating control, but it is not available here: with `outerMargin` on, the
@@ -73,78 +58,47 @@
     // anything is dragged, resized or added.
     padding-right: var(--gf-dashboard-catalog-trigger-footprint);
 
-    // Pins the button to its module's own bottom edge instead of letting it ride
-    // on the end of the content.
+    // Pins the button to its module's own bottom edge instead of letting it ride on
+    // the end of the content, which would put it wherever that content happens to
+    // end and move it as the content arrives. Taking it out of flow removes the
+    // dependency on content height rather than reducing it. `position: sticky` is
+    // not equivalent: with `bottom: 0` it only engages once the button's flow
+    // position falls past the scrollport.
     //
-    // Left in normal flow, one of these buttons sits below whatever its module
-    // renders, so it lands wherever that content happens to end - and moves when
-    // the content arrives. Measured on a canvas with Activities and Accounts in
-    // the first viewport: "Add activity" dropped 435px and "Add account" 23.5px
-    // as their tables filled, and the Activities move alone was 71.8% of the
-    // page's entire layout shift, which Lighthouse attributed to this element as
-    // 95% of its measured CLS. A control that jumps 435px after being painted is
-    // a mis-click waiting to happen, not a cosmetic wobble.
-    //
-    // Taking it out of flow removes the dependency on content height rather than
-    // reducing it, so the shift is zero rather than smaller. `position: sticky`
-    // was considered and rejected: with `bottom: 0` it only engages once the
-    // button's flow position falls past the scrollport, so it would still have
-    // travelled from 240px to 513px on the measured layout.
-    //
-    // The containing block is the module's body wrapper, not the scrolling
-    // element inside it - the wrapper is the nearest positioned ancestor - so the
-    // button holds still while module content scrolls underneath, and it is not
-    // clipped by that scrolling, because an absolutely positioned box is only
-    // clipped by an overflow ancestor that sits between it and its containing
-    // block.
+    // The containing block is the module's body wrapper rather than the scrolling
+    // element inside it, so the button holds still while module content scrolls
+    // underneath and is not clipped by that scrolling.
     //
     // `inset-inline: 0` keeps the box exactly as wide as it was, so the trailing
-    // alignment and the trigger gutter above still resolve against the same edge
-    // and the clearance arithmetic behind that gutter is unchanged. It also means
-    // this cannot reintroduce the occlusion that gutter prevents: that argument
-    // turns on there being no horizontal overlap AT ANY vertical offset, so
-    // fixing the vertical offset cannot weaken it.
-    // Inset by exactly the height of the two things that already occupy a
-    // module's bottom edge, rather than sitting flush against it.
+    // alignment and the trigger gutter above still resolve against the same edge.
     //
-    // Measured with the button flush at 0, and both were real: the grid engine's
-    // own south resize strip - 10px tall, `pointer-events: auto`, `z-index: 2` -
-    // covered the bottom 10px of both buttons, so 11 of 57 rows down the button's
-    // centre column resolved to the resize handle instead, and a press there
-    // would have started a resize on a control; and the scroll hint that says a
-    // module continues below - 12px tall - painted its gradient over the bottom
-    // 12px, visibly fading the button's fill toward the card colour.
-    //
-    // 0.75rem clears both, and it is the SAME 0.75rem the hint's own block size
-    // is declared with, so the two are adjacent by construction rather than by
-    // coincidence. Raising the button above them with `z-index` was the
-    // alternative and is worse: it would hide a hint that is carrying
-    // information and steal part of the resize strip, whereas moving out of their
-    // way costs nothing and leaves both fully usable.
+    // The block inset clears the two things that already occupy a module's bottom
+    // edge: the grid engine's own 10px south resize strip, which is
+    // `pointer-events: auto` and would otherwise take presses aimed at the button,
+    // and the 12px scroll hint that says a module continues below. It is the same
+    // 0.75rem the hint's own block size is declared with, so the two are adjacent
+    // by construction. Raising the button above them with `z-index` would instead
+    // hide the hint and steal part of the resize strip.
     inset-block-end: 0.75rem;
     inset-inline: 0;
     position: absolute;
   }
 
-  // Lets a module's last row be scrolled clear of its own pinned button.
+  // Lets a module's last row be scrolled clear of its own pinned button, keyed on
+  // actually having one because most modules do not and would otherwise carry a
+  // strip of dead space. Keyed on `.fab-container` rather than the global
+  // `.has-fab` class, which not every one of those components carries.
   //
-  // Keyed on actually having one, because most modules do not and would
-  // otherwise carry a strip of dead space at the bottom. Five feature components
-  // render a `.fab-container`; only four of them also carry the global
-  // `.has-fab` class, so keying on that class instead would have left the
-  // watchlist's button overlapping its own last row.
-  //
-  // The value is the three quantities that actually stand between the last row
-  // and the bottom of the card: the button's own bottom inset, its diameter, and
-  // a gutter above it. Kept as a sum rather than a collapsed number so that
-  // changing the inset above cannot silently leave this too short.
+  // Kept as the sum of the three quantities that stand between the last row and
+  // the bottom of the card - the button's bottom inset, its diameter and a gutter
+  // above it - so changing the inset above cannot silently leave this too short.
   ::ng-deep .gridster-item-content:has(.fab-container) {
     padding-block-end: calc(0.75rem + 3.5rem + 0.75rem);
   }
 
   // Takes the height left below the control bar. `min-height: 0` clears a flex
   // item's automatic minimum size, which would otherwise refuse to shrink below
-  // its content and give the page shell a second scrollbar.
+  // its content and give the application shell a second scrollbar.
   mat-sidenav-container {
     flex: 1 1 auto;
     min-height: 0;
@@ -162,28 +116,19 @@
   // distance the floating trigger has to step aside to clear it - so the two can
   // never drift apart.
   //
-  // 22rem is the width the canvas is designed around, and above a 440px viewport
-  // it is the width that applies. The second term is a floor under the trigger's
+  // 22rem is the width the canvas is designed around and the width that applies on
+  // any supported viewport. The second term is a floor under the trigger's
   // reachability, not a responsive layout: the trigger is `position: fixed` at the
   // trailing edge and steps aside by exactly this width while the catalog is open,
-  // so an unconditional 22rem puts its left edge at `100vw - 22rem - 5.5rem`,
-  // which goes negative below 440px. It went off-screen while still reporting
-  // itself as present and expanded - `display: inline-flex`, `visibility: visible`,
-  // `opacity: 1`, `aria-expanded="true"` - and since it is the panel's ONLY
-  // dismissal (the drawer is `mode="side"`, so it has no backdrop, and Material
-  // does not answer Escape for a side drawer while focus sits outside it), the
-  // panel became a pointer trap that only a keyboard could escape.
+  // so an unconditional 22rem takes its left edge negative on a very narrow
+  // viewport. Since the trigger is the panel's ONLY dismissal - the drawer is
+  // `mode="side"`, so it has no backdrop, and Material does not answer Escape for a
+  // side drawer while focus sits outside it - that would make the panel a pointer
+  // trap only a keyboard could escape.
   //
-  // Subtracting the trigger's own footprint is therefore the minimum that keeps
-  // the control that closes the panel inside the viewport: at 375px the drawer
-  // resolves to 287px and the trigger's left edge lands at exactly 0. At 440px the
-  // two terms are equal - `100vw - 5.5rem == 22rem` - so the cap engages precisely
-  // at the crossover and is inert above it, which is what keeps this from becoming
-  // the responsive behaviour the specification excludes.
-  //
-  // `min()` rather than a media query on purpose: there is no breakpoint here and
-  // introducing one would imply a supported narrow layout. This is one continuous
-  // expression whose second term simply never wins on a supported viewport.
+  // `min()` rather than a media query: there is no breakpoint here, and introducing
+  // one would imply a supported narrow layout. The second term never wins on a
+  // supported viewport, so the cap is inert there.
   --gf-dashboard-catalog-width: min(
     22rem,
     100vw - var(--gf-dashboard-catalog-trigger-footprint)
@@ -194,28 +139,22 @@
     border-start-start-radius: var(--mat-sys-corner-medium, 4px);
     max-width: 100%;
 
-    // Explicit, where it used to be left to the content. A `mat-drawer` sizes
-    // itself to whatever it holds, so the catalog's width was a function of the
-    // longest module name in the active locale - and the trigger below has to
-    // know that width to get out of its way. Fixing it here makes both the panel
-    // and the trigger deterministic, and makes the width one number to change
-    // rather than an emergent property of thirteen translations.
+    // Explicit rather than left to the content: a `mat-drawer` sizes itself to
+    // whatever it holds, which would make the catalog's width a function of the
+    // longest module name in the active locale, and the trigger has to know that
+    // width to get out of its way.
     width: var(--gf-dashboard-catalog-width);
   }
 
-  // Paint the transparent drawer content with the canvas surface; scroll
-  // padding keeps auto-revealed modules clear of the toolbar.
+  // Paints the transparent drawer content with the canvas surface; scroll padding
+  // keeps auto-revealed modules clear of the toolbar.
   //
-  // The column formatting context is what stops the empty-state notice and the
-  // grid from overflowing this region between them. The grid engine's own global
+  // The column formatting context is what stops the empty-state notice and the grid
+  // from overflowing this region between them: the grid engine's own global
   // stylesheet gives `gridster` `height: 100%`, which resolves against this box
-  // rather than against the space left over - so with the notice occupying flow
-  // above it, the two summed to this region's height PLUS the notice's, and the
-  // difference became a nested scroll nobody asked for. Measured at 1440x900:
-  // `scrollHeight` 1052 against `clientHeight` 848, i.e. exactly the notice's own
-  // 204px, and invisible only because this platform draws overlay scrollbars.
-  // Made a flex column, the notice takes its content height, the grid takes the
-  // remainder, and the two sum to this region exactly.
+  // rather than against the space left over, so with the notice in flow above it
+  // the two would sum to more than this region and the difference would become a
+  // nested scroll.
   mat-sidenav-content {
     background: var(--mat-sys-surface-container-low, #fafafa);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
@@ -238,38 +177,19 @@
   }
 
   // Takes the space the notice above it leaves rather than a full copy of the
-  // region. `block-size: auto` is the operative half - it displaces the engine's
-  // own `height: 100%`, which is what made the two boxes overlap - and
-  // `min-height: 0` clears the automatic minimum so this can actually shrink.
+  // region. `block-size: auto` is the operative half, displacing the engine's own
+  // `height: 100%`, and `min-height: 0` clears the automatic minimum so this can
+  // shrink.
   //
-  // Safe against the row geometry, and verifiably so rather than by hope: under
-  // `GridType.VerticalFixed` the engine derives its row pitch as
-  // `fixedRowHeight + margin`, with no reference to its own measured height, so
-  // the 90px pitch holds whatever height this resolves to. The grid also stays
-  // mounted at full width either way, which is what keeps a dragged catalog row
-  // droppable on a canvas that is still empty.
+  // Safe against the row geometry: under `GridType.VerticalFixed` the engine
+  // derives its row pitch as `fixedRowHeight + margin`, with no reference to its
+  // own measured height, so the pitch holds whatever height this resolves to.
   gridster {
     block-size: auto;
     flex: 1 1 auto;
     min-height: 0;
   }
 
-  // The catalog trigger, which needs three corrections that all trace back to
-  // the same cause: this theme populates component-level tokens but not the
-  // --mat-sys layer, so anything Material expresses purely through system
-  // tokens silently evaluates to nothing.
-  //
-  // The theme sets the FAB's container colour to the brand teal but leaves its
-  // foreground at Material's tonal-palette value, which was paired with the
-  // container the theme replaced. The pair is therefore mismatched by
-  // construction, and in the dark theme it lands light-teal-on-teal - the
-  // ~1.9:1 glyph the report measured. Pinning the foreground alongside the
-  // container restores a coherent pair and holds in both themes, since the
-  // container override is itself theme-independent.
-  //
-  // Scoped here rather than in the theme's own fab overrides because the theme
-  // is a shared surface this work treats as read-only, and the finding is
-  // about this trigger.
   // Steps the trigger clear of the open catalog.
   //
   // The trigger is `position: fixed` at the trailing edge and the drawer opens at
@@ -280,18 +200,19 @@
   // its glyph and `aria-expanded` report, and the panel offers no other way out.
   //
   // Offset by the drawer's own width, so it lands immediately beside the panel
-  // rather than at some coordinate that happens to look clear. The canvas is a
-  // desktop surface by specification - responsive layout is out of scope and the
-  // grid's mobile mode is disabled outright - so a viewport too narrow to hold
-  // both is not a case this has to serve.
+  // rather than at a coordinate that happens to look clear. The canvas is a desktop
+  // surface with the grid's mobile mode disabled outright, so a viewport too narrow
+  // to hold both is not a case this has to serve.
   .gf-dashboard-catalog-trigger.is-catalog-open {
     right: calc(2rem + var(--gf-dashboard-catalog-width));
   }
 
   .gf-dashboard-catalog-trigger button {
-    // Near-black on the brand teal, which clears 3:1 for a non-text control
-    // several times over and is the direction Material's own container/on-
-    // container pairing points for a light container.
+    // The theme replaces the FAB's container colour with the brand teal but leaves
+    // its foreground at Material's tonal-palette value, so the pair is mismatched
+    // by construction. Near-black is the direction Material's own container /
+    // on-container pairing points for a light container, and holds in both themes
+    // because the container override is theme-independent.
     --mat-fab-foreground-color: var(
       --mat-sys-on-primary-container,
       rgba(0, 0, 0, 0.87)
@@ -299,19 +220,17 @@
 
     // Material drives press and focus through a state layer whose colour and
     // opacity are both system tokens, so with that layer unpopulated the button
-    // was inert to every interaction. Supplying the values turns Material's own
-    // mechanism back on rather than painting bespoke states over it.
+    // is inert to every interaction. Supplying the values turns Material's own
+    // mechanism on rather than painting bespoke states over it.
     --mat-fab-state-layer-color: var(
       --mat-sys-on-primary-container,
       rgba(0, 0, 0, 0.87)
     );
     --mat-fab-pressed-state-layer-opacity: 0.12;
 
-    // A state layer can only ever darken the fill slightly - the report
-    // measured the focused fill at 1.18:1 against the resting one - so it can
-    // signal focus but never satisfy WCAG 2.2 SC 2.4.11 on its own. The ring
-    // below is what actually carries focus; this keeps the layer consistent
-    // with the press step.
+    // A state layer can only ever darken the fill slightly, so it can signal focus
+    // but never carry it on its own. The ring below is what actually carries focus;
+    // this keeps the layer consistent with the press step.
     --mat-fab-focus-state-layer-opacity: 0.12;
 
     // Hover is the one state that CANNOT go through the state layer, and the
@@ -341,12 +260,11 @@
       );
     }
 
-    // Material clears the browser's own ring with `outline: none` on every FAB
-    // and replaces it with an indicator that only paints when strong focus
-    // indicators are enabled, which they are not here. Restored explicitly, and
-    // offset so the ring sits on the canvas behind the button rather than on
-    // the teal: that is the comparison SC 2.4.11 is measured against, and
-    // near-black on the canvas surface clears it by an order of magnitude.
+    // Material clears the browser's own ring with `outline: none` on every FAB and
+    // replaces it with an indicator that only paints when strong focus indicators
+    // are enabled, which they are not here. Restored explicitly, and offset so the
+    // ring sits on the canvas behind the button rather than on the teal, which is
+    // the comparison a focus indicator is measured against.
     &:focus-visible {
       outline: 3px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
       outline-offset: 2px;

@@ -34,18 +34,17 @@
 
     `tabindex` is bound rather than fixed at -1. The rows share ONE tab stop
     between them - the roving pattern the parent's key manager drives - and that
-    pattern only works if exactly one row is reachable by Tab at a time. Fixing
-    every row at -1 removed the tab stop altogether, which left the whole result
-    list unreachable from the keyboard: Tab went from the search field straight
-    past every module.
+    pattern needs exactly one row reachable by Tab at a time. Fixing every row at
+    -1 leaves no tab stop at all, which makes the whole result list unreachable
+    from the keyboard: Tab goes from the search field straight past every module.
 
     It is bound as the `tabIndex` PROPERTY, not as `[attr.tabindex]`. That is the
     canonical form for this one attribute - Angular's own property-name mapping
-    rewrites `tabindex` to `tabIndex` - and it is the form that works: the
-    attribute binding was measured setting nothing at all on this element, while
-    the sibling `[attr.aria-label]` bound normally. The property also reflects
-    back into the content attribute, so both the focus order the browser computes
-    and the attribute assistive technology reads end up correct.
+    rewrites `tabindex` to `tabIndex` - and it is the form that takes effect here:
+    the attribute binding sets nothing at all on this element, while the sibling
+    `[attr.aria-label]` binds normally. The property also reflects back into the
+    content attribute, so both the focus order the browser computes and the
+    attribute assistive technology reads end up correct.
   -->
   <button
     #row

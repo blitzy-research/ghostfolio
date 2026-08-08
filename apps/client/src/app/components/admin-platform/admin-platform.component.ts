@@ -123,9 +123,6 @@ export class GfAdminPlatformComponent implements OnInit {
   public ngOnInit() {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
 
-    // Re-evaluated once the device is known, so a request that was already on the
-    // URL when this component was created is honoured now that it can be honoured
-    // correctly.
     this.applyQueryParams();
 
     this.fetchPlatforms();
@@ -157,9 +154,9 @@ export class GfAdminPlatformComponent implements OnInit {
       });
 
       // A platform that cannot be found is the only outcome besides opening the
-      // dialog. Passing it on regardless destructured `undefined` and threw, which
-      // is exactly what an `editPlatformDialog` naming a platform that had since
-      // been deleted used to do.
+      // dialog. Passing it on regardless would destructure `undefined` and throw,
+      // which is what an `editPlatformDialog` naming a platform that has since been
+      // deleted would otherwise produce.
       if (platform) {
         this.serveDialogRequest(`editPlatformDialog:${platform.id}`, () => {
           this.openUpdatePlatformDialog(platform);
@@ -232,12 +229,8 @@ export class GfAdminPlatformComponent implements OnInit {
   }
 
   public onUpdatePlatform({ id }: Platform) {
-    // Merged, not replaced. Replacing the whole map discarded every parameter the
-    // rest of the canvas had put there - a sibling module's open dialog, the
-    // shared-portfolio access identifier, the sign-in token hand-off - as a side
-    // effect of opening this one dialog. `createPlatformDialog` is nulled because
-    // it is tested first, so a stale one would open a blank form instead of this
-    // platform.
+    // `createPlatformDialog` is nulled because it is tested first, so a stale one
+    // would open a blank form instead of this platform.
     void this.router.navigate([], {
       queryParams: {
         createPlatformDialog: null,

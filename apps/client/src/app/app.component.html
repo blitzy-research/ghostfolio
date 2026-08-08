@@ -15,7 +15,7 @@
               <!--
                 Disabled while the dialog's own chunk is being resolved. The load is
                 a network request, so it can take long enough to be pressed again,
-                and a second press used to open a second copy of the dialog.
+                and a second press would otherwise open a second copy of the dialog.
                 `aria-busy` says the same thing to assistive technology, since a
                 control that has gone quiet for a moment is otherwise
                 indistinguishable from one that did nothing.
@@ -70,11 +70,9 @@
   - `apps/api/src/app/user/user.service.ts` names a new user's first account from
     `myAccount`.
 
-  The declarations previously lived in a hidden route (`pages/i18n`) that the
-  single-canvas refactor removed along with the rest of the page tree. They are hosted
-  on the root shell rather than on a module because the contract is global: the API
-  needs them regardless of which modules a user has placed on their canvas, and this
-  template is the one that is always part of the build graph.
+  They are declared on the root shell rather than on a module because the contract is
+  global: the API needs them regardless of which modules a user has placed on their
+  canvas, and this template is the one that is always part of the build graph.
 
   `<ng-template>` is deliberate. Extraction is a static walk of the template, so the
   messages are collected, while an `<ng-template>` that nothing instantiates is never

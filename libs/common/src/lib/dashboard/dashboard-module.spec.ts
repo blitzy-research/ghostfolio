@@ -100,16 +100,15 @@ describe('dashboardModules', () => {
   });
 
   /**
-   * The two table modules whose defaults were measured rather than guessed.
+   * The two table modules whose defaults are dictated by their own columns.
    *
-   * Both hid an interactive control at ordinary desktop widths when placed at
-   * their own default size: the access table's trailing actions column - the only
-   * route to editing or revoking a grant - sat entirely outside the visible area
-   * at 1280px and below, and the holdings table's trailing performance column
-   * rendered as a lone letter. Their column sets are FIXED, so unlike the row
-   * counts of data-driven modules the requirement is deterministic and a default
-   * can genuinely satisfy it. These numbers are therefore pinned against the
-   * measurement, not left to taste.
+   * At a smaller default each hides an interactive control at ordinary desktop
+   * widths: the access table's trailing actions column - the only route to editing
+   * or revoking a grant - falls outside the visible area at 1280px and below, and
+   * the holdings table's trailing performance column renders as a lone letter.
+   * Their column sets are FIXED, so unlike the row counts of data-driven modules
+   * the requirement is deterministic and a default can genuinely satisfy it. These
+   * numbers are therefore pinned rather than left to taste.
    */
   describe('the widths measured against real content', () => {
     /** Content box of a module, in CSS pixels, at a given viewport and column span. */
@@ -122,8 +121,8 @@ describe('dashboardModules', () => {
     };
 
     it.each([
-      // Floor measured after the share address in the details column was capped;
-      // before the cap it was a width-invariant 858px that no viewport could reduce.
+      // Floor with the share address in the details column capped; uncapped, that
+      // one cell alone sets a width-invariant 858px floor no viewport can reduce.
       [DashboardModuleType.ACCOUNT_ACCESS, 574],
       // Floor set by the header row, which is `min-width: max-content` per column
       // so a label can never be squeezed to an initial.
@@ -160,9 +159,9 @@ describe('dashboardModules', () => {
         dashboardModules[DashboardModuleType.ACCOUNT_ACCESS];
 
       // Rows are a constant 80px with a 10px margin between them, and the card
-      // header plus the module gutter take roughly 80px out of the cell. At three
-      // rows that left about 180px - not enough for a table header and one row -
-      // which is why the minimum moved up with the default.
+      // header plus the module gutter take roughly 80px out of the cell. Three rows
+      // therefore leave about 180px - not enough for a table header and one row -
+      // which is why the minimum is four rather than three.
       expect(minItemRows).toBeGreaterThanOrEqual(4);
       expect(
         defaultItemRows * 80 + (defaultItemRows - 1) * 10 - 80

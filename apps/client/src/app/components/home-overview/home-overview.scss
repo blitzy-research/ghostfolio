@@ -30,12 +30,11 @@
     // default. The chart sizes its own canvas imperatively through an inline
     // pixel width, and it sits in an absolutely positioned child, so an
     // oversized canvas is free to paint straight past this container without
-    // ever disturbing layout. That is not hypothetical: narrowing the viewport
-    // to 900px left the canvas at 631.7px inside a 581.33px container and it
-    // stayed there for over 17 seconds, bleeding 50.4px past the module's
-    // boundary, and the module's own overflow watcher correctly - and
-    // unhelpfully - advertised a sideways scroll for content that was only
-    // out of reach because the chart had mis-sized itself.
+    // ever disturbing layout. A canvas left wider than this container after a
+    // narrowing viewport therefore keeps painting past the module boundary until
+    // the chart re-converges on its own, and the module's overflow watcher
+    // correctly - and unhelpfully - advertises a sideways scroll for content that
+    // is out of reach only because the chart mis-sized itself.
     //
     // Clipping here rather than constraining the canvas is deliberate. A
     // `max-width` on the canvas would leave its bitmap dimensions untouched

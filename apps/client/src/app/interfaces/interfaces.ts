@@ -10,8 +10,8 @@ import type { DataSource } from '@prisma/client';
  * Dialog plumbing stays route-agnostic: producers call
  * `router.navigate([], { queryParams: … })` against the current route. Because
  * every placed module is mounted at once, a bare flag such as `createDialog` or
- * `editDialog` is visible to every mounted module rather than to the one screen
- * that used to own the URL.
+ * `editDialog` is visible to every mounted module rather than to one screen that
+ * owns the URL.
  *
  * Generic dialog flags are therefore only meaningful when paired with
  * `dialogModule`, which names the single module the flag is addressed to.

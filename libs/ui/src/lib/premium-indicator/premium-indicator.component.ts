@@ -12,10 +12,9 @@ import { diamondOutline } from 'ionicons/icons';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // `CommonModule` is deliberately absent: the badge now chooses between an
-  // anchor and a decorative span with built-in control flow, so the structural
-  // directive it used to be imported for - `ngStyle`, which was what disabled
-  // the anchor by taking its pointer events away - is gone with it.
+  // `CommonModule` is deliberately absent: the badge chooses between an anchor
+  // and a decorative span with built-in control flow, so it needs no `ngStyle` to
+  // disable the anchor by taking its pointer events away.
   imports: [IonIcon],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-premium-indicator',

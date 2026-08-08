@@ -18,9 +18,9 @@ export interface DashboardModuleDefinition extends DashboardModule {
  * step rather than a destination.
  *
  * Steps, not coordinates, because the requester is the module chrome and the
- * chrome holds no geometry: Rule 2 makes grid state the single authority for
- * where a module is and how big it is, so the chrome can say "one column left"
- * but must never say "column 4". The canvas resolves the step against the
+ * chrome holds no geometry - grid state is the single authority for where a
+ * module is and how big it is - so the chrome can say "one column left" but
+ * must never say "column 4". The canvas resolves the step against the
  * authoritative state and lets the grid engine accept or reject the result.
  */
 export interface DashboardModuleGeometryStep {

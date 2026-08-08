@@ -29,8 +29,8 @@ import { DeviceDetectorService } from 'ngx-device-detector';
 
 // Type-only, both of them. Each dialog class is resolved on demand where it is
 // opened, so naming one here as a value would put its whole graph back into the
-// shell's chunk and undo the code splitting the collapsed route table has to
-// re-establish somewhere.
+// shell's chunk. A single-route table declares no lazy boundary, so the code
+// splitting has to be established at each of those call sites instead.
 import type {
   HoldingDetailDialogParams,
   HoldingDetailDialogResult
@@ -233,28 +233,19 @@ export class GfAppComponent implements OnInit {
    * The issued token is persisted with `staySignedIn` forced on, because a
    * freshly created account has no stay-signed-in setting to consult yet.
    *
-   * This flow was migrated from the deleted register page, which was the only way
-   * to create an account before the navigation surface collapsed onto a single
-   * canvas. Three adaptations were required:
+   * No navigation follows it. `/` is already the current — and only — route, so
+   * the account is adopted by forcing a re-read of the viewer instead. That read
+   * is what drives the `stateChanged` subscription above to recompute
+   * `canCreateAccount` and `hasInfoMessage`, which in turn dismisses the
+   * live-demo banner.
    *
-   * - the token is persisted with `staySignedIn` forced on, matching the
-   *   register page's deliberate decision not to consult the stay-signed-in
-   *   setting for a freshly created account;
-   * - the register page navigated to `/` afterwards. `/` is already the
-   *   current — and only — route, so the navigation is replaced by a forced
-   *   user re-fetch. That is what drives the `stateChanged` subscription above
-   *   to recompute `canCreateAccount` and `hasInfoMessage`, which in turn
-   *   dismisses the live-demo banner.
-   *
-   * The third is the consequential one, and it is what the collapsed route table
-   * forces. The register page was a *screen*: adopting a token there
-   * navigated away from it, so nothing belonging to whoever was looking before
-   * survived. On one canvas there is nowhere to navigate to, so the dashboard
-   * that was already on screen — and any arrangement change it had scheduled but
-   * not yet written — would otherwise still be live while the new account's token
-   * is the one authorising requests, and would write the previous viewer's layout
-   * to the new account. Replacing the token is therefore performed as an explicit
-   * identity transition, in this order:
+   * Having nowhere to navigate to is what makes the order below load-bearing. The
+   * dashboard the visitor is looking at stays mounted across the adoption, so
+   * without an explicit hand-over it would still be live — along with any
+   * arrangement change it had scheduled but not yet written — while the new
+   * account's token is the one authorising requests, and would write the previous
+   * viewer's layout to the new account. Replacing the token is therefore
+   * performed as an explicit identity transition, in this order:
    *
    * 1. announce it, which withdraws layout write authorisation, discards
    *    anything still pending and suspends the canvas;
@@ -273,7 +264,7 @@ export class GfAppComponent implements OnInit {
     // reaches a large graph of its own and is opened only when a visitor asks to
     // create an account, so a static reference would place all of it in the
     // initial bundle for every visitor - the canvas is the one screen the
-    // application has, so there is no longer a route boundary to do this for us.
+    // application has, so there is no route boundary to do this for us.
     //
     // Routed through the shared loader, which is what makes the load safe as well
     // as lazy: concurrent activations share one chunk request, a rejected one is
@@ -450,9 +441,9 @@ export class GfAppComponent implements OnInit {
    * Subscribed exactly once, which is the whole point of it being separate from
    * applying the theme. Applying it runs on every emission of the viewer's record,
    * and a great many things refresh that record - a date range, a filter, adopting
-   * a token - so registering the listener alongside the theme it applies added one
-   * more listener every time. They were never removed and each one re-ran the same
-   * work, so the cost grew for the lifetime of the session.
+   * a token - so registering the listener alongside the theme it applies would add
+   * one more listener every time, none of them released, each re-running the same
+   * work for the lifetime of the session.
    *
    * `addEventListener` rather than the deprecated `addListener`, so the listener
    * can be released with the component; `addListener` offers no removal that
@@ -613,8 +604,8 @@ export class GfAppComponent implements OnInit {
             // goes with it on an ordinary close and is deliberately left standing
             // when the dialog closed itself in order to hand the same asset on to
             // the market data administration module, which reads exactly that pair.
-            // Clearing regardless is what previously left the administration module
-            // with a request to open an asset profile dialog for no asset.
+            // Clearing regardless would leave the administration module with a
+            // request to open an asset profile dialog for no asset.
             void this.router.navigate([], {
               queryParams: result?.hasHandedOverAssetProfile
                 ? { holdingDetailDialog: null }
