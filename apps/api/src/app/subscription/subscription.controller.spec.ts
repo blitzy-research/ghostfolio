@@ -2,7 +2,7 @@ import { ConfigurationService } from '@ghostfolio/api/services/configuration/con
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
 import { DEFAULT_LANGUAGE_CODE } from '@ghostfolio/common/config';
 
-import { Logger } from '@nestjs/common';
+import { HttpException, Logger } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Request, Response } from 'express';
@@ -267,23 +267,24 @@ describe('SubscriptionController', () => {
       { requestId: 'req_secret' }
     );
 
-    it('reports the failure as an event and nothing the provider said', () => {
-      createStripeCheckoutSession.mockImplementation(() => {
-        throw failure;
-      });
+    /** Everything the provider error would give away, in the forms it carries it. */
+    const disclosures = [
+      'acct_secret',
+      'price_secret',
+      'req_secret',
+      'No such price'
+    ];
 
-      expect(() => {
-        return subscriptionController.createStripeCheckoutSession({
-          priceId: 'price_secret'
-        });
-      }).toThrow();
-
-      expect(loggerError).toHaveBeenCalledWith(
-        'GF-STRIPE-CHECKOUT-SESSION-FAILED',
-        'SubscriptionController'
-      );
-
-      const emitted = (loggerError.mock.calls as unknown[][])
+    /**
+     * Every argument of every `Logger.error` call, flattened into one string.
+     *
+     * `inspect` rather than `String`, because what must not reach the log is an
+     * error *object*: `String(error)` renders only its message, so a provider
+     * identifier hanging off a property - `requestId` here - would satisfy the
+     * assertion while still being written out in full by the logger.
+     */
+    const emittedErrors = () => {
+      return (loggerError.mock.calls as unknown[][])
         .map((call) =>
           call
             .map((argument) =>
@@ -292,15 +293,104 @@ describe('SubscriptionController', () => {
             .join(' ')
         )
         .join('\n');
+    };
 
-      for (const disclosure of [
-        'acct_secret',
-        'price_secret',
-        'req_secret',
-        'No such price'
-      ]) {
-        expect(emitted).not.toContain(disclosure);
-      }
+    /** The handler's rejection, captured rather than propagated. */
+    const rejectionOf = (priceId: string): Promise<unknown> => {
+      return subscriptionController
+        .createStripeCheckoutSession({ priceId })
+        .then(
+          () => undefined,
+          (error: unknown) => error
+        );
+    };
+
+    /**
+     * How the failure actually arrives.
+     *
+     * `SubscriptionService.createStripeCheckoutSession` is `async` and reaches
+     * Stripe only after awaiting a property lookup, so it cannot throw
+     * synchronously - it returns a promise and rejects it later. A handler that
+     * returned that promise from inside its own `try` would therefore never enter
+     * its `catch`: the rejection would surface after the frame had gone, Nest's
+     * default handler would log the provider's error object verbatim, and the
+     * caller would receive a 500. Every assertion below is written against the
+     * rejection rather than a synchronous throw for that reason.
+     */
+    describe('when the provider rejects the session it was asked to create', () => {
+      beforeEach(() => {
+        createStripeCheckoutSession.mockRejectedValue(failure);
+      });
+
+      it('reports the failure as an event and nothing the provider said', async () => {
+        await rejectionOf('price_secret');
+
+        expect(loggerError).toHaveBeenCalledWith(
+          'GF-STRIPE-CHECKOUT-SESSION-FAILED',
+          'SubscriptionController'
+        );
+
+        for (const disclosure of disclosures) {
+          expect(emittedErrors()).not.toContain(disclosure);
+        }
+      });
+
+      it('answers the caller with a bad request rather than a server fault', async () => {
+        const rejection = await rejectionOf('price_secret');
+
+        // The mapping is also the proof that the rejection was caught here: an
+        // escaped one arrives at Nest's default handler as an unknown error and
+        // becomes a 500 carrying the provider's own object.
+        expect(rejection).toBeInstanceOf(HttpException);
+        expect((rejection as HttpException).getStatus()).toBe(400);
+        expect((rejection as HttpException).getResponse()).toBe('Bad Request');
+      });
+
+      it('lets nothing of the provider error reach the caller either', async () => {
+        const rejection = await rejectionOf('price_secret');
+
+        // Neither rethrown nor attached as a `cause`. A cause travels with the
+        // exception, so anything that serializes it - a future filter, a
+        // monitoring hook - would put back exactly what the log line avoids.
+        expect(rejection).not.toBe(failure);
+        expect((rejection as HttpException).cause).toBeUndefined();
+
+        for (const disclosure of disclosures) {
+          expect(inspect(rejection)).not.toContain(disclosure);
+        }
+      });
+    });
+
+    /**
+     * The same treatment for a synchronous throw.
+     *
+     * Kept deliberately, and deliberately second: the real collaborator is
+     * `async` and cannot fail this way, so this case proves nothing about the
+     * production path and must never be mistaken for the one above. What it does
+     * guard is the placement of the call - moved out of the `try`, a failure
+     * raised while the arguments are assembled would go unsanitized.
+     */
+    describe('when the call fails before it returns a promise at all', () => {
+      beforeEach(() => {
+        createStripeCheckoutSession.mockImplementation(() => {
+          throw failure;
+        });
+      });
+
+      it('sanitizes it exactly the same way', async () => {
+        const rejection = await rejectionOf('price_secret');
+
+        expect(loggerError).toHaveBeenCalledWith(
+          'GF-STRIPE-CHECKOUT-SESSION-FAILED',
+          'SubscriptionController'
+        );
+        expect(rejection).toBeInstanceOf(HttpException);
+        expect((rejection as HttpException).getStatus()).toBe(400);
+
+        for (const disclosure of disclosures) {
+          expect(emittedErrors()).not.toContain(disclosure);
+        }
+      });
     });
 
     it('returns the session the service created when nothing fails', async () => {

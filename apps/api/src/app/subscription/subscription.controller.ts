@@ -150,11 +150,20 @@ export class SubscriptionController {
 
   @Post('stripe/checkout-session')
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
-  public createStripeCheckoutSession(
+  public async createStripeCheckoutSession(
     @Body() { couponId, priceId }: { couponId?: string; priceId: string }
   ): Promise<CreateStripeCheckoutSessionResponse> {
     try {
-      return this.subscriptionService.createStripeCheckoutSession({
+      // Awaited, not returned. The collaborator is asynchronous and reaches the
+      // payment provider only after awaiting a property lookup, so it cannot fail
+      // synchronously: it hands back a promise and rejects it later. Returning
+      // that promise would settle it after this frame is gone, which leaves the
+      // `catch` below unreachable on the one path that actually occurs - and an
+      // uncaught rejection is answered by Nest's default handler, which logs the
+      // provider's error object verbatim and reports a 500 instead of the bad
+      // request this endpoint means. The `await` is what keeps the failure inside
+      // this method.
+      return await this.subscriptionService.createStripeCheckoutSession({
         couponId,
         priceId,
         user: this.request.user
@@ -171,6 +180,10 @@ export class SubscriptionController {
         'SubscriptionController'
       );
 
+      // Raised rather than rethrown, and deliberately without a `cause`: an
+      // `HttpException` is an intrinsic exception, so Nest maps it to the status
+      // below without logging it, whereas attaching the provider's error would
+      // put everything the log line above avoids back into the same log.
       throw new HttpException(
         getReasonPhrase(StatusCodes.BAD_REQUEST),
         StatusCodes.BAD_REQUEST

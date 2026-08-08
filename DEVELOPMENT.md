@@ -129,11 +129,22 @@ nor trusted, and anyone with it can bind or intercept the local origin your brow
 has been told to trust. If you ever find one committed, treat it as compromised and
 generate a new pair rather than reusing it.
 
+The certificate carries a `subjectAltName` for `localhost` and `127.0.0.1`. That
+extension is what makes it valid for the origin the dev server is reached on:
+browsers match the host against `subjectAltName` and stopped falling back to the
+common name years ago, so a certificate that names the host only in its subject
+is rejected as belonging to somebody else. Both forms are listed because either
+one may be typed. Being self-signed, the certificate is still not trusted by
+anything, so expect the browser to warn about the issuer and to let you continue
+past it - that warning is about who vouched for the certificate, not about which
+host it is for.
+
 The script writes the key mode 0600 so it is readable only by you. It is equivalent
 to running:
 
 ```
 openssl req -x509 -newkey rsa:2048 -nodes -keyout apps/client/localhost.pem -out apps/client/localhost.cert -days 365 \
   -subj "/C=CH/ST=State/L=City/O=Organization/OU=Unit/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
   && chmod 600 apps/client/localhost.pem
 ```
