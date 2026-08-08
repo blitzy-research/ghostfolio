@@ -257,13 +257,19 @@
       [class.is-catalog-open]="isCatalogOpen"
     >
       <!--
-        Deliberately no `color="primary"`. That attribute adds a `mat-primary`
-        class that a global stylesheet keys an `!important` foreground colour off,
-        forcing the glyph to plain white over the brand teal container and putting
-        the pair below the contrast a control requires - which no token work on
-        this button can outrank. Without it the foreground token resolves normally.
-        The teal container is unaffected, because it comes from the theme's own fab
-        override keyed on the theme class rather than on the palette class.
+        Deliberately no `color="primary"`, and it buys nothing here. The container
+        does not depend on it - the theme sets `fab-container-color` to the brand
+        teal keyed on the theme class rather than on the palette class, so this
+        button renders the same teal either way - while the glyph is already carried
+        by this component's own `--mat-fab-foreground-color` override, which is what
+        corrects the mismatch the theme leaves between that teal container and
+        Material's tonal foreground.
+        What the attribute WOULD do is swap the `mat-accent` class Material gives
+        every fab by default for `mat-primary`, which a global `!important`
+        foreground rule keys off - taking the glyph colour away from the token
+        override two rules below and handing it to a stylesheet that knows nothing
+        about this container. It resolves to the same near-black today, so the only
+        effect available is to make the pairing depend on a second file.
       -->
       <!--
         Referenced so it can be the last resort for focus after a module is removed

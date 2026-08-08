@@ -85,11 +85,97 @@
         font-size: var(--mat-sys-title-medium-size, 1rem);
       }
     }
+
+    // The module body is the scrollport, and the host gives it a tab stop so an
+    // overflowing module can be scrolled from the keyboard. A focusable element
+    // needs a visible focus indicator, and the ring is declared here rather than
+    // in that component's stylesheet for one measured reason: that stylesheet
+    // compiles to within a few hundred bytes of the 6 kB `anyComponentStyle`
+    // warning budget, while this partial is global and carries no budget at all.
+    // The class is the library's own `ignoreContentClass`, so this is where its
+    // chrome belongs in any case.
+    //
+    // The ring matches the one the host paints on its own controls, so a reader
+    // meets one indicator throughout a module. The offset is NEGATIVE, unlike
+    // those controls: the scrollport is flush with the card's inner edge and the
+    // library gives `gridster-item` `overflow: hidden`, so an outward ring would
+    // be clipped on all four sides and paint nothing.
+    .gridster-item-content:focus-visible {
+      outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+      outline-offset: -2px;
+    }
   }
 
   gridster-preview {
     background: var(--mat-sys-primary-container, rgba(54, 207, 204, 0.16));
     border-radius: var(--mat-sys-corner-medium, 4px);
+  }
+
+  // The two display-preference queries, together and emitted once.
+  //
+  // Both sit behind `not $darkTheme` rather than being written unguarded, and for
+  // the same reason: this partial is included twice - once at the top level and
+  // once inside the dark-theme block - while a display preference has no palette,
+  // so an unguarded copy would put two identical rule sets in the one stylesheet.
+  // The light invocation's selectors are `.gf-gridster …` with no theme class of
+  // their own, so they match in both themes and one copy is genuinely enough.
+  //
+  // These are the only media queries in the dashboard and neither reaches into the
+  // excluded responsive behaviour: each queries a user preference rather than a
+  // viewport, so the canvas still has no breakpoint and `mobileBreakpoint: 0`
+  // still keeps the library's mobile path permanently unreachable.
+  @if not $darkTheme {
+    // Motion preference, honoured on the library's behalf.
+    //
+    // The grid library animates two things of its own, both with hardcoded easing
+    // it gives no option for: `gridster-item { transition: .3s }` slides and grows
+    // every module whenever the arrangement changes, and the grid guides carry
+    // `transition: transform .3s`. On a canvas that is the whole application, one
+    // add or one drop sets several modules moving at once, which is exactly the
+    // large-scale motion a viewer who has asked for less of it is asking to avoid.
+    // The dashboard authors no animation of its own, so this block is the entirety
+    // of the preference as it applies to the grid.
+    //
+    // What it deliberately does NOT touch, so a later reader does not "complete"
+    // it and break something: the library zeroes the easing itself while an item
+    // is moving or resizing, which is what makes a drag track the pointer
+    // frame-synchronously, so those two states need nothing here and must keep
+    // their `0s`. And the scroll the library performs when a module is added is a
+    // `scrollIntoView({ behavior: 'smooth' })` call in its own code - a script
+    // option that takes precedence over CSS, so no stylesheet can quiet it; the
+    // browser's own reduced-motion handling of programmatic smooth scrolling is
+    // what covers that one.
+    @media (prefers-reduced-motion: reduce) {
+      gridster {
+        .gridster-column,
+        .gridster-row {
+          transition: none;
+        }
+      }
+
+      gridster-item {
+        transition: none;
+      }
+    }
+
+    // The drop indicator is the one piece of grid chrome carried ENTIRELY by a
+    // background fill, and a forced-colours mode repaints backgrounds to the
+    // system canvas - so where a viewer has one active, the rectangle that says
+    // where a module is about to land disappears against the canvas it sits on and
+    // a drag becomes a guess. Everything else survives that mode unaided, because
+    // it is carried by a border or by a glyph and a forced palette keeps both: the
+    // module card's outline, the resize triangle's bottom border, the drag handle's
+    // icon, the focus ring on the scrollport.
+    //
+    // A border is what restores it, declared only inside the query so the normal
+    // appearance is byte-for-byte unchanged. The colour is stated the way the rest
+    // of this file states colours, and a forced palette substitutes its own over
+    // the top - which is the point.
+    @media (forced-colors: active) {
+      gridster-preview {
+        border: 1px solid var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+      }
+    }
   }
 
   @if $darkTheme {
@@ -122,6 +208,13 @@
 
       .gf-dashboard-module-drag-handle {
         color: var(--mat-sys-on-surface, #ffffff);
+      }
+
+      // Restated for the dark fallback, which is what actually paints while the
+      // `--mat-sys` layer is unpopulated. Only the colour changes; the width and
+      // the inset offset are theme-invariant.
+      .gridster-item-content:focus-visible {
+        outline-color: var(--mat-sys-on-surface, #ffffff);
       }
     }
   }

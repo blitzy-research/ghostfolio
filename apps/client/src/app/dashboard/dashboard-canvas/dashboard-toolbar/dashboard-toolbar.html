@@ -23,7 +23,7 @@
     <button
       class="gf-dashboard-refresh"
       i18n-title
-      matButton
+      mat-button
       title="Refresh dashboard"
       (click)="onLogoClick()"
     >
@@ -47,9 +47,9 @@
             aria-label="Assistant"
             class="h-100 no-min-width px-2"
             i18n-aria-label
+            mat-button
             matBadge="&NoBreak;"
             matBadgeSize="small"
-            matButton
             [matBadgeHidden]="!hasFilters || !hasPermissionToChangeFilters"
             [matMenuTriggerFor]="assistantMenu"
             [matMenuTriggerRestoreFocus]="false"

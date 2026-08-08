@@ -17,9 +17,17 @@
   agent's own control chrome - an opaque grey face, a 2 px outset border and
   square corners - straight over the card's tokenised surface, which both looks
   broken and violates the design-system rule that a library component is used
-  wherever one exists. `matButton` resolves its own surface, shape, typography
+  wherever one exists. `mat-button` resolves its own surface, shape, typography
   and state layer from Material's tokens, so the card supplies the container and
   the button supplies the control.
+
+  The `mat-button` spelling rather than the newer `matButton` one, because it is
+  what the rest of this workspace writes. Material 21 accepts both and resolves
+  them to the same thing - an attribute-less `matButton` takes the `text`
+  appearance from its own input default, and `mat-button` is inferred to that same
+  appearance, so both land on `.mat-mdc-button` with identical rendering - which
+  leaves the choice purely one of consistency, and one spelling is what keeps the
+  buttons of this application greppable as a set.
 -->
 <mat-card
   appearance="outlined"
@@ -50,7 +58,7 @@
     #row
     class="align-items-center d-flex justify-content-start px-3 py-2 text-left w-100"
     draggable="true"
-    matButton
+    mat-button
     type="button"
     [attr.aria-disabled]="isUnavailable ? 'true' : null"
     [attr.aria-label]="ariaLabel"

@@ -2,6 +2,13 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 describe('the global theme contrast overrides', () => {
+  const adminSettingsStyles = readFileSync(
+    join(
+      __dirname,
+      'app/components/admin-settings/admin-settings.component.scss'
+    ),
+    'utf8'
+  );
   const membershipCardStyles = readFileSync(
     join(
       __dirname,
@@ -18,11 +25,14 @@ describe('the global theme contrast overrides', () => {
     // through the Material system token with the palette value as its fallback,
     // which is the form the design-system rule prescribes for anything new, while
     // the dark-theme rule predates it and states the palette value directly.
+    //
+    // Two occurrences of the token form, not one: the palette-keyed rule and its
+    // sibling for the controls no palette class names, asserted individually below.
     expect(
       styles.match(
         /color: var\(--mat-sys-on-primary, rgba\(var\(--dark-primary-text\)\)\) !important;/g
       )
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(
       styles.match(/color: rgba\(var\(--dark-primary-text\)\) !important;/g)
     ).toHaveLength(1);
@@ -32,6 +42,43 @@ describe('the global theme contrast overrides', () => {
     expect(styles).not.toContain(
       'color: rgba(var(--light-primary-text)) !important;'
     );
+  });
+
+  it('corrects the palette-less filled controls on the same container', () => {
+    // The container is chosen by the theme class rather than by the palette class,
+    // so `.mat-primary` is not the whole population: `.mat-unthemed` and any
+    // unrecognised `color` value - Material emits `mat-<value>` verbatim, so
+    // `color="secondary"` yields `.mat-secondary` - render the identical brand
+    // teal. Left out, they kept the same 1.92:1 white label the rule above
+    // removes, which is what the registration dialog showed by placing an
+    // uncorrected copy control beside a corrected confirm control.
+    //
+    // Asserted as a count rather than with `toContain`, so a failure reports the
+    // selector rather than printing the whole stylesheet.
+    expect(
+      styles.match(
+        /&:not\(\.mat-accent\):not\(\.mat-primary\):not\(\.mat-warn\):not\(\.special\) \{/g
+      )
+    ).toHaveLength(1);
+
+    // Both arms live under the one selector list, so the two can never disagree
+    // about which controls they cover.
+    expect(
+      styles.match(/\.mat-mdc-fab,\n\.mat-mdc-unelevated-button \{/g)
+    ).toHaveLength(1);
+  });
+
+  it('leaves a control that paints its own container alone', () => {
+    // `.special` is where the premise stops holding rather than an exception to
+    // it: it supplies a pink-to-violet gradient and a white label of its own, so
+    // there is no teal to correct and an `!important` foreground would reach past
+    // a component that has already answered the question. Asserting the gradient
+    // and the white label at their source is what keeps the exclusion honest: drop
+    // either and the exclusion becomes the oversight it currently is not.
+    expect(adminSettingsStyles).toMatch(
+      /&\.special\s*\{\s*background: linear-gradient\([^;]*\);\s*color: #fff;/
+    );
+    expect(styles.match(/:not\(\.special\)/g)).toHaveLength(1);
   });
 
   it('makes muted text theme-aware only inside the dark theme', () => {

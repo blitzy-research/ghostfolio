@@ -119,11 +119,11 @@ export class GfSignInPromptComponent implements OnInit {
    */
   public async openLoginDialog() {
     // Resolved on demand rather than imported at the top of the file. This dialog
-    // carries the whole alternative-credential surface - including the WebAuthn
-    // client - and it is opened only when a visitor asks to sign in, so a static
-    // reference would put all of it in the initial bundle for every visitor. The
-    // application has a single route, so there is no route boundary to do this
-    // for us.
+    // carries the whole alternative-credential surface - the security-token field,
+    // the Google anchor and the OpenID Connect anchor - and it is opened only when
+    // a visitor asks to sign in, so a static reference would put all of it in the
+    // initial bundle for every visitor. The application has a single route, so
+    // there is no route boundary to do this for us.
     //
     // The load goes through the shared loader, which deduplicates concurrent
     // requests, reports a rejected chunk through the sanitized channel and tells the

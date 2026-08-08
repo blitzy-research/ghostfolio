@@ -142,8 +142,32 @@ const DOT_SEGMENTS = new Set(['.', '..', '.%2e', '%2e', '%2e.', '%2e%2e']);
  * Legitimate identifiers are unaffected, because the values used here are
  * uuids, enum members, ISO dates and asset symbols, none of which contains a
  * reserved character. Encoding additionally repairs a latent defect for the
- * ones that can: a manually maintained asset may legitimately carry `/` or `#`
- * in its symbol, which until now produced a malformed request path.
+ * ones that can: `CreateAssetProfileDto.symbol` is validated only as a string,
+ * so a manually maintained asset may legitimately carry `/` or `#` in its
+ * symbol, which until now produced a malformed request path.
+ *
+ * That repair was verified on the wire rather than reasoned about, because a
+ * `/` in a value becomes `%2F` and an encoded slash is handled inconsistently
+ * across HTTP intermediaries. Against a symbol of `BLITZY/F27`, every endpoint
+ * carrying a symbol in its path — `/api/v1/asset/:dataSource/:symbol`,
+ * `/api/v1/benchmarks/:dataSource/:symbol[/:startDateString]`,
+ * `/api/v1/watchlist/:dataSource/:symbol` and
+ * `/api/v1/portfolio/holding/:dataSource/:symbol[/tags]` — matched its route
+ * and received the value decoded exactly once, whereas the unencoded form this
+ * tag replaced missed the route entirely and answered `404` on all four.
+ * Requesting the doubly encoded `BLITZY%252FF27` returned a genuinely different
+ * asset whose symbol is the literal text `BLITZY%2FF27`, which is what confirms
+ * one level of decoding rather than none or two.
+ *
+ * The one place this can still break is outside the application: a reverse
+ * proxy that normalizes the request line before forwarding it collapses `%2F`
+ * back into a separator and the route stops matching. With nginx that
+ * distinction is exactly whether `proxy_pass` carries a URI part —
+ * `proxy_pass http://host:port;` forwards the request line unparsed and works,
+ * whereas `proxy_pass http://host:port/;` substitutes the normalized URI and
+ * does not. Operators who need a URI part should re-attach `$request_uri`
+ * verbatim. This is a deployment condition rather than something this workspace
+ * can encode, and it applies to every percent-encoded segment the API accepts.
  *
  * Exported as a function rather than held on the service because it depends on
  * no instance state, which lets `AdminService` reach the very same encoder

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a coalescing of the in-flight `GET` requests for the portfolio details, the holdings and the portfolio performance, so that overlapping readers of the same url share one response
 - Added a module registry as the single mechanism to register the modules of the dashboard canvas
 - Added a searchable module catalog which supports adding a module by click or by drag and drop, opening automatically when no layout has been saved yet
 - Added a single-canvas modular dashboard at the application root, rendering the screen-level features as 21 registered grid modules which can be individually positioned and resized
@@ -17,33 +18,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the ability to remove a module from the dashboard canvas via the module chrome
 - Added the endpoint `GET /api/v1/user/layout` to load the dashboard layout of the current user
 - Added the endpoint `PATCH /api/v1/user/layout` to save the dashboard layout of the current user
+- Added the keyboard scrolling of the body of a module of the dashboard canvas, so that the content of a module which is taller than its cell is reachable without a pointer
+- Added the script `certificates:generate` to create a per-workstation certificate and key for the development server
+- Added the script `typecheck:tests` to type-check the test projects, and a corresponding step to the continuous integration workflow
+- Added the `stripeCheckoutSessionId` column to the `Subscription` database model to record the payment session a subscription was provisioned from
+- Added the support of the reduced motion and the forced colors preferences to the chrome of the dashboard canvas
 - Added the `UserDashboardLayout` database model to persist the dashboard layout per user
 
 ### Changed
 
+- Changed the label color of the filled and floating action buttons from white to the contrast color of the palette, for the primary palette and for the controls which name no palette at all, since the theme fills all of them with a light teal in both themes and the white label missed the minimum contrast ratio for text. The accent and the warn palettes keep their light label, since their container is not the teal one
+- Changed the muted text of the dark theme and of the membership card to the secondary foreground color of the respective palette, since the theme-invariant utility class missed the minimum contrast ratio on the dark surfaces
+- Changed the scripts which load an environment file to use the `--env-file` option of _Node.js_ instead of the undeclared `dotenv-cli` package
+- Changed the viewport of the client to permit zooming, and added a referrer policy to the document and to the development server
+- Changed the wrapper of the floating action buttons to stay in the normal flow, since multiple modules of the dashboard canvas can contribute one at the same time, and introduced a dedicated class for the trigger of the module catalog
+- Encoded the interpolated values of the endpoint urls of the data service, so that a symbol containing a reserved character resolves to the intended endpoint. A symbol containing a slash now travels as `%2F`, which requires a reverse proxy in front of the server to forward the request line unparsed
 - Reduced the routes of the client to a single root route rendering the dashboard canvas, keeping `RouterModule.forRoot`, the service worker navigation handling, `PageTitleStrategy` and `ModulePreloadService` in place
+- Reduced the sitemap to the localized roots, since the public pages it listed have been removed
 - Replaced the header navigation, the footer and the tab navigation of the pages with the chrome of the dashboard canvas, consisting of a non-navigational toolbar and a card per module
 - Upgraded `prettier` from version `3.8.2` to `3.8.3`
 
 ### Removed
 
 - Removed the deep links to the individual screens, since every unmatched url now resolves to the dashboard canvas
-- Removed the public pages: about, blog, features, Frequently Asked Questions (FAQ), landing, _Open Startup_, pricing and resources
+- Removed the public pages: about, blog, demo, features, Frequently Asked Questions (FAQ), landing, markets, _Open Startup_, pricing and resources, where the markets page is superseded by the markets module of the dashboard canvas
 - Removed _Zen Mode_ as a separate navigation mode, while keeping its setting persisted and readable
 
 ### Security
 
 - Bounded the health probes by restricting the deep data provider and data enhancer probes to administrators and by making the _Redis_ probe single-flight, so that a repeated outage can no longer accumulate pending work
 - Hardened the provisioning of a subscription via _Stripe_ to verify the status, the payment status, the mode, the server-side price and the amount of a checkout session, and to reject a session which has already been redeemed
-- Partitioned the coalescing of in-flight `GET` requests by authorization context, so that a response can no longer be shared across a change of user, impersonation or session
+- Partitioned the newly introduced coalescing of in-flight `GET` requests by authorization context, so that a response can never be shared across a change of user, impersonation or session
+- Refused a second subscription for the same _Stripe_ checkout session at the database level, by recording the session on the subscription and rejecting a duplicate
 - Removed the committed development certificate and private key, rotated the key, ignored local key material and added the `certificates:generate` script to create a per-workstation pair
 - Replaced `Math.random()` with a cryptographically secure random number generator for the handles of the _OpenID Connect_ state store
-- Replaced raw error objects and device identifiers in the logs with a fixed vocabulary of event identifiers and fault categories, and generalized the error returned by the _WebAuthn_ endpoints
+- Replaced raw error objects and device identifiers in the logs with a fixed vocabulary of event identifiers and fault categories, and generalized the error returned by the _WebAuthn_ endpoints, so that a probe can no longer learn which part of a crafted response was rejected
 - Required a single-use, browser-bound intent marker before a token handed over in a url is adopted, so that an unsolicited sign-in link is refused
 - Restricted the public portfolio endpoint to withhold the exact monetary figures of the latest activities unless the share link grants unrestricted read access
 
 ### Todo
 
+- **Breaking Change**: Signing in with a security key is no longer reachable. The dedicated screen it was served from has been removed along with the other screens, and the single root route offers the security token, _Google_ and _OpenID Connect_ methods only. Enrolling and removing a security key remain available in the account settings, and both endpoints remain in place, so no credential is invalidated. Please use one of the other sign in methods until an entry point is offered again.
+- **Breaking Change**: The deep health probes `GET /api/v1/health/data-enhancer/<name>` and `GET /api/v1/health/data-provider/<dataSource>` now require an administrator. Please authenticate any monitoring which scrapes them, or point it at `GET /api/v1/health`, which stays public.
+- **Breaking Change**: The exact monetary figures of the latest activities (fee, quantity, unit price, value and value in base currency) are withheld from a public portfolio whose share link does not grant unrestricted read access. Please grant unrestricted access on the links which are expected to expose them.
 - **Breaking Change**: The share link of a public portfolio changed from `/<language>/p/<accessId>` to `/<language>/?accessId=<accessId>`. Please share the updated links, since previously issued links no longer resolve.
 
 ## 3.0.0 - 2026-04-23

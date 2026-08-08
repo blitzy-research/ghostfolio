@@ -9,26 +9,6 @@ export class SitemapService {
     private readonly configurationService: ConfigurationService
   ) {}
 
-  // The sitemap template interpolates this value unconditionally; return an
-  // empty string so a missing section never renders as "undefined".
-  public getBlogPosts({ currentDate }: { currentDate: string }): string {
-    void currentDate;
-
-    return '';
-  }
-
-  // The sitemap template interpolates this value unconditionally; return an
-  // empty string so a missing section never renders as "undefined".
-  public getPersonalFinanceTools({
-    currentDate
-  }: {
-    currentDate: string;
-  }): string {
-    void currentDate;
-
-    return '';
-  }
-
   public getPublicRoutes({ currentDate }: { currentDate: string }): string {
     const rootUrl = this.configurationService.get('ROOT_URL');
 

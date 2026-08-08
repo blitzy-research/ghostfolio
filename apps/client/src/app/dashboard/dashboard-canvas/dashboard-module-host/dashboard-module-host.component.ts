@@ -1,3 +1,5 @@
+import { reportSanitizedError } from '@ghostfolio/common/helper';
+
 import { NgComponentOutlet } from '@angular/common';
 import {
   AfterViewInit,
@@ -411,10 +413,33 @@ export class GfDashboardModuleHostComponent
       } else {
         this.hasLoadError = true;
       }
-    } catch {
+    } catch (error: unknown) {
       if (this.requestedDefinition !== definition) {
         return;
       }
+
+      // Reported before the state is set, and through the sanitized channel that
+      // the rest of the application uses for a failed chunk. A rejected
+      // `loadComponent()` is a network failure against a real build artefact - a
+      // chunk that a deployment is missing, or that a stale service worker is
+      // still asking for - and the card that replaces it says only "Oops!", so
+      // without this the only signal an operator has is a viewer's report that a
+      // module went blank.
+      //
+      // Sanitized rather than raw for the reason the whole vocabulary exists: the
+      // caught value is whatever the module loader rejected with, which for a
+      // chunk request carries the request url and a stack naming the deployment's
+      // own paths, and the console is readable by every script on the page and
+      // captured verbatim by session-replay tooling. A fixed event identifier and
+      // the numeric status are what an operator can act on, and they are all that
+      // is emitted.
+      //
+      // The identifier deliberately carries no module type. It would name which
+      // arrangement the viewer had built, and one identifier per module would make
+      // the class of failure - "a chunk is unreachable" - unsearchable as a single
+      // thing. The superseded check above stays ahead of the report, because a
+      // definition replaced mid-flight is a discarded request rather than a fault.
+      reportSanitizedError('GF-DASHBOARD-MODULE-HOST-LOAD-FAILED', error);
 
       this.hasLoadError = true;
     }

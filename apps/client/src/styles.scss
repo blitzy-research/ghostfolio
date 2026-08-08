@@ -487,6 +487,51 @@ ngx-skeleton-loader {
     // container and computes 9.27:1 on it.
     color: var(--mat-sys-on-primary, rgba(var(--dark-primary-text))) !important;
   }
+
+  // The same inversion, on the same container, for every filled control that is
+  // NOT on a palette this file already names.
+  //
+  // The container is not chosen by the palette class at all: the theme sets
+  // `filled-container-color` and `fab-container-color` to the brand teal keyed on
+  // the theme class, so `.mat-primary`, `.mat-unthemed` and any unrecognised
+  // `color` value - Material emits `color ? 'mat-' + color : ''` plus
+  // `.mat-unthemed` when it is absent, so `color="secondary"` yields a bare
+  // `.mat-secondary` the theme has no styles for - all render the identical
+  // #36cfcc fill. Only `.mat-accent` (#3686cf) and `.mat-warn` (#f44336) differ,
+  // and both are dark enough to keep their light label, so they are the two the
+  // selector excludes and the rest is exhaustive by construction.
+  //
+  // Left on Material's own computed foreground, those controls kept the same
+  // 1.92:1 white-on-teal label the rule above was written to remove - the light
+  // theme's `--mat-button-filled-label-text-color` is `#ffffff`, computed for the
+  // container Material would have drawn rather than the one the theme substituted.
+  // The registration dialog is where that became visible: its `color="secondary"`
+  // copy control and its `color="primary"` confirm control are the identical teal
+  // pill side by side, and only the second one had been corrected. Measured on the
+  // running application, the first went from 1.92:1 to 9.28:1 here while the second
+  // stayed at 9.28:1 exactly.
+  //
+  // Written for both control types even though only the filled button is affected
+  // today, because a fab reaches the same state by the same route and nothing but
+  // the current markup keeps it out: Material defaults a fab's `color` input to
+  // `accent`, so every fab in this workspace already carries a palette class this
+  // selector skips. A fab given an unrecognised `color` would land here, and the
+  // declaration is the one it would need.
+  //
+  // Deliberately a sibling of the rule above rather than a widening of it: the two
+  // selectors are mutually exclusive, so no control changes hands and the palettes
+  // already corrected keep their exact declaration, including in the dark theme
+  // where a higher-specificity counterpart restates it.
+  //
+  // `.special` is excluded because it is where the premise stops holding rather
+  // than an exception to it: that class paints its own pink-to-violet gradient over
+  // the theme's fill and pairs it with a white label, so there is no teal here to
+  // correct and an `!important` foreground would reach past a component that has
+  // already answered the question for itself. It is the only class on any filled or
+  // floating control in this workspace that supplies its own container.
+  &:not(.mat-accent):not(.mat-primary):not(.mat-warn):not(.special) {
+    color: var(--mat-sys-on-primary, rgba(var(--dark-primary-text))) !important;
+  }
 }
 
 .mat-mdc-form-field {

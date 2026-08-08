@@ -143,7 +143,22 @@
       inset regardless of what it renders - and is why neither branch below adds
       an inset of its own.
     -->
-    <div #moduleContent class="gridster-item-content p-3">
+    <!--
+      `tabindex="0"` because this element is the scrollport, and a scrollport that
+      cannot be focused cannot be scrolled from the keyboard. A cell is sized by
+      the arrangement rather than by its content, so a module that overflows is the
+      normal case here rather than the exception, and several modules overflow with
+      nothing focusable below the fold at all - a summary or an allocation chart is
+      static content. Without a tab stop the arrow keys have nowhere to act and the
+      hidden part of those modules is reachable only with a pointer.
+
+      It adds exactly one stop per module, immediately after that module's handle
+      and actions trigger, so the reading order stays handle -> actions -> content.
+      No `role` is added with it: the card above is already the labelled
+      `role="region"` for this content, and naming the scrollport as well would
+      announce the module's name twice on the way in.
+    -->
+    <div #moduleContent class="gridster-item-content p-3" tabindex="0">
       @if (resolvedComponent) {
         <ng-container [ngComponentOutlet]="resolvedComponent" />
       } @else if (hasLoadError) {

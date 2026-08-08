@@ -59,8 +59,54 @@ describe('GfDashboardModuleHostComponent', () => {
   const moduleName = 'Test Module';
 
   let component: GfDashboardModuleHostComponent;
+  let consoleErrorSpy: jest.SpyInstance;
   let fixture: ComponentFixture<GfDashboardModuleHostComponent>;
+  let sanitizedReports: string[];
   let unhandledRejectionListener: ((reason: unknown) => void) | undefined;
+
+  /**
+   * The prefix of every diagnostic this component emits.
+   *
+   * Asserted on rather than the whole identifier in the recorder below, so that
+   * the recorder keeps working if a second failure of this component ever needs
+   * its own event - while a raw error object, which is what this exists to
+   * prevent, still falls through to the real console where it is visible.
+   */
+  const REPORT_PREFIX = 'GF-DASHBOARD-MODULE-HOST-';
+
+  /**
+   * Everything a failed chunk request carries that must never reach a log.
+   *
+   * Each sits somewhere on the value a rejected dynamic `import()` produces: the
+   * chunk url is in the message the loader composes, the deployment's own origin
+   * is in that url, and the stack names the frames that asked for it.
+   * `console.error(error)` prints all of it; `reportSanitizedError` prints none of
+   * it. An assertion that only checks *that* something was logged cannot tell the
+   * two apart, which is why these markers exist.
+   */
+  const SENSITIVE_MARKERS = [
+    'chunk-9f3e2b6d.js',
+    'ghostfolio.test',
+    'Failed to fetch dynamically imported module',
+    'at GfDashboardModuleHostComponent'
+  ];
+
+  /**
+   * A rejection shaped like the one a real chunk request produces.
+   *
+   * Carries a numeric `status` because that is the one thing the reporting
+   * contract is allowed to pass through, and carries every marker above so a leak
+   * is detectable rather than merely improbable.
+   */
+  const createChunkFailure = () => {
+    const failure = new Error(
+      `Failed to fetch dynamically imported module: https://ghostfolio.test/chunk-9f3e2b6d.js`
+    );
+
+    failure.stack = `Error: ${failure.message}\n    at GfDashboardModuleHostComponent.resolveModule`;
+
+    return Object.assign(failure, { status: 404 });
+  };
 
   /**
    * Builds a definition that satisfies the shared contract in full.
@@ -216,6 +262,35 @@ describe('GfDashboardModuleHostComponent', () => {
   beforeEach(async () => {
     unhandledRejectionListener = undefined;
 
+    sanitizedReports = [];
+
+    // Recorded rather than merely silenced. The component's own diagnostic is
+    // swallowed so the suite output stays readable, and kept - in full - so both
+    // its presence and its content are assertable; anything that is not a single
+    // string beginning with the prefix is a raw error object and is forwarded to
+    // the real console, where it shows up as noise a reader will investigate.
+    //
+    // Captured before the spy replaces it, and annotated so the forwarder stays
+    // typed rather than merely named: `Function.prototype.bind` widens its result
+    // to `any`, which would make every forwarded report an unchecked call.
+    const reportError = console.error.bind(console) as (
+      ...args: unknown[]
+    ) => void;
+
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation((...args: unknown[]) => {
+        const [report] = args;
+
+        if (typeof report === 'string' && report.startsWith(REPORT_PREFIX)) {
+          sanitizedReports.push(report);
+
+          return;
+        }
+
+        reportError(...args);
+      });
+
     // No provider is registered, and that omission is the point rather than an
     // economy: see the construction test below.
     await TestBed.configureTestingModule({
@@ -227,6 +302,8 @@ describe('GfDashboardModuleHostComponent', () => {
   });
 
   afterEach(() => {
+    consoleErrorSpy.mockRestore();
+
     if (unhandledRejectionListener) {
       process.off('unhandledRejection', unhandledRejectionListener);
 
@@ -811,7 +888,7 @@ describe('GfDashboardModuleHostComponent', () => {
 
     fixture.componentRef.setInput(
       'definition',
-      createDefinition(() => Promise.reject(new Error('load failed')))
+      createDefinition(() => Promise.reject(createChunkFailure()))
     );
 
     await settle();
@@ -837,6 +914,105 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(query('ngx-skeleton-loader')).toBeNull();
 
     expectChromeToBeRendered();
+  });
+
+  describe('reporting a failed chunk request', () => {
+    it('should report the failure as a fixed event with the response status', async () => {
+      const unhandledReasons = collectUnhandledRejections();
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(() => Promise.reject(createChunkFailure()))
+      );
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      expect(unhandledReasons).toEqual([]);
+
+      // A broken chunk is a real deployment fault - a file a release did not ship,
+      // or one a stale service worker is still asking for - and the card that
+      // replaces it says only "Oops!", so without a report the only signal is a
+      // viewer noticing a module went blank.
+      expect(sanitizedReports).toEqual([
+        'GF-DASHBOARD-MODULE-HOST-LOAD-FAILED (status 404)'
+      ]);
+    });
+
+    it('should keep the chunk url, the origin and the stack out of the report', async () => {
+      const unhandledReasons = collectUnhandledRejections();
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(() => Promise.reject(createChunkFailure()))
+      );
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      expect(unhandledReasons).toEqual([]);
+
+      // The whole point of routing this through the sanitized channel rather than
+      // writing the caught value out: the console is readable by every script on
+      // the page and captured verbatim by session-replay tooling.
+      const emitted = sanitizedReports.join('\n');
+
+      for (const marker of SENSITIVE_MARKERS) {
+        expect(emitted).not.toContain(marker);
+      }
+    });
+
+    it('should not report a rejection that arrives for a superseded module', async () => {
+      const unhandledReasons = collectUnhandledRejections();
+
+      let rejectSuperseded: (failure: unknown) => void;
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(
+          () =>
+            new Promise<Type<unknown>>((_, reject) => {
+              rejectSuperseded = reject;
+            })
+        )
+      );
+
+      await settle();
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(() =>
+          Promise.resolve<Type<unknown>>(GfSecondTestModuleComponent)
+        )
+      );
+
+      await settle();
+
+      rejectSuperseded(createChunkFailure());
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      expect(unhandledReasons).toEqual([]);
+
+      // A definition replaced while its chunk was in flight is a DISCARDED request,
+      // not a fault: the module the viewer is now looking at loaded perfectly well.
+      // Reporting it would put a diagnostic in the log for every module swap that
+      // outran its own loader, which is exactly the noise that makes a real report
+      // easy to miss.
+      expect(sanitizedReports).toEqual([]);
+      expect(component.hasLoadError).toBe(false);
+      expect(query('.gf-second-test-module-body')).toBeTruthy();
+    });
   });
 
   it('should report a loader that throws before returning a promise', async () => {
@@ -919,6 +1095,22 @@ describe('GfDashboardModuleHostComponent', () => {
     await settle();
 
     expect(readMembers).toEqual([]);
+  });
+
+  it('should give the scrolling body a tab stop of its own', async () => {
+    await bindResolvingDefinition();
+
+    // A cell is sized by the arrangement rather than by its content, so a module
+    // that overflows is the normal case here. Several of them - a summary, an
+    // allocation chart - have nothing focusable below the fold at all, and a
+    // scrollport that cannot be focused cannot be scrolled from the keyboard, so
+    // the hidden part of those modules would be reachable only with a pointer.
+    expect(query('.gridster-item-content').getAttribute('tabindex')).toBe('0');
+
+    // And no role with it: the card is already the labelled `role="region"` for
+    // this content, so naming the scrollport as well would announce the module's
+    // name twice on the way in.
+    expect(query('.gridster-item-content').getAttribute('role')).toBeNull();
   });
 
   describe('scroll affordance', () => {
