@@ -1,5 +1,8 @@
 import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
-import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
+import {
+  PortfolioDetails,
+  UserDashboardLayout
+} from '@ghostfolio/common/interfaces';
 
 import { provideHttpClient } from '@angular/common/http';
 import {
@@ -484,7 +487,12 @@ describe('DataService in-flight read sharing', () => {
   });
 
   it('runs the response mapping exactly once for a shared read', () => {
-    const received: any[] = [];
+    // Typed from what the method actually emits rather than left as `any`. That is
+    // not decoration here: the assertions below reach into `summary` and `holdings`
+    // and call a method on a parsed date, and every one of those reads was an
+    // unchecked hop off an `any` - so a renamed or removed member would have gone
+    // unnoticed by the compiler while the test still described it.
+    const received: PortfolioDetails[] = [];
 
     dataService.fetchPortfolioDetails().subscribe((response) => {
       received.push(response);
@@ -510,13 +518,20 @@ describe('DataService in-flight read sharing', () => {
 
     // Parsed once, so both callers hold a real date rather than an invalid one.
     for (const response of received) {
-      expect(response.summary.dateOfFirstActivity instanceof Date).toBe(true);
-      expect(Number.isNaN(response.summary.dateOfFirstActivity.getTime())).toBe(
-        false
-      );
-      expect(response.holdings.AAPL.dateOfFirstActivity instanceof Date).toBe(
-        true
-      );
+      const { holdings, summary } = response;
+
+      // Narrowed with a throw rather than with a matcher, because a Jest matcher
+      // does not narrow a type and the wire contract marks `summary` optional. The
+      // reads below have to be reachable only when it is genuinely there, and a
+      // response that carried none should fail here saying so rather than further
+      // down as a property access on `undefined`.
+      if (!summary) {
+        throw new Error('The shared response carried no summary to check.');
+      }
+
+      expect(summary.dateOfFirstActivity instanceof Date).toBe(true);
+      expect(Number.isNaN(summary.dateOfFirstActivity.getTime())).toBe(false);
+      expect(holdings.AAPL.dateOfFirstActivity instanceof Date).toBe(true);
     }
   });
 

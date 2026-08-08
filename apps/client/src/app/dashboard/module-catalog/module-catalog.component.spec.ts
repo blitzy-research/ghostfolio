@@ -1715,6 +1715,88 @@ describe('GfModuleCatalogComponent', () => {
     });
   });
 
+  /**
+   * Taking keyboard focus when the canvas hands it over.
+   *
+   * The canvas mounts this panel in a Material drawer configured `mode="side"`, and
+   * such a drawer manages focus in neither direction: its `autoFocus` resolves to
+   * `'dialog'` for that mode, and both the take-focus and restore-focus paths return
+   * immediately for that value. So a viewer who opened the catalog from the keyboard
+   * was left on the trigger behind the panel, able to reach a row only by tabbing
+   * through the whole canvas. The canvas decides *when* focus should come here - it
+   * deliberately does not for the unprompted first-visit open - and this component
+   * decides *where* it lands.
+   *
+   * Every assertion reads `document.activeElement`, because `focus()` on a detached
+   * or hidden element is a silent no-op: a spy would report a call that moved
+   * nothing.
+   */
+  describe('taking focus from the canvas', () => {
+    it('should put focus on the search field, and say that it landed', () => {
+      advance();
+
+      const searchField = queryElement<HTMLInputElement>('input[matInput]');
+
+      expect(component.focusSearchField()).toBe(true);
+      expect(document.activeElement).toBe(searchField);
+    });
+
+    it('should land on the search field rather than on a row', () => {
+      advance();
+
+      component.focusSearchField();
+
+      // The field is the panel's own first tabbable and the one control that
+      // narrows every row, so a viewer who arrives there can type or Tab onward.
+      // Landing on a row instead would silently skip the field.
+      expect(focusedRowIndexes()).toEqual([]);
+    });
+
+    it('should fall back to the first row when the search field cannot take focus', () => {
+      advance();
+
+      // Detached rather than stubbed out. The view query still holds the element,
+      // which is exactly the state a real one is in mid-teardown, and `focus()` on
+      // it is the silent no-op the read-back exists to catch.
+      queryElement('input[matInput]').remove();
+
+      expect(component.focusSearchField()).toBe(true);
+      expect(focusedRowIndexes()).toEqual([0]);
+    });
+
+    it('should leave the arrow keys stepping from the row it fell back to', () => {
+      advance();
+
+      queryElement('input[matInput]').remove();
+
+      component.focusSearchField();
+
+      dispatchKeydown('ArrowDown', DOWN_ARROW);
+
+      // The second row, not the first. The fallback moves the key manager's active
+      // index along with focus, so the next press steps from where the viewer is;
+      // moving focus alone would leave the manager at "nothing active yet" and turn
+      // this press into a jump back to the top of the list.
+      expect(focusedRowIndexes()).toEqual([1]);
+    });
+
+    it('should report that focus did not land when there is nowhere to put it', () => {
+      setSearchTerm('nothing matches this');
+      advance();
+
+      // A term that narrows the list to nothing, and no field either: there is no
+      // longer anything in the panel that can hold focus.
+      expect(queryElements('gf-module-catalog-item')).toHaveLength(0);
+
+      queryElement('input[matInput]').remove();
+
+      // Reported rather than assumed, because the canvas acts on the answer: a
+      // false claim here would leave it believing it owes focus back to a trigger
+      // it never took focus from.
+      expect(component.focusSearchField()).toBe(false);
+    });
+  });
+
   describe('architectural invariants', () => {
     // The catalog's whole surface, pinned. Both inputs are things only the canvas
     // can tell it, and both are deliberately lists of TYPES rather than layout

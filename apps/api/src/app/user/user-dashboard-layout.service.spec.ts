@@ -267,6 +267,96 @@ describe('UserDashboardLayoutService', () => {
       expect(layout).not.toHaveProperty('surplus');
     });
 
+    it('carries over only the five members each item defines, so a surplus property on an ENTRY cannot reach the response either', async () => {
+      // The envelope test above is not the whole contract, and the difference is
+      // where the leak actually was: filtering the modules array hands back the very
+      // objects that came out of the JSONB column, so anything riding on an entry
+      // travelled through untouched even while the envelope was being rebuilt. The
+      // column is writable by hand and by any future build, so the members below are
+      // the two shapes that matter - transient grid bookkeeping the client is
+      // explicitly forbidden from sending, and a value that has no business leaving
+      // the database at all.
+      findUnique.mockResolvedValue({
+        layoutData: {
+          modules: [
+            {
+              cols: 4,
+              dragEnabled: true,
+              internalNote: 'do-not-return-me',
+              layerIndex: 2,
+              minItemCols: 2,
+              moduleType: 'holdings',
+              rows: 4,
+              x: 0,
+              y: 0
+            },
+            {
+              cols: 6,
+              moduleType: 'watchlist',
+              rows: 3,
+              x: 4,
+              y: 0,
+              y2: 99
+            }
+          ],
+          version: 1
+        },
+        userId
+      });
+
+      const layout = await userDashboardLayoutService.getLayout(userId);
+
+      // Stated as an exact equality rather than as a series of `not.toHaveProperty`
+      // checks, so a member nobody thought to name is caught as well.
+      expect(layout).toEqual({
+        modules: [
+          { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+          { cols: 6, moduleType: 'watchlist', rows: 3, x: 4, y: 0 }
+        ],
+        version: 1
+      });
+
+      for (const module of layout.modules) {
+        expect(Object.keys(module).sort()).toEqual([
+          'cols',
+          'moduleType',
+          'rows',
+          'x',
+          'y'
+        ]);
+      }
+
+      // A surplus member on an entry is not an unreadable entry - the entry is
+      // perfectly interpretable and is kept - so nothing is dropped and the
+      // partially-readable warning must stay silent.
+      expect(loggerWarn).not.toHaveBeenCalled();
+    });
+
+    it('hands back fresh entries rather than the stored objects, so a caller cannot reach into the row', async () => {
+      const storedModule = {
+        cols: 4,
+        moduleType: 'holdings',
+        rows: 4,
+        x: 0,
+        y: 0
+      };
+      const storedModules = [storedModule];
+
+      findUnique.mockResolvedValue({
+        layoutData: { modules: storedModules, version: 1 },
+        userId
+      });
+
+      const layout = await userDashboardLayoutService.getLayout(userId);
+
+      // Identity, not equality. Returning the stored object by reference is what let
+      // surplus members escape in the first place, and it is the property to pin:
+      // equality would still hold for a reference and would say nothing.
+      expect(layout.modules).not.toBe(storedModules);
+      expect(layout.modules[0]).not.toBe(storedModule);
+      expect(layout.modules[0]).toEqual(storedModule);
+    });
+
     it('drops a module entry it cannot interpret and keeps every entry it can', async () => {
       // The client iterates this array inside the success handler of its read, so
       // an entry that cannot be destructured throws in the one place a failure
@@ -323,6 +413,29 @@ describe('UserDashboardLayoutService', () => {
         layoutData: [],
         reason: 'INVALID_ENVELOPE'
       },
+      // The three JSON scalars that are FALSY. Named individually rather than
+      // folded into the string case above, because they are the ones a truthiness
+      // test silently swallows: `!layoutData` cannot tell them from an absent row,
+      // so each was reported as "this viewer has never saved a layout" - the single
+      // most damaging answer available, since the client reads it as a first visit,
+      // opens the module catalog and writes the first module added out as the whole
+      // arrangement, destroying the document that could not be read. Refusing them
+      // is what keeps the row intact for an operator to look at.
+      {
+        description: 'is the JSON literal false',
+        layoutData: false,
+        reason: 'INVALID_ENVELOPE'
+      },
+      {
+        description: 'is the JSON number zero',
+        layoutData: 0,
+        reason: 'INVALID_ENVELOPE'
+      },
+      {
+        description: 'is the empty JSON string',
+        layoutData: '',
+        reason: 'INVALID_ENVELOPE'
+      },
       {
         description: 'holds no modules array',
         layoutData: { modules: 'not-an-array', version: 1 },
@@ -344,6 +457,9 @@ describe('UserDashboardLayoutService', () => {
         // arrangement - destroying the very document that could not be read.
         findUnique.mockResolvedValue({ layoutData, userId });
 
+        // Rejecting is itself the assertion the falsy cases exist for: the answer
+        // must be an ERROR and specifically not the `null` that means "never saved",
+        // and `rejects` is what distinguishes the two.
         await expect(
           userDashboardLayoutService.getLayout(userId)
         ).rejects.toThrow(InternalServerErrorException);
@@ -602,6 +718,49 @@ describe('UserDashboardLayoutService', () => {
       });
 
       expect(upsert).toHaveBeenCalledTimes(2);
+      expect(calledDelegateMethods()).toEqual(['upsert']);
+    });
+
+    it('commits successive layouts in the order it was asked, leaving the row holding the last one', async () => {
+      // The server-order half of the write-ordering contract. This method carries no
+      // revision column and no stale-write guard, so it cannot itself tell an older
+      // submission from a newer one - the ordering is established one layer up, by
+      // the client's serialised write queue, which never has two requests
+      // outstanding. What this asserts is the other side of that division of
+      // responsibility: given submissions one at a time, each `await`ed before the
+      // next, the row ends up holding the LAST document submitted and no earlier one
+      // can overwrite it. A regression that made this method reorder, batch, retry or
+      // merge submissions would break here even though the client is unchanged.
+      const submitted: UserDashboardLayout[] = [4, 6, 8, 10].map((cols) => ({
+        modules: [{ cols, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+        version: 1
+      }));
+
+      // The row, modelled rather than mocked away, so "what the database is left
+      // holding" is an observation instead of an assumption.
+      let storedLayoutData: unknown = null;
+
+      upsert.mockImplementation(
+        ({ update }: { update: { layoutData: unknown } }) => {
+          storedLayoutData = update.layoutData;
+
+          return Promise.resolve({ layoutData: storedLayoutData, userId });
+        }
+      );
+
+      for (const userDashboardLayoutSubmission of submitted) {
+        await userDashboardLayoutService.updateLayout({
+          userDashboardLayout: userDashboardLayoutSubmission,
+          userId
+        });
+      }
+
+      const submittedColumns = (
+        upsert.mock.calls as [{ update: { layoutData: UserDashboardLayout } }][]
+      ).map(([{ update }]) => update.layoutData.modules[0].cols);
+
+      expect(submittedColumns).toEqual([4, 6, 8, 10]);
+      expect(storedLayoutData).toEqual(submitted[submitted.length - 1]);
       expect(calledDelegateMethods()).toEqual(['upsert']);
     });
 

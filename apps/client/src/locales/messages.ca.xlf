@@ -367,7 +367,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">156</context>
+          <context context-type="linenumber">167</context>
         </context-group>
       </trans-unit>
       <trans-unit id="962765493084218985" datatype="html">
@@ -383,7 +383,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">104</context>
+          <context context-type="linenumber">115</context>
         </context-group>
       </trans-unit>
       <trans-unit id="987902700013871247" datatype="html">
@@ -435,11 +435,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">100</context>
+          <context context-type="linenumber">115</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">314</context>
+          <context context-type="linenumber">327</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-platform/admin-platform.component.html</context>
@@ -463,11 +463,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">59</context>
+          <context context-type="linenumber">70</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">183</context>
+          <context context-type="linenumber">202</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.html</context>
@@ -491,7 +491,7 @@
         <target state="translated">Total</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">71</context>
+          <context context-type="linenumber">82</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3455535229515222580" datatype="html">
@@ -499,7 +499,7 @@
         <target state="new">Actions for this job</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">264</context>
+          <context context-type="linenumber">305</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4327471061205783634" datatype="html">
@@ -515,11 +515,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">203</context>
+          <context context-type="linenumber">216</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">321</context>
+          <context context-type="linenumber">334</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -527,11 +527,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">82</context>
+          <context context-type="linenumber">93</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">350</context>
+          <context context-type="linenumber">369</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6555318547274416232" datatype="html">
@@ -559,19 +559,19 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">192</context>
+          <context context-type="linenumber">203</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">228</context>
+          <context context-type="linenumber">239</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">326</context>
+          <context context-type="linenumber">345</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">368</context>
+          <context context-type="linenumber">387</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/holdings-table/holdings-table.component.html</context>
@@ -595,7 +595,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">330</context>
+          <context context-type="linenumber">355</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-platform/admin-platform.component.html</context>
@@ -607,11 +607,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">348</context>
+          <context context-type="linenumber">373</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">566</context>
+          <context context-type="linenumber">596</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7022070615528435141" datatype="html">
@@ -619,7 +619,7 @@
         <target state="translated">Suprimir</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">356</context>
+          <context context-type="linenumber">381</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
@@ -647,11 +647,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">359</context>
+          <context context-type="linenumber">384</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">597</context>
+          <context context-type="linenumber">627</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.html</context>
@@ -687,7 +687,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">215</context>
+          <context context-type="linenumber">234</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8656923173697866690" datatype="html">
@@ -723,11 +723,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">244</context>
+          <context context-type="linenumber">285</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">266</context>
+          <context context-type="linenumber">291</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-platform/admin-platform.component.html</context>
@@ -751,11 +751,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">325</context>
+          <context context-type="linenumber">350</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">440</context>
+          <context context-type="linenumber">470</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.html</context>
@@ -771,7 +771,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">453</context>
+          <context context-type="linenumber">463</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
+          <context context-type="linenumber">466</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1107354728956440783" datatype="html">
@@ -787,11 +791,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">123</context>
+          <context context-type="linenumber">138</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">182</context>
+          <context context-type="linenumber">195</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
@@ -811,7 +815,7 @@
         <target state="translated">Intents</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">160</context>
+          <context context-type="linenumber">176</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4495016867471159301" datatype="html">
@@ -827,7 +831,7 @@
         <target state="translated">Creat</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">175</context>
+          <context context-type="linenumber">191</context>
         </context-group>
       </trans-unit>
       <trans-unit id="340430316261570792" datatype="html">
@@ -835,7 +839,7 @@
         <target state="translated">Finalitzat</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">184</context>
+          <context context-type="linenumber">200</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5611592591303869712" datatype="html">
@@ -843,7 +847,7 @@
         <target state="translated">Estat</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">193</context>
+          <context context-type="linenumber">209</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
@@ -863,7 +867,7 @@
         <target state="translated">Aturar Processos</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">258</context>
+          <context context-type="linenumber">299</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2505231537574917205" datatype="html">
@@ -871,7 +875,7 @@
         <target state="translated">Veure les Dades</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">275</context>
+          <context context-type="linenumber">316</context>
         </context-group>
       </trans-unit>
       <trans-unit id="267346373699222750" datatype="html">
@@ -879,7 +883,7 @@
         <target state="translated">Veure Stacktrace</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">283</context>
+          <context context-type="linenumber">324</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8867924107255201974" datatype="html">
@@ -887,11 +891,11 @@
         <target state="new">Browse modules</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">397</context>
+          <context context-type="linenumber">409</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">401</context>
+          <context context-type="linenumber">413</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/empty-canvas-state/empty-canvas-state.html</context>
@@ -903,7 +907,7 @@
         <target state="translated">Executar Procés</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">287</context>
+          <context context-type="linenumber">328</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8746056757774292739" datatype="html">
@@ -911,7 +915,7 @@
         <target state="translated">Suprimir Procés</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">291</context>
+          <context context-type="linenumber">332</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6293078117617468574" datatype="html">
@@ -935,7 +939,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">230</context>
+          <context context-type="linenumber">249</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/historical-market-data-editor/historical-market-data-editor-dialog/historical-market-data-editor-dialog.html</context>
@@ -955,7 +959,7 @@
         <target state="translated">Preu de Mercat</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">162</context>
+          <context context-type="linenumber">177</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -1015,7 +1019,7 @@
         <target state="new">Logo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">170</context>
+          <context context-type="linenumber">189</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/holdings-table/holdings-table.component.html</context>
@@ -1027,11 +1031,11 @@
         <target state="translated">Primera Activitat</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">177</context>
+          <context context-type="linenumber">192</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">221</context>
+          <context context-type="linenumber">234</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -1047,7 +1051,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> cannot be resized any further</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1107</context>
+          <context context-type="linenumber">1210</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6424689559488978075" datatype="html">
@@ -1055,7 +1059,15 @@
         <target state="translated">Nombre d’Activitats</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">192</context>
+          <context context-type="linenumber">207</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="9001216289639080925" datatype="html">
+        <source>Waiting</source>
+        <target state="new">Waiting</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">272</context>
         </context-group>
       </trans-unit>
       <trans-unit id="9004532723522060201" datatype="html">
@@ -1063,7 +1075,7 @@
         <target state="translated">Dades Històriques</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">201</context>
+          <context context-type="linenumber">216</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/historical-market-data-editor/historical-market-data-editor.component.html</context>
@@ -1075,7 +1087,7 @@
         <target state="translated">Nombre de Sectors</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">210</context>
+          <context context-type="linenumber">225</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3720539089813177542" datatype="html">
@@ -1083,7 +1095,7 @@
         <target state="translated">Nombre de Països</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">219</context>
+          <context context-type="linenumber">234</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5274897475180636586" datatype="html">
@@ -1091,7 +1103,7 @@
         <target state="translated">Recopilar Dades del Perfil</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">294</context>
+          <context context-type="linenumber">319</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
@@ -1103,7 +1115,7 @@
         <target state="translated">Eliminar Perfils</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">302</context>
+          <context context-type="linenumber">327</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6786981261778452561" datatype="html">
@@ -1175,7 +1187,7 @@
         <target state="translated">Sector</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">266</context>
+          <context context-type="linenumber">279</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -1187,7 +1199,7 @@
         <target state="translated">País</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">277</context>
+          <context context-type="linenumber">290</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-users/admin-users.html</context>
@@ -1207,11 +1219,11 @@
         <target state="translated">Sectors</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">283</context>
+          <context context-type="linenumber">296</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">402</context>
+          <context context-type="linenumber">415</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -1227,11 +1239,11 @@
         <target state="translated">Països</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">293</context>
+          <context context-type="linenumber">306</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">413</context>
+          <context context-type="linenumber">426</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -1243,7 +1255,7 @@
         <target state="translated">Mapatge de Símbols</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">391</context>
+          <context context-type="linenumber">404</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5918502349406094800" datatype="html">
@@ -1251,7 +1263,11 @@
         <target state="translated">Configuració del Proveïdor de Dades</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">476</context>
+          <context context-type="linenumber">486</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
+          <context context-type="linenumber">489</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6563391987554512024" datatype="html">
@@ -1259,7 +1275,7 @@
         <target state="translated">Prova</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">573</context>
+          <context context-type="linenumber">586</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8308045076391224954" datatype="html">
@@ -1267,11 +1283,11 @@
         <target state="translated">Url</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">424</context>
+          <context context-type="linenumber">437</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">555</context>
+          <context context-type="linenumber">568</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-platform/admin-platform.component.html</context>
@@ -1311,19 +1327,19 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">239</context>
+          <context context-type="linenumber">254</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">437</context>
+          <context context-type="linenumber">450</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">293</context>
+          <context context-type="linenumber">304</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">406</context>
+          <context context-type="linenumber">425</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7504169991280318133" datatype="html">
@@ -1331,7 +1347,7 @@
         <target state="translated">Afegeix el Perfil de l’Actiu</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">410</context>
+          <context context-type="linenumber">435</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -1362,12 +1378,20 @@
           <context context-type="linenumber">18</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="5982496808088686844" datatype="html">
+        <source>Medium</source>
+        <target state="new">Medium</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">154</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="5986246279350219787" datatype="html">
         <source>Actions for this account</source>
         <target state="new">Actions for this account</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">329</context>
+          <context context-type="linenumber">354</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2691619717359603230" datatype="html">
@@ -1379,7 +1403,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">135</context>
+          <context context-type="linenumber">148</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -1483,7 +1507,7 @@
         <target state="translated">Recollida de Dades</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">596</context>
+          <context context-type="linenumber">609</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-overview/admin-overview.html</context>
@@ -1651,7 +1675,7 @@
         <target state="new">There is no room left on the dashboard for <x id="moduleName" equiv-text="aDefinition.name"/>. Remove or resize a module to make space.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">2179</context>
+          <context context-type="linenumber">2289</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2817099043823177227" datatype="html">
@@ -1779,7 +1803,7 @@
         <target state="translated">Punt de Referència</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">383</context>
+          <context context-type="linenumber">396</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/benchmark-comparator/benchmark-comparator.component.ts</context>
@@ -1854,6 +1878,14 @@
           <context context-type="linenumber">187</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="206184411908191792" datatype="html">
+        <source>Import error</source>
+        <target state="new">Import error</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
+          <context context-type="linenumber">179</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="2067863610333602482" datatype="html">
         <source>Minimum Price</source>
         <target state="translated">Preu Mínim</target>
@@ -1883,7 +1915,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">252</context>
+          <context context-type="linenumber">271</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/holdings-table/holdings-table.component.html</context>
@@ -1938,6 +1970,10 @@
         <source>Active</source>
         <target state="translated">en Actiiu</target>
         <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">232</context>
+        </context-group>
+        <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/home-holdings/home-holdings.component.ts</context>
           <context context-type="linenumber">63</context>
         </context-group>
@@ -1971,7 +2007,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> cannot be moved any further</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1108</context>
+          <context context-type="linenumber">1211</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7798195225890418363" datatype="html">
@@ -2014,6 +2050,26 @@
           <context context-type="linenumber">403</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="683858407534897338" datatype="html">
+        <source>Open note</source>
+        <target state="new">Open note</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
+          <context context-type="linenumber">324</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
+          <context context-type="linenumber">329</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
+          <context context-type="linenumber">442</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
+          <context context-type="linenumber">447</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="6844699413925472826" datatype="html">
         <source>Greed</source>
         <target state="translated">Cobdícia</target>
@@ -2035,7 +2091,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> resized to <x id="columns" equiv-text="aItem.cols"/> columns by <x id="rows" equiv-text="aItem.rows"/> rows</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1114</context>
+          <context context-type="linenumber">1217</context>
         </context-group>
       </trans-unit>
       <trans-unit id="103717583691217276" datatype="html">
@@ -2554,6 +2610,14 @@
           <context context-type="linenumber">443</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="2539989101845088313" datatype="html">
+        <source>Delayed</source>
+        <target state="new">Delayed</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">250</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="2542314794804408461" datatype="html">
         <source>Add modules from the catalog to build your dashboard.</source>
         <target state="new">Add modules from the catalog to build your dashboard.</target>
@@ -2596,6 +2660,14 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-access/create-or-update-access-dialog/create-or-update-access-dialog.html</context>
           <context context-type="linenumber">30</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3697487465733698337" datatype="html">
+        <source>Has a note</source>
+        <target state="new">Has a note</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
+          <context context-type="linenumber">272</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8928816882866356838" datatype="html">
@@ -2659,7 +2731,7 @@
         <target state="new">Remove</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">104</context>
+          <context context-type="linenumber">143</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4819099731531004979" datatype="html">
@@ -2755,7 +2827,7 @@
         <target state="new">Include in</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">381</context>
+          <context context-type="linenumber">394</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5724720497710437101" datatype="html">
@@ -2779,7 +2851,7 @@
         <target state="new">Actions for this activity</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">536</context>
+          <context context-type="linenumber">566</context>
         </context-group>
       </trans-unit>
       <trans-unit id="385370743150031888" datatype="html">
@@ -2795,7 +2867,7 @@
         <target state="new">Module actions</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">91</context>
+          <context context-type="linenumber">135</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4307523302777915144" datatype="html">
@@ -2835,7 +2907,7 @@
         <target state="translated">Localització</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">514</context>
+          <context context-type="linenumber">527</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
@@ -2914,6 +2986,14 @@
           <context context-type="linenumber">237</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="802458941707537739" datatype="html">
+        <source>Low</source>
+        <target state="new">Low</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">145</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="803461344619482122" datatype="html">
         <source>Sign in with fingerprint</source>
         <target state="translated">Inicieu la sessió amb l’empremta digital</target>
@@ -2975,7 +3055,7 @@
         <target state="new">Actions for all jobs</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
-          <context context-type="linenumber">247</context>
+          <context context-type="linenumber">288</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4190182554887994764" datatype="html">
@@ -3055,7 +3135,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">149</context>
+          <context context-type="linenumber">188</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
@@ -3103,7 +3183,7 @@
         <target state="new">Selection</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">56</context>
+          <context context-type="linenumber">71</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7136888919962092730" datatype="html">
@@ -3231,7 +3311,15 @@
         <target state="new"><x id="moduleName" equiv-text="aDefinition.name"/> added to the dashboard at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">2201</context>
+          <context context-type="linenumber">2311</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="840264455199725883" datatype="html">
+        <source>Paused</source>
+        <target state="new">Paused</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">265</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8402696305361715603" datatype="html">
@@ -3347,7 +3435,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">116</context>
+          <context context-type="linenumber">126</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
+          <context context-type="linenumber">129</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -3472,7 +3564,7 @@
         <target state="new">Used by subscribers</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">228</context>
+          <context context-type="linenumber">243</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4739818603756173797" datatype="html">
@@ -3496,7 +3588,7 @@
         <target state="translated">Mercats</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">385</context>
+          <context context-type="linenumber">398</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/home-market/home-market.html</context>
@@ -3616,7 +3708,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">230</context>
+          <context context-type="linenumber">243</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-tag/admin-tag.component.html</context>
@@ -3648,7 +3740,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">138</context>
+          <context context-type="linenumber">149</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1111435290645444471" datatype="html">
@@ -3728,7 +3820,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">277</context>
+          <context context-type="linenumber">296</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1817902710689724227" datatype="html">
@@ -3744,7 +3836,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">474</context>
+          <context context-type="linenumber">504</context>
         </context-group>
       </trans-unit>
       <trans-unit id="72640258012696878" datatype="html">
@@ -3760,7 +3852,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">492</context>
+          <context context-type="linenumber">522</context>
         </context-group>
       </trans-unit>
       <trans-unit id="848497846891931418" datatype="html">
@@ -3808,7 +3900,7 @@
         <target state="new">Actions for this rule</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
-          <context context-type="linenumber">61</context>
+          <context context-type="linenumber">75</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4361487192183535591" datatype="html">
@@ -4060,7 +4152,7 @@
         <target state="new">Actions for all asset profiles</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">269</context>
+          <context context-type="linenumber">294</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7462039419171681274" datatype="html">
@@ -4223,6 +4315,14 @@
           <context context-type="linenumber">218</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="3566146404399602757" datatype="html">
+        <source>Delayed after an error</source>
+        <target state="new">Delayed after an error</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">248</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="3568940932272598597" datatype="html">
         <source>Bottom</source>
         <target state="translated">A baix</target>
@@ -4236,7 +4336,7 @@
         <target state="new"><x id="moduleName" equiv-text="aDefinition.name"/> did not fit where it was dropped and was added at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">2200</context>
+          <context context-type="linenumber">2310</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5242468862715363747" datatype="html">
@@ -4468,6 +4568,14 @@
           <context context-type="linenumber">48</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="3749705869330498749" datatype="html">
+        <source>Excluded</source>
+        <target state="new">Excluded</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
+          <context context-type="linenumber">51</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="5278627882107105833" datatype="html">
         <source>Access</source>
         <target state="translated">Access</target>
@@ -4513,7 +4621,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">510</context>
+          <context context-type="linenumber">540</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7023389552907218716" datatype="html">
@@ -4525,7 +4633,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">527</context>
+          <context context-type="linenumber">557</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7641420101493176397" datatype="html">
@@ -4541,7 +4649,7 @@
         <target state="new">Move or resize module</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">59</context>
+          <context context-type="linenumber">88</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4808589666930368915" datatype="html">
@@ -4549,7 +4657,7 @@
         <target state="translated">Esborrany</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">190</context>
+          <context context-type="linenumber">209</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5834780181397311898" datatype="html">
@@ -4557,7 +4665,7 @@
         <target state="translated">Clonar</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">572</context>
+          <context context-type="linenumber">602</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4631493229601603593" datatype="html">
@@ -4565,7 +4673,7 @@
         <target state="translated">Exporta l’esborrany com a ICS</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">586</context>
+          <context context-type="linenumber">616</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4239552960465242484" datatype="html">
@@ -4756,6 +4864,14 @@
           <context context-type="linenumber">129</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="1541369093323945540" datatype="html">
+        <source>Passed</source>
+        <target state="new">Passed</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
+          <context context-type="linenumber">35</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="5515771028435710194" datatype="html">
         <source>Loan</source>
         <target state="new">Loan</target>
@@ -4781,7 +4897,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">446</context>
+          <context context-type="linenumber">476</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6037201184636207208" datatype="html">
@@ -4865,7 +4981,7 @@
         <target state="translated">Assignació</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">264</context>
+          <context context-type="linenumber">275</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/holdings-table/holdings-table.component.html</context>
@@ -4905,7 +5021,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">383</context>
+          <context context-type="linenumber">402</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
@@ -4933,15 +5049,15 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">138</context>
+          <context context-type="linenumber">153</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">239</context>
+          <context context-type="linenumber">252</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">331</context>
+          <context context-type="linenumber">344</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -4965,15 +5081,15 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">153</context>
+          <context context-type="linenumber">168</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">248</context>
+          <context context-type="linenumber">261</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">347</context>
+          <context context-type="linenumber">360</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/holding-detail-dialog/holding-detail-dialog.html</context>
@@ -5021,7 +5137,7 @@
         <target state="new">Edit the asset profile identifier</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">188</context>
+          <context context-type="linenumber">201</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1921273115613254799" datatype="html">
@@ -5066,6 +5182,14 @@
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
           <context context-type="linenumber">21</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8063651736083474594" datatype="html">
+        <source>High</source>
+        <target state="new">High</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">163</context>
         </context-group>
       </trans-unit>
       <trans-unit id="80663871075536039" datatype="html">
@@ -5153,11 +5277,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">85</context>
+          <context context-type="linenumber">100</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">171</context>
+          <context context-type="linenumber">184</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -5201,7 +5325,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/accounts-table/accounts-table.component.html</context>
-          <context context-type="linenumber">342</context>
+          <context context-type="linenumber">367</context>
         </context-group>
       </trans-unit>
       <trans-unit id="953022389548488004" datatype="html">
@@ -5241,7 +5365,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">302</context>
+          <context context-type="linenumber">321</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
@@ -5253,7 +5377,7 @@
         <target state="new">Actions for this asset profile</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">308</context>
+          <context context-type="linenumber">333</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
@@ -5513,7 +5637,7 @@
         <target state="new">Drag to move module</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">63</context>
+          <context context-type="linenumber">82</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1488866007739765367" datatype="html">
@@ -5661,7 +5785,7 @@
         <target state="new">View Holding</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
-          <context context-type="linenumber">559</context>
+          <context context-type="linenumber">589</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3486679398271885916" datatype="html">
@@ -5678,6 +5802,14 @@
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
           <context context-type="linenumber">86</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="7256395947475975935" datatype="html">
+        <source>Failed</source>
+        <target state="new">Failed</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">258</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8803383987246271354" datatype="html">
@@ -5797,7 +5929,7 @@
         <target state="new">Deactivate</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
-          <context context-type="linenumber">92</context>
+          <context context-type="linenumber">106</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4759723562137600498" datatype="html">
@@ -5805,7 +5937,7 @@
         <target state="new">Activate</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
-          <context context-type="linenumber">101</context>
+          <context context-type="linenumber">115</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4762855117875399861" datatype="html">
@@ -5836,6 +5968,10 @@
         <source>Inactive</source>
         <target state="new">Inactive</target>
         <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
+          <context context-type="linenumber">45</context>
+        </context-group>
+        <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/x-ray/x-ray.html</context>
           <context context-type="linenumber">78</context>
         </context-group>
@@ -5857,11 +5993,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">164</context>
+          <context context-type="linenumber">177</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">601</context>
+          <context context-type="linenumber">614</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -5909,7 +6045,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">603</context>
+          <context context-type="linenumber">616</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -6013,7 +6149,7 @@
         <target state="new">Customize</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
-          <context context-type="linenumber">79</context>
+          <context context-type="linenumber">93</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8462417627724236320" datatype="html">
@@ -6151,7 +6287,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> moved to column <x id="column" equiv-text="aItem.x + 1"/>, row <x id="row" equiv-text="aItem.y + 1"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1115</context>
+          <context context-type="linenumber">1218</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6044768969177890700" datatype="html">
@@ -6227,7 +6363,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> removed from the dashboard</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">840</context>
+          <context context-type="linenumber">928</context>
         </context-group>
       </trans-unit>
       <trans-unit id="9173945515149078768" datatype="html">
@@ -6307,7 +6443,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">612</context>
+          <context context-type="linenumber">625</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/create-asset-profile-dialog/create-asset-profile-dialog.html</context>
@@ -6419,7 +6555,7 @@
         <target state="new">Default Market Price</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">486</context>
+          <context context-type="linenumber">499</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1713271461473302108" datatype="html">
@@ -6427,7 +6563,7 @@
         <target state="new">Mode</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">523</context>
+          <context context-type="linenumber">536</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
@@ -6443,7 +6579,7 @@
         <target state="new">Selector</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">539</context>
+          <context context-type="linenumber">552</context>
         </context-group>
       </trans-unit>
       <trans-unit id="645724892732039501" datatype="html">
@@ -6451,7 +6587,7 @@
         <target state="new">HTTP Request Headers</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">499</context>
+          <context context-type="linenumber">512</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8635324470284879211" datatype="html">
@@ -6670,6 +6806,14 @@
           <context context-type="linenumber">124</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="6759205696902713848" datatype="html">
+        <source>Warning</source>
+        <target state="new">Warning</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/rule/rule.component.html</context>
+          <context context-type="linenumber">38</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="5343721620901142551" datatype="html">
         <source>Generate Security Token</source>
         <target state="new">Generate Security Token</target>
@@ -6752,7 +6896,7 @@
         <target state="new">Apply</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/asset-profile-dialog/asset-profile-dialog.html</context>
-          <context context-type="linenumber">156</context>
+          <context context-type="linenumber">169</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4396995010887588291" datatype="html">
@@ -6760,7 +6904,7 @@
         <target state="new">Gather Recent Historical Market Data</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">285</context>
+          <context context-type="linenumber">310</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4333079359502738389" datatype="html">
@@ -6768,7 +6912,7 @@
         <target state="new">Gather All Historical Market Data</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">290</context>
+          <context context-type="linenumber">315</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2960393019464273155" datatype="html">
@@ -6784,7 +6928,11 @@
         <target state="new">Data Gathering is off</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
-          <context context-type="linenumber">41</context>
+          <context context-type="linenumber">55</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-market-data/admin-market-data.html</context>
+          <context context-type="linenumber">58</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7588205374923801261" datatype="html">
@@ -6950,6 +7098,14 @@
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.html</context>
           <context context-type="linenumber">66</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="1161299114153631702" datatype="html">
+        <source>Completed</source>
+        <target state="new">Completed</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
+          <context context-type="linenumber">239</context>
         </context-group>
       </trans-unit>
       <trans-unit id="440264111109852789" datatype="html">

@@ -18,12 +18,15 @@ import { GfDashboardLayoutService } from './dashboard-layout.service';
 /**
  * A burst of triggers inside the debounce window must collapse to one request
  * carrying the newest *complete* snapshot, and an arrangement reported after that
- * must supersede whatever is still in flight. Superseding is what `switchMap`
- * delivers and it is sound here for one specific reason: every body is a complete
- * layout document rather than a delta, so the newest request describes everything
- * its predecessors did and the stored arrangement converges on it whether or not an
- * abandoned request was acknowledged. A delta payload would make cancellation a
- * defect, which is why the operator is documented at the pipeline itself.
+ * must supersede whatever has not yet been sent. Superseding happens at the
+ * DISPATCHER rather than by cancelling a request in flight, and the distinction is
+ * the whole point: unsubscribing from an HTTP request withdraws only this client's
+ * interest in the reply, so a request the server has already accepted goes on to
+ * commit and could land after a newer one. Writes are therefore serialised - one
+ * request at a time - and a snapshot the queue finds already superseded is skipped
+ * instead of sent. The assertions below are written against what the SERVER is
+ * left holding and in what order it was asked, never against an RxJS teardown,
+ * because a teardown says nothing about a transaction that was already accepted.
  *
  * 1. The wire projection. `DashboardLayoutItem` extends the grid engine's
  *    own item configuration type, which declares fourteen optional members
@@ -611,52 +614,32 @@ describe('GfDashboardLayoutService', () => {
       });
     });
 
-    it('abandons an in-flight PATCH the moment a newer arrangement supersedes it', () => {
-      const firstTeardown = jest.fn();
+    it('never has two writes outstanding at once, so the server is never asked out of order', () => {
+      // A request the server has ALREADY ACCEPTED cannot be recalled: dropping the
+      // client's subscription only stops it listening for the reply, while the
+      // transaction goes on to commit. The only way to know which document the row
+      // is left holding is therefore never to have two of them accepted at the same
+      // time, and that is what is asserted here - from the server's side of the
+      // boundary, by counting how many requests were open at once, rather than from
+      // an RxJS teardown, which says nothing about a transaction already begun.
+      const acknowledge: (() => void)[] = [];
+      let openRequests = 0;
+      let peakOpenRequests = 0;
 
-      const first$ = new Observable<UserDashboardLayout>(() => firstTeardown);
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          new Observable<UserDashboardLayout>((subscriber) => {
+            openRequests += 1;
+            peakOpenRequests = Math.max(peakOpenRequests, openRequests);
 
-      dataServiceMock.patchUserDashboardLayout
-        .mockReturnValueOnce(first$)
-        .mockReturnValueOnce(of({ modules: [], version: 1 }));
+            acknowledge.push(() => {
+              openRequests -= 1;
 
-      jest.useFakeTimers();
-
-      service.scheduleSave(VIEWER_ID, [createGridItem()]);
-
-      jest.advanceTimersByTime(500);
-
-      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
-      expect(firstTeardown).not.toHaveBeenCalled();
-
-      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
-
-      jest.advanceTimersByTime(500);
-
-      // The older request is unsubscribed and the newer one goes out at once, which
-      // is safe for one specific reason: every body is a COMPLETE arrangement rather
-      // than a delta, so the newest request describes everything its predecessor did
-      // and the stored document converges on it whether or not the abandoned request
-      // was ever acknowledged. What it buys is latency - the viewer's newest
-      // arrangement does not queue behind a body that has already been superseded.
-      // A delta payload would make this a defect and would have to serialise
-      // instead, which is why the operator is documented at the pipeline.
-      expect(firstTeardown).toHaveBeenCalledTimes(1);
-      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
-      expect(readPatchedDto(1).modules[0].cols).toBe(8);
-    });
-
-    it('lets each debounced arrangement supersede the one before it, newest last', () => {
-      const teardowns = [jest.fn(), jest.fn()];
-
-      dataServiceMock.patchUserDashboardLayout
-        .mockReturnValueOnce(
-          new Observable<UserDashboardLayout>(() => teardowns[0])
-        )
-        .mockReturnValueOnce(
-          new Observable<UserDashboardLayout>(() => teardowns[1])
-        )
-        .mockReturnValue(of({ modules: [], version: 1 }));
+              subscriber.next({ modules: aData.modules, version: 1 });
+              subscriber.complete();
+            });
+          })
+      );
 
       jest.useFakeTimers();
 
@@ -664,6 +647,9 @@ describe('GfDashboardLayoutService', () => {
 
       jest.advanceTimersByTime(500);
 
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      // Two further arrangements reported while that request is still open.
       service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 6 })]);
 
       jest.advanceTimersByTime(500);
@@ -672,14 +658,129 @@ describe('GfDashboardLayoutService', () => {
 
       jest.advanceTimersByTime(500);
 
-      // Three quiet periods elapsed, so three arrangements were reported and each
-      // one replaced the request before it. The last document the server is left
-      // with is by construction the last one the viewer reported, because the only
-      // request still outstanding is the newest.
-      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(3);
-      expect(teardowns[0]).toHaveBeenCalledTimes(1);
-      expect(teardowns[1]).toHaveBeenCalledTimes(1);
-      expect(readPatchedDto(2).modules[0].cols).toBe(8);
+      // Still exactly one, because the queue waits for the open request to settle
+      // instead of opening a second one alongside it.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      acknowledge[0]();
+
+      // The queue moves on, and the two arrangements waiting behind it collapse to
+      // the newest: the six-column body is never sent at all, because by the time
+      // its turn came it had already been replaced.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1).modules[0].cols).toBe(8);
+
+      acknowledge[1]();
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(peakOpenRequests).toBe(1);
+    });
+
+    it('leaves the server holding the newest reported arrangement, asked for last', () => {
+      // The ordering claim stated as the thing that actually matters: not which
+      // requests were abandoned, but the sequence of documents the server was asked
+      // to store, and which one it was asked for last.
+      const acknowledge: (() => void)[] = [];
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          new Observable<UserDashboardLayout>((subscriber) => {
+            acknowledge.push(() => {
+              subscriber.next({ modules: aData.modules, version: 1 });
+              subscriber.complete();
+            });
+          })
+      );
+
+      jest.useFakeTimers();
+
+      for (const cols of [4, 6, 8, 10]) {
+        service.scheduleSave(VIEWER_ID, [createGridItem({ cols })]);
+
+        // Each arrangement is acknowledged before the next is reported, so all four
+        // reach the wire rather than collapsing into one another - which is what
+        // makes the requested sequence, and therefore its order, observable.
+        jest.advanceTimersByTime(500);
+
+        acknowledge[acknowledge.length - 1]();
+      }
+
+      const requestedColumns =
+        dataServiceMock.patchUserDashboardLayout.mock.calls.map(
+          ([aData]: [UpdateUserDashboardLayoutDto]) => aData.modules[0].cols
+        );
+
+      // Strictly ascending, so no older arrangement was ever asked for after a newer
+      // one - which is precisely the property an accepted-then-abandoned request
+      // breaks, and which no assertion about unsubscription could establish.
+      expect(requestedColumns).toEqual([4, 6, 8, 10]);
+
+      // And the last document the server was asked to store is the last one the
+      // viewer reported.
+      expect(requestedColumns[requestedColumns.length - 1]).toBe(10);
+      expect(readStoreLayout().modules[0].cols).toBe(10);
+    });
+
+    it('settles a release whose arrangement was superseded rather than leaving it to time out', () => {
+      // The other half of what abandoning a request used to cost. A superseded write
+      // produced no outcome at all, so a caller awaiting the release of that
+      // arrangement - signing out is held open until it settles - waited out the
+      // whole five-second bound and was then told the save had failed. Every
+      // snapshot the dispatcher takes now announces an outcome, including the ones
+      // it declines to send.
+      const acknowledge: (() => void)[] = [];
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          new Observable<UserDashboardLayout>((subscriber) => {
+            acknowledge.push(() => {
+              subscriber.next({ modules: aData.modules, version: 1 });
+              subscriber.complete();
+            });
+          })
+      );
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 4 })]);
+
+      jest.advanceTimersByTime(500);
+
+      // Reported while the first request is still open, so this arrangement is
+      // queued rather than sent - and it is the one the release below waits for.
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      let hasSettled = false;
+      let failure: unknown;
+
+      service.releasePendingSave().subscribe({
+        complete: () => {
+          hasSettled = true;
+        },
+        error: (error: unknown) => {
+          failure = error;
+        }
+      });
+
+      // Nothing can settle while the open request is unanswered.
+      expect(hasSettled).toBe(false);
+
+      acknowledge[0]();
+
+      expect(hasSettled).toBe(false);
+
+      acknowledge[1]();
+
+      // Settled by the write of the very arrangement it was waiting for, and well
+      // inside the five-second bound - which the clock has not been advanced past.
+      expect(hasSettled).toBe(true);
+      expect(failure).toBeUndefined();
+
+      jest.advanceTimersByTime(5000);
+
+      expect(failure).toBeUndefined();
     });
 
     it('spends one request on a burst inside a single quiet period', () => {
@@ -1237,7 +1338,7 @@ describe('GfDashboardLayoutService', () => {
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
     });
 
-    it('supersedes a write still in flight rather than queueing behind it', () => {
+    it('takes its turn behind a write still in flight rather than racing it', () => {
       const firstWrite = new Subject<UserDashboardLayout>();
 
       dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
@@ -1258,23 +1359,28 @@ describe('GfDashboardLayoutService', () => {
       service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
       service.releasePendingSave();
 
-      // The newer arrangement leaves AT ONCE and the superseded request is
-      // abandoned, which is the whole assertion. That is `switchMap`, and it is
-      // sound here for one specific reason: every body is a COMPLETE layout
-      // document rather than a delta, so the newest request describes everything
-      // its predecessor did and the stored arrangement converges on it whether or
-      // not the older one was ever acknowledged. It also means there is never more
-      // than one request outstanding, so no two replies can commit out of order.
-      // A delta payload would make this a defect and would require `concatMap`
-      // instead - which is why the operator is pinned by the architecture suite.
-      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
-      expect(readPatchedDto(1).modules[0].cols).toBe(8);
+      // Nothing new leaves yet, and that IS the assertion. Sending the newer
+      // arrangement now would put a second request on the wire beside one the server
+      // may already have accepted, and the two could then commit in either order -
+      // leaving the row holding the four-column arrangement the viewer had already
+      // moved away from, with nothing outstanding to correct it. Abandoning the
+      // first request would not help: unsubscribing withdraws only this client's
+      // interest in the reply, never the transaction.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
 
-      // The abandoned reply arriving late changes nothing: it belongs to a
-      // subscription that no longer exists, so it cannot restore the geometry the
-      // viewer has already moved away from.
       firstWrite.next({ modules: [], version: 1 });
       firstWrite.complete();
+
+      // Once the first write has answered, the released arrangement takes its turn -
+      // so it is still written, just second, and the server is left holding it.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1).modules[0].cols).toBe(8);
+      expect(readStoreLayout().modules[0].cols).toBe(8);
+
+      // The quiet period the newer arrangement never waited out elapses. It must not
+      // be written a second time: by now it has been acknowledged, so the dispatcher
+      // finds nothing outstanding and skips it.
+      jest.advanceTimersByTime(500);
 
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
     });
@@ -1727,16 +1833,20 @@ describe('GfDashboardLayoutService', () => {
       // release takes its turn in the same queue instead of opening a second one.
       expect(source.match(/^ {4}merge\($/gm)).toHaveLength(1);
       expect(source.match(/debounceTime\(/g)).toHaveLength(1);
-      expect(source.match(/switchMap\(/g)).toHaveLength(1);
+      expect(source.match(/concatMap\(/g)).toHaveLength(1);
       expect(source).toContain('debounceTime(SAVE_DEBOUNCE_IN_MS)');
     });
 
-    it('serialises nothing and cancels instead, deliberately', () => {
-      // The operator choice is load-bearing rather than incidental: the AAP mandates
-      // it, and it is only sound because the body is a complete snapshot. Matched as
-      // calls rather than as words, because the pipeline's own comment names the
-      // alternative it rejects and why - which is worth keeping.
-      expect(source).not.toMatch(/concatMap\(/);
+    it('serialises rather than cancels, deliberately', () => {
+      // The operator choice is load-bearing rather than incidental, and it is the
+      // one thing behaviour cannot fully pin: an operator that cancels looks
+      // identical to one that serialises in every test where the abandoned request
+      // happens never to have been accepted. Unsubscribing from `HttpClient`
+      // withdraws only this client's interest in the reply, so a request the server
+      // has already accepted still commits - and could commit after a newer one.
+      // Serialising is what makes the stored document deterministic, so no operator
+      // that can leave two writes outstanding may appear here.
+      expect(source).not.toMatch(/switchMap\(/);
       expect(source).not.toMatch(/mergeMap\(/);
       expect(source).not.toMatch(/exhaustMap\(/);
 
@@ -1746,7 +1856,7 @@ describe('GfDashboardLayoutService', () => {
 
       expect(operatorImport).not.toBeNull();
       expect(source.slice(0, operatorImport.index)).not.toMatch(
-        /concatMap|mergeMap|exhaustMap/
+        /switchMap|mergeMap|exhaustMap/
       );
     });
 

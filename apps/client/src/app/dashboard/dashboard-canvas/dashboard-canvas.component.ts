@@ -183,6 +183,29 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   private catalogTrigger: ElementRef<HTMLElement>;
 
   /**
+   * The catalog drawer's own element, read so that focus containment can be
+   * tested when the panel closes.
+   *
+   * That test is what keeps the restoration below honest. Focus is only given back
+   * to the trigger when it is still inside the closing panel; if the viewer has
+   * since put focus somewhere else entirely, moving it would be a theft rather
+   * than a courtesy.
+   */
+  @ViewChild('catalogDrawer', { read: ElementRef })
+  private catalogDrawer: ElementRef<HTMLElement>;
+
+  /**
+   * The catalog panel itself, held so focus can be handed into it.
+   *
+   * The component instance rather than its element, because where focus should
+   * land inside the panel is the panel's own business - it owns the search field
+   * and the roving row list - and is answered by
+   * {@link GfModuleCatalogComponent.focusSearchField}.
+   */
+  @ViewChild(GfModuleCatalogComponent)
+  private moduleCatalog: GfModuleCatalogComponent;
+
+  /**
    * Whether the grid engine has just refused to place a module because the
    * arrangement has no room left for it.
    *
@@ -345,6 +368,38 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    */
   private focusRestorationHandle: number | undefined;
 
+  /**
+   * Whether the catalog's current open was asked for by the viewer.
+   *
+   * This is the distinction the whole focus lifecycle turns on, and it cannot be
+   * read off the open flag, because that flag is set by two very different things.
+   * A viewer pressing the floating trigger or the empty canvas's own affordance is
+   * making a request, and focus should follow them into the panel. The canvas
+   * opening the panel unprompted - on a first visit, on a re-screen that empties
+   * the arrangement, or on the removal of the last module - is an offer, and
+   * seizing focus during one would interrupt a viewer who is reading rather than
+   * browsing. The three unprompted sites deliberately set the open flag directly
+   * and never come through the funnel that raises this.
+   *
+   * It also decides whether anything is owed back on close: focus is only returned
+   * to a trigger when this canvas is the thing that took it away.
+   */
+  private hasCatalogFocusOrigin = false;
+
+  /**
+   * The control the viewer was on when they asked for the catalog, so the same
+   * control can have focus back when the panel closes.
+   *
+   * Captured as an element rather than assumed to be the floating trigger, because
+   * there are two ways in and they are not the same control: the empty canvas
+   * offers its own affordance, and a viewer who opened the catalog from there
+   * should not be returned to a button they never touched. It is only a preference
+   * though - that affordance stops being drawn the moment the first module lands,
+   * so {@link restoreFocusFromCatalog} falls back to the trigger, which is the one
+   * control on this surface that nothing the viewer does can remove.
+   */
+  private catalogFocusOrigin: HTMLElement | null = null;
+
   private hasHydratedLayout = false;
 
   /**
@@ -398,8 +453,8 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * viewer - or to a previous attempt for the same viewer - can be recognised
    * and discarded. Without it a slow first response arriving after a fast second
    * one would overwrite the newer viewer's arrangement with the older viewer's,
-   * and the layout service's own `switchMap` cannot prevent that because each
-   * read is a separate subscription made from here.
+   * and the layout service's own serialised write queue cannot prevent that: it
+   * orders WRITES, while each read is a separate subscription made from here.
    */
   private hydrationGeneration = 0;
 
@@ -577,6 +632,21 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       });
   }
 
+  /**
+   * The module types currently on the canvas, for the catalog to mark its rows
+   * with.
+   *
+   * Derived on read rather than stored, so it cannot drift from the arrangement
+   * the grid owns. A fresh array is fine here because it is consumed by an input
+   * whose component compares membership rather than identity.
+   *
+   * Declared here, between the constructor and the public methods, because that is
+   * where the lint configuration expects an accessor to sit.
+   */
+  public get placedModuleTypes(): DashboardModuleType[] {
+    return this.modules.map(({ moduleType }) => moduleType);
+  }
+
   public ngOnDestroy() {
     // The BACKSTOP, not the ordinary path. The engine's own teardown hook releases
     // the observer whenever the grid goes away - which is usually while this
@@ -639,18 +709,6 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * one drops the module from the arrangement, the other guarantees it is not
    * painted in the meantime.
    */
-  /**
-   * The module types currently on the canvas, for the catalog to mark its rows
-   * with.
-   *
-   * Derived on read rather than stored, so it cannot drift from the arrangement
-   * the grid owns. A fresh array is fine here because it is consumed by an input
-   * whose component compares membership rather than identity.
-   */
-  public get placedModuleTypes(): DashboardModuleType[] {
-    return this.modules.map(({ moduleType }) => moduleType);
-  }
-
   public isModuleRenderable({ moduleType }: DashboardLayoutItem): boolean {
     const definition = this.moduleRegistryService.get(moduleType);
 
@@ -723,12 +781,42 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   /**
    * Keeps the open flag in step with a drawer that closed itself - on Escape,
    * for instance - so the trigger never claims the catalog is still open.
+   *
+   * It is also where keyboard focus enters and leaves the catalog, and both halves
+   * have to happen here rather than at the entry points above.
+   *
+   * They have to happen at all because a Material drawer in `side` mode moves
+   * focus in neither direction: its `autoFocus` resolves to `'dialog'` for that
+   * mode, and the take-focus and restore-focus paths both return immediately for
+   * that value. `side` is not negotiable - an `over` or `push` drawer lays down a
+   * backdrop that swallows the drag events the grid needs - so the panel that
+   * cannot be dropped onto is also the panel that will not manage focus, and this
+   * canvas owns the difference. Setting `autoFocus="first-tabbable"` instead would
+   * be wrong in the other direction: the drawer cannot tell an open the viewer
+   * asked for from the unprompted one below, and would seize focus during both.
+   *
+   * They have to happen *here* because this is the drawer reporting that its
+   * transition has finished. Before that the panel is still hidden, and `focus()`
+   * on a hidden element is a silent no-op - so focusing from the entry point would
+   * appear to work and leave focus on the trigger.
    */
   public onCatalogOpenedChange(aIsOpened: boolean) {
     this.setCatalogOpen(aIsOpened);
+
+    if (aIsOpened) {
+      this.moveFocusIntoCatalog();
+    } else {
+      this.restoreFocusFromCatalog();
+    }
   }
 
+  /**
+   * Opens the catalog at the empty canvas's request - a deliberate act by the
+   * viewer, so focus follows them in and is owed back afterwards.
+   */
   public onOpenCatalog() {
+    this.captureCatalogFocusOrigin();
+
     this.setCatalogOpen(true);
   }
 
@@ -871,8 +959,23 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     });
   }
 
+  /**
+   * Opens or closes the catalog from the floating trigger.
+   *
+   * The origin is captured only on the way open. Capturing it on the way closed
+   * too would record the trigger the viewer has just pressed as somewhere focus
+   * has to be returned to, which is both pointless - pressing it already put focus
+   * there - and wrong, because it would mark the *next* open as one the viewer
+   * asked for even when that open turns out to be an unprompted one.
+   */
   public onToggleCatalog() {
-    this.setCatalogOpen(!this.isCatalogOpen);
+    const isOpening = !this.isCatalogOpen;
+
+    if (isOpening) {
+      this.captureCatalogFocusOrigin();
+    }
+
+    this.setCatalogOpen(isOpening);
   }
 
   /**
@@ -1341,8 +1444,15 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
           other === item ? extent : Math.max(extent, other.y + other.rows),
         0
       );
+      // Widened to the plain string the wire carries, because that is what the
+      // other half of this comparison holds: a persisted discriminator has to
+      // tolerate a value an older client wrote, so it is deliberately never the
+      // registry's typed one. Annotating at the point of declaration keeps the
+      // lookup free of a type assertion, exactly as `mergeCanonicalModules` and
+      // `createCanonicalModules` do on the same boundary.
+      const itemModuleType: string = item.moduleType;
       const reportedY = this.canonicalModules.find(
-        ({ moduleType }) => moduleType === item.moduleType
+        ({ moduleType }) => moduleType === itemModuleType
       )?.y;
       const deepestReachableY = Math.max(
         extentOfOthers + viewportRows,
@@ -2430,6 +2540,122 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
           }
         }
       });
+  }
+
+  /**
+   * Records that the viewer asked for the catalog, and where they asked from.
+   *
+   * The flag is the part that matters and it is set unconditionally; the element is
+   * a preference and may legitimately come out `null`, because a browser is not
+   * obliged to focus a button that was clicked and some do not. A `null` origin
+   * still means "the viewer asked", and {@link restoreFocusFromCatalog} then falls
+   * back to the floating trigger.
+   *
+   * The document is reached through the trigger rather than through a global, which
+   * keeps this component working against whatever document its host tree belongs to
+   * and matches how the read-backs elsewhere on this canvas ask where focus went.
+   */
+  private captureCatalogFocusOrigin() {
+    this.hasCatalogFocusOrigin = true;
+
+    const trigger = this.catalogTrigger?.nativeElement;
+    const activeElement = trigger?.ownerDocument?.activeElement;
+
+    // The body is excluded deliberately: it is what `activeElement` reports when
+    // nothing is focused, so treating it as an origin would later "restore" focus
+    // to the document itself instead of falling back to the trigger.
+    this.catalogFocusOrigin =
+      activeElement instanceof HTMLElement &&
+      activeElement !== trigger?.ownerDocument?.body
+        ? activeElement
+        : null;
+  }
+
+  /**
+   * Whether keyboard focus currently sits inside the catalog drawer.
+   *
+   * This is the guard that keeps the restoration from becoming a theft. A drawer
+   * can close while focus is somewhere else entirely - the viewer pressed the
+   * floating trigger, which focused it, or they clicked into a module - and pulling
+   * focus back to a trigger in either case would move it out from under them. Only
+   * focus that is about to be orphaned by the closing panel is worth rescuing.
+   */
+  private isFocusInsideCatalog(): boolean {
+    const drawer = this.catalogDrawer?.nativeElement;
+    const activeElement = drawer?.ownerDocument?.activeElement;
+
+    return !!activeElement && drawer.contains(activeElement);
+  }
+
+  /**
+   * Hands keyboard focus to the catalog, for an open the viewer asked for.
+   *
+   * Silent for an unprompted open - a first visit, an arrangement that re-screened
+   * to nothing, the removal of the last module - which is the whole reason the
+   * origin flag exists. Those opens are an offer, and a viewer who is reading the
+   * canvas rather than browsing modules should not have the caret taken off them.
+   *
+   * Where focus lands inside the panel is the panel's decision, not this one's, and
+   * the panel reports whether it landed at all. When it did not, the claim on the
+   * trigger is dropped: this canvas only owes focus back when it actually took it,
+   * and holding a stale claim would let a later, unrelated close move focus.
+   */
+  private moveFocusIntoCatalog() {
+    if (!this.hasCatalogFocusOrigin) {
+      return;
+    }
+
+    if (!this.moduleCatalog?.focusSearchField()) {
+      this.hasCatalogFocusOrigin = false;
+      this.catalogFocusOrigin = null;
+    }
+  }
+
+  /**
+   * Returns keyboard focus to whatever the viewer opened the catalog from.
+   *
+   * The claim is released first and unconditionally, so a close can never leave one
+   * standing for the next one to act on, whichever branch below runs.
+   *
+   * One condition gates the move, and it is containment rather than ownership.
+   * Focus that is inside the closing panel is about to be orphaned to the document
+   * body - which ejects a keyboard-only viewer from the application - and that harm
+   * does not depend on whether this canvas is what put focus there: a viewer who
+   * tabbed into an unprompted catalog themselves and then pressed Escape is in
+   * exactly the same position. Focus that is anywhere else is being used, and moving
+   * it would be a theft rather than a courtesy, so it is left alone.
+   *
+   * What the origin decides is therefore the *destination*, not whether to act. The
+   * originating control is preferred and the floating trigger is the fallback, for
+   * the same reason it is the last resort after a removal: it is the one control
+   * nothing the viewer does can remove, whereas the empty canvas's affordance stops
+   * being drawn the moment a module lands - so a viewer who opened the catalog from
+   * there and then added something has no origin left to go back to. An unprompted
+   * open records no origin at all and lands on that same fallback.
+   *
+   * The connectivity check and the read-back are both load-bearing: `focus()` on a
+   * detached or hidden element is a silent no-op, so the only honest way to know
+   * whether the preferred target took focus is to ask the document.
+   */
+  private restoreFocusFromCatalog() {
+    const origin = this.catalogFocusOrigin;
+
+    this.hasCatalogFocusOrigin = false;
+    this.catalogFocusOrigin = null;
+
+    if (!this.isFocusInsideCatalog()) {
+      return;
+    }
+
+    if (origin?.isConnected) {
+      origin.focus();
+
+      if (origin.ownerDocument?.activeElement === origin) {
+        return;
+      }
+    }
+
+    this.catalogTrigger?.nativeElement.focus();
   }
 
   /**

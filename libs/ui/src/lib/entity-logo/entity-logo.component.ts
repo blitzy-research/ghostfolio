@@ -158,10 +158,6 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
   // instance that must report an outcome from the ones merely waiting for it.
   private probedSource: string | null = null;
 
-  private readonly observeAttempts = () => {
-    this.evaluate();
-  };
-
   public constructor(
     private readonly changeDetectorRef: ChangeDetectorRef,
     private readonly imageSourceService: EntityLogoImageSourceService
@@ -350,6 +346,25 @@ export class GfEntityLogoComponent implements OnChanges, OnDestroy {
 
     this.probedSource = null;
   }
+
+  /**
+   * The callback this instance registers with the shared probe registry.
+   *
+   * Held as one bound property rather than created per call, because it is handed
+   * to `add` and later to `delete`: a fresh closure each time would register a
+   * listener that could never be removed, and the registry would keep this
+   * component alive after it was destroyed.
+   *
+   * Declared among the private methods rather than beside the fields above, because
+   * an arrow-function property is a method as far as the lint configuration is
+   * concerned - sitting before the constructor it pushed the constructor and all
+   * four public methods out of order. Position is safe: a field initializer runs at
+   * construction wherever it appears among the methods, so the property is bound
+   * long before `startObserving` can read it.
+   */
+  private readonly observeAttempts = () => {
+    this.evaluate();
+  };
 
   private startObserving() {
     if (this.isObserving) {

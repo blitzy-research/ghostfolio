@@ -20,6 +20,7 @@ import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-hos
 import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '@nestjs/passport';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 
@@ -803,10 +804,20 @@ describe('UserDashboardLayoutController', () => {
 
           expect(written.status).toBe(200);
 
+          // Destructured through a typed tuple rather than indexed, exactly as the
+          // `where` assertion above does it. A `jest.fn()` records its calls as
+          // `any[]`, so reading `calls[0][0].create.layoutData` would carry that
+          // `any` into the value the read below is then driven from - which is the
+          // one place in this round trip where an unchecked value would quietly make
+          // the assertion vacuous.
+          const [{ create }] = upsert.mock.calls[0] as [
+            { create: { layoutData: Prisma.JsonValue } }
+          ];
+
           // The row now holds exactly what the write persisted, which is what the
           // read has to be able to interpret.
           findUnique.mockResolvedValue({
-            layoutData: upsert.mock.calls[0][0].create.layoutData,
+            layoutData: create.layoutData,
             updatedAt: new Date('2026-01-01T00:00:00.000Z'),
             userId: requestUserId
           });

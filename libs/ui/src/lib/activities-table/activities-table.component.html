@@ -148,6 +148,21 @@
       <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
         <span class="sr-only" i18n>Import status</span>
       </th>
+      <!--
+        This cell is what tells a reviewer that a row of an import cannot be
+        accepted, and it said so in two ways neither of which reaches a screen reader
+        or the keyboard: a red glyph, and a `matTooltip` attached to a plain `div`.
+        Material only wires a tooltip's `aria-describedby` to the element it sits on,
+        and a non-focusable, non-interactive `div` is never described to anybody -
+        the tooltip is a pointer-hover affordance and nothing more. With the glyph
+        marked decorative the cell was left announcing nothing at all, so a row that
+        will be rejected was indistinguishable from one that will import cleanly.
+
+        The message itself is exposed as text rather than as a name for the glyph,
+        because it is the actual reason and it is what the reviewer has to act on -
+        the checkbox beside it is disabled precisely because of it. `.sr-only` keeps
+        the visual cell exactly as it was: one red glyph with a hover tooltip.
+      -->
       <td *matCellDef="let element" class="px-1" mat-cell>
         @if (element.error) {
           <div
@@ -160,6 +175,10 @@
               class="text-danger"
               name="alert-circle-outline"
             />
+            <span class="sr-only"
+              ><ng-container i18n>Import error</ng-container>:
+              {{ element.error.message }}</span
+            >
           </div>
         }
       </td>
@@ -410,11 +429,22 @@
         class="d-none d-lg-table-cell px-1"
         mat-cell
       >
+        <!--
+          An icon-only control whose accessible name came entirely from a bare
+          `title`: untranslated in all twelve locale catalogs, and naming the column
+          rather than the action. `aria-label` now states what pressing it does, the
+          `title` is kept as the hover affordance and localized so the two agree, and
+          the glyph stays decorative. Same treatment as the accounts table, which
+          carries the identical control.
+        -->
         @if (element.comment) {
           <button
+            aria-label="Open note"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
+            i18n-title
             mat-button
-            title="Note"
+            title="Open note"
             (click)="onOpenComment(element.comment); $event.stopPropagation()"
           >
             <ion-icon aria-hidden="true" name="document-text-outline" />

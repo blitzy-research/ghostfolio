@@ -110,7 +110,20 @@
       [dynamicHeight]="true"
       [mat-stretch-tabs]="false"
     >
-      <mat-tab>
+      <!--
+        Named on the tab itself rather than left to its projected label. The label
+        template is a decorative glyph plus a `d-none d-sm-block` caption, so below
+        the `sm` breakpoint the caption is `display: none` and the tab has no
+        accessible name at all - a reader met three unnamed tabs and no way to tell
+        which was which.
+
+        `aria-label` on `mat-tab` is a real Material input (`ariaLabel`, aliased to
+        `aria-label`) which the tab header applies to the tab element, so it names
+        the control at EVERY width and does not double up with the caption when the
+        caption is visible. The alternative - an independent `.sr-only` caption -
+        would be announced alongside the visible one above `sm`.
+      -->
+      <mat-tab aria-label="Overview" i18n-aria-label>
         <ng-template mat-tab-label>
           <ion-icon aria-hidden="true" name="reader-outline" />
           <div class="d-none d-sm-block ml-2" i18n>Overview</div>
@@ -447,7 +460,7 @@
           </form>
         </div>
       </mat-tab>
-      <mat-tab>
+      <mat-tab aria-label="Historical Market Data" i18n-aria-label>
         <ng-template mat-tab-label>
           <ion-icon aria-hidden="true" name="server-outline" />
           <div class="d-none d-sm-block ml-2" i18n>Historical Market Data</div>
@@ -470,7 +483,7 @@
         </div>
       </mat-tab>
       @if (assetProfile?.dataSource === 'MANUAL') {
-        <mat-tab>
+        <mat-tab aria-label="Scraper Configuration" i18n-aria-label>
           <ng-template mat-tab-label>
             <ion-icon aria-hidden="true" name="code-slash-outline" />
             <div class="d-none d-sm-block ml-2" i18n>Scraper Configuration</div>

@@ -20,10 +20,10 @@ import {
 } from 'rxjs';
 import {
   catchError,
+  concatMap,
   debounceTime,
   filter,
   map,
-  switchMap,
   take,
   timeout
 } from 'rxjs/operators';
@@ -111,6 +111,12 @@ interface DashboardLayoutFlush {
  * Generous enough that it expires only when something is genuinely wrong, and
  * expiry is reported to the caller as a failure rather than as a success, so the
  * viewer is told their arrangement may not have been stored.
+ *
+ * A genuine backstop rather than an ordinary outcome, and that rests on the
+ * dispatcher announcing a result for EVERY snapshot it takes - including the ones
+ * it skips as superseded. Nothing in the write path abandons a snapshot silently,
+ * so reaching this bound means a request really did go unanswered rather than
+ * that the arrangement was overtaken while it waited.
  */
 const FLUSH_TIMEOUT = 5000;
 
@@ -280,27 +286,32 @@ export class GfDashboardLayoutService
       this.immediateSnapshot$
     )
       .pipe(
-        // `switchMap`, so a superseded write is abandoned the moment a newer
-        // arrangement is ready to go out. That is safe here for one specific
-        // reason, and it would be a defect without it: every request body is a
-        // COMPLETE layout snapshot rather than a delta, so the newest one
-        // describes everything its predecessors did and converges on the same
-        // state whether or not they were ever acknowledged. Cancelling a delta
-        // would corrupt the stored document and would have to be `concatMap`
-        // instead, so a change to the payload shape must revisit this operator.
+        // `concatMap`, so each snapshot's turn begins only once the previous one
+        // has settled. That is what makes the stored document deterministic, and
+        // the alternative is genuinely unsafe rather than merely untidy:
+        // `switchMap` would unsubscribe from a superseded request, and
+        // unsubscribing from `HttpClient` withdraws only the CLIENT's interest in
+        // the reply. A request the server has already accepted goes on to commit
+        // regardless, so the newer arrangement could be written first and the
+        // abandoned older one land on top of it - leaving the row holding a
+        // document the viewer had already moved away from, with nothing left in
+        // flight to correct it. The completeness of each body cannot rescue that,
+        // because completeness only says the LAST write wins; it says nothing
+        // about which write is last.
         //
-        // The objection to cancelling - that unsubscribing does not withdraw a
-        // request the server may already have accepted, so two requests in flight
-        // could commit out of order - is answered by there never being two. This
-        // operator keeps at most ONE request outstanding, and the merge above puts
-        // both lanes through it, so a release takes the place of the write it
-        // supersedes rather than racing it.
+        // Queueing does not mean sending stale bodies. `dispatchSnapshot` skips
+        // any snapshot that is no longer {@link pendingSnapshot} by the time its
+        // turn comes, so a burst of drags costs exactly one request for the
+        // newest arrangement plus a synchronous skip for each one it replaced -
+        // and the skip still announces an outcome, so nothing waiting on a
+        // superseded snapshot is left waiting for a request that will never be
+        // made. The cost is bounded at one round trip of latency for the newest
+        // arrangement, which is what buys the ordering guarantee.
         //
-        // What it buys is latency: the viewer's newest arrangement leaves
-        // immediately instead of queueing behind a request whose body has already
-        // been superseded, and a burst of drags costs one in-flight request rather
-        // than a growing chain of them.
-        switchMap((snapshot) => this.dispatchSnapshot(snapshot)),
+        // The 500ms debounce above is unaffected: it is what turns one gesture
+        // into one snapshot, and this operator only decides how snapshots that
+        // survive it take their turn.
+        concatMap((snapshot) => this.dispatchSnapshot(snapshot)),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((result) => {

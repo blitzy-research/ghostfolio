@@ -64,6 +64,17 @@ export class UserDashboardLayoutService {
    * layout and are reported as `null`. A persisted layout whose modules array
    * is empty is a different state and is returned as it was stored.
    *
+   * The absence test is deliberately NULLISH rather than falsy, and the
+   * difference is a correctness one. `layoutData` is JSONB, so `false`, `0` and
+   * `""` are all values it can legitimately hold - and every one of them is
+   * falsy. Treating them as an absent layout would report the most damaging
+   * answer available: the client reads "absent" as a first visit, opens the module
+   * catalog, and writes the first module added out as the viewer's entire
+   * arrangement - destroying the very document that could not be read. Only a
+   * genuinely absent row and a genuine SQL NULL answer `null`; every other stored
+   * value is handed to {@link UserDashboardLayoutService.parseLayout}, which
+   * refuses it as an unreadable envelope and leaves the row intact.
+   *
    * The stored value is *parsed* rather than asserted. `layoutData` is a JSONB
    * column, so its type at this boundary is whatever is in the row, and the
    * previous `as unknown as UserDashboardLayout` was a claim about it rather than
@@ -83,11 +94,13 @@ export class UserDashboardLayoutService {
         }
       });
 
-    if (!userDashboardLayout?.layoutData) {
+    const layoutData = userDashboardLayout?.layoutData;
+
+    if (layoutData === null || layoutData === undefined) {
       return null;
     }
 
-    return this.parseLayout(userDashboardLayout.layoutData);
+    return this.parseLayout(layoutData);
   }
 
   /**
@@ -104,6 +117,30 @@ export class UserDashboardLayoutService {
    * primary key. Converging on an update instead is safe here only because the
    * payload is always a complete layout snapshot rather than a delta: whichever
    * writer lands last leaves the row holding one whole submitted document.
+   *
+   * ## Where write ordering comes from
+   *
+   * The write is unconditional: there is no revision column and no stale-write
+   * guard, so this method cannot by itself tell an older submission from a newer
+   * one. It does not need to, because the ordering is established one layer up.
+   * A viewer's browser holds exactly one canvas, and that canvas's layout service
+   * dispatches its snapshots through a SERIALISED queue - each request begins only
+   * once the previous one has settled, and a snapshot the queue finds already
+   * superseded is skipped rather than sent. One writer, one request at a time, so
+   * the last document this method commits is by construction the last one the
+   * viewer reported.
+   *
+   * That is a deliberate division of responsibility rather than an omission, and
+   * the alternative was rejected on its cost: a monotonic revision would have to
+   * travel in the request body, and the body is a frozen five-field-per-item
+   * contract that the DTO validates with `forbidNonWhitelisted`, so a sixth field
+   * would be rejected at the pipe before reaching here and could not be added
+   * without changing the contract and the stored shape together. The serialised
+   * client queue delivers the same guarantee for a single-writer resource at no
+   * contract cost. What it does NOT defend against is two clients writing the same
+   * account concurrently - two browser tabs, say - where last-write-wins remains
+   * the semantics, which is correct for a whole-document write and is the same
+   * semantics the per-user settings row has always had.
    */
   public async updateLayout({
     userDashboardLayout,
@@ -178,8 +215,9 @@ export class UserDashboardLayoutService {
    *   else to be done with it and refusing the whole document over one bad row
    *   would cost the user every other module they had placed.
    *
-   * Only the two members the contract defines are carried over, so an extra
-   * property that found its way into the row cannot reach the response.
+   * Only the members the contract defines are carried over - the two on the
+   * envelope and the five on each item - so an extra property that found its way
+   * into the row cannot reach the response at either level.
    *
    * Each outcome is reported as a fixed event identifier and a reason category,
    * and that is the whole of what is emitted. The account the row belongs to is
@@ -231,9 +269,25 @@ export class UserDashboardLayoutService {
       );
     }
 
-    const layoutItems = modules.filter((module) => {
-      return this.isLayoutItem(module);
-    });
+    // Rebuilt entry by entry rather than filtered, for exactly the reason the
+    // envelope below is rebuilt rather than spread. A filter hands back the very
+    // objects that came out of the JSONB column, so any surplus member on an
+    // item - written by a newer build, inserted by hand, or left behind by an
+    // earlier shape - would travel through the response untouched. The contract is
+    // five fields per item, and returning a fresh object holding exactly those
+    // five is what makes that true of the response and not merely of the type.
+    const layoutItems = modules.reduce<DashboardModuleLayoutItem[]>(
+      (items, module) => {
+        if (this.isLayoutItem(module)) {
+          const { cols, moduleType, rows, x, y } = module;
+
+          items.push({ cols, moduleType, rows, x, y });
+        }
+
+        return items;
+      },
+      []
+    );
 
     if (layoutItems.length !== modules.length) {
       Logger.warn(

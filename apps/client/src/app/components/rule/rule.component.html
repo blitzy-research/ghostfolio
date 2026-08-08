@@ -12,6 +12,17 @@
         />
       </div>
     } @else {
+      <!--
+        The outcome of the rule is encoded entirely in this badge - a glyph plus the
+        `okay`/`warn` container colour - and both of those are visual. With the glyph
+        marked decorative the badge announced nothing, so a reader met the rule's name
+        and its evaluation sentence with no indication of whether the rule had passed,
+        raised a warning, or was switched off altogether. The evaluation text does not
+        supply it either: it describes the measurement, not the verdict.
+
+        One localized name per branch, matching the three states the markup already
+        distinguishes, and `.sr-only` so the badge looks exactly as it did.
+      -->
       <div
         class="align-items-center d-flex icon-container mr-2 px-2"
         [ngClass]="{
@@ -21,14 +32,17 @@
       >
         @if (rule?.value === true) {
           <ion-icon aria-hidden="true" name="checkmark-circle-outline" />
+          <span class="sr-only" i18n>Passed</span>
         } @else if (rule?.isActive === true) {
           <ion-icon aria-hidden="true" name="warning-outline" />
+          <span class="sr-only" i18n>Warning</span>
         } @else {
           <ion-icon
             aria-hidden="true"
             class="text-muted"
             name="remove-circle-outline"
           />
+          <span class="sr-only" i18n>Inactive</span>
         }
       </div>
     }

@@ -34,6 +34,20 @@
               class="d-none d-lg-table-cell px-1"
               mat-cell
             >
+              <!--
+                The `title` was the cell's only text, and a `title` on a plain `div`
+                reaches neither the keyboard nor a screen reader with any
+                reliability - it is a pointer-hover affordance on a non-focusable,
+                non-interactive element. With the glyph marked decorative that left
+                the Status cell announcing nothing, so the one thing this column
+                exists to say - that gathering is switched off for this profile - was
+                available to sighted mouse users only.
+
+                The `title` is kept, because the hover text is a real affordance for
+                the people who can use it, and the same sentence is added as
+                screen-reader text so the cell has a textual equivalent regardless of
+                input device. No visual change: `.sr-only` takes the span out of flow.
+              -->
               @if (!element.isActive) {
                 <div
                   class="d-flex justify-content-center"
@@ -41,6 +55,7 @@
                   title="Data Gathering is off"
                 >
                   <ion-icon aria-hidden="true" name="ban-outline" />
+                  <span class="sr-only" i18n>Data Gathering is off</span>
                 </div>
               }
             </td>
@@ -238,6 +253,15 @@
             <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
               <span class="sr-only" i18n>Note</span>
             </th>
+            <!--
+              The glyph carries a real piece of information - this profile has a note
+              attached and the others do not - and with the glyph decorative there was
+              nothing left to carry it. The column heading alone cannot: it names
+              every cell in the column identically, including the empty ones, so a
+              reader could not tell which rows have a note. The text below says only
+              that one thing; the note's contents are read through the asset profile
+              dialog, exactly as they are for a sighted reader here.
+            -->
             <td *matCellDef="let element" class="px-1" mat-cell>
               @if (element.comment) {
                 <ion-icon
@@ -245,6 +269,7 @@
                   class="d-block"
                   name="document-text-outline"
                 />
+                <span class="sr-only" i18n>Has a note</span>
               }
             </td>
           </ng-container>

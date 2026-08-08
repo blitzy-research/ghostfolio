@@ -40,6 +40,19 @@ export class WebAuthnService {
     private settingsStorageService: SettingsStorageService
   ) {}
 
+  /**
+   * @returns The WebAuthn browser client, fetched on first call and reused
+   * afterwards.
+   *
+   * Declared here, after the constructor and ahead of the public methods, because
+   * that is the band the lint configuration reserves for a private static method.
+   */
+  private static loadWebAuthnBrowser() {
+    WebAuthnService.webAuthnBrowser ??= import('@simplewebauthn/browser');
+
+    return from(WebAuthnService.webAuthnBrowser);
+  }
+
   public isSupported() {
     return typeof PublicKeyCredential !== 'undefined';
   }
@@ -125,16 +138,6 @@ export class WebAuthnService {
           );
         })
       );
-  }
-
-  /**
-   * @returns The WebAuthn browser client, fetched on first call and reused
-   * afterwards.
-   */
-  private static loadWebAuthnBrowser() {
-    WebAuthnService.webAuthnBrowser ??= import('@simplewebauthn/browser');
-
-    return from(WebAuthnService.webAuthnBrowser);
   }
 
   private getDeviceId() {

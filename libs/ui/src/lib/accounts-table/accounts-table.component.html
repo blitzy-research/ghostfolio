@@ -35,9 +35,20 @@
         class="d-none d-lg-table-cell px-1"
         mat-cell
       >
+        <!--
+          The glyph is the only thing this cell has ever shown, and marking it
+          decorative left the Status column announcing nothing for every row. What it
+          says matters: an excluded account is left out of the portfolio totals the
+          rest of this table is summed into, so a reader who cannot tell which rows
+          are excluded cannot reconcile the footer with the rows above it.
+
+          Named rather than labelled on the icon, and `.sr-only` rather than visible,
+          so the column stays the single-glyph column it is designed as.
+        -->
         <div class="d-flex justify-content-center">
           @if (element.isExcluded) {
             <ion-icon aria-hidden="true" name="eye-off-outline" />
+            <span class="sr-only" i18n>Excluded</span>
           }
         </div>
       </td>
@@ -297,11 +308,25 @@
         class="d-none d-lg-table-cell px-1"
         mat-cell
       >
+        <!--
+          An icon-only control, so its accessible name came entirely from the bare
+          `title` - a string with no `i18n-title`, which meant every locale announced
+          the English word "Note" and none of the twelve translated catalogs carried
+          it. It also named the column rather than the action, which is what a
+          control's name is for.
+
+          `aria-label` states what pressing it does and is what assistive technology
+          announces; the `title` is kept as the hover affordance and is now localized
+          too, so the two agree in every locale. The glyph stays decorative.
+        -->
         @if (element.comment) {
           <button
+            aria-label="Open note"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
+            i18n-title
             mat-button
-            title="Note"
+            title="Open note"
             (click)="onOpenComment(element.comment); $event.stopPropagation()"
           >
             <ion-icon aria-hidden="true" name="document-text-outline" />

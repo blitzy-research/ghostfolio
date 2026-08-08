@@ -192,6 +192,38 @@ export class GfDashboardModuleHostComponent
   }
 
   /**
+   * The module's name, followed by its qualifier where it has one.
+   *
+   * Two modules can legitimately share a name, because the shared metadata reuses
+   * the route registry's title verbatim and that registry titles both market
+   * screens `Markets` and both settings screens `Settings`. Behind a URL that was
+   * harmless. On one canvas both can be placed at the same time, and then the
+   * chrome offered nothing to tell them apart: two regions announced as `Settings`,
+   * two identical drag handles, two identical action menus - so a reader could not
+   * say which arrangement they were rearranging, and neither could anyone reading
+   * the region list.
+   *
+   * Composed from the two already-translated values rather than from a new message,
+   * so the qualifier costs no locale an untranslated string: the name and the
+   * qualifier are interpolated data and there is no sentence around them. That is
+   * also why the separator lives here rather than in the metadata - the
+   * authoritative name must stay exactly the registry's title, which is what the
+   * catalog matches a search against.
+   *
+   * Deliberately the same composition, and the same separator, as the catalog row's
+   * own `qualifiedName`: a viewer who added `Settings · Admin Control` from the
+   * catalog must find that exact wording on the module it produced.
+   *
+   * Declared here, between the constructor and the public methods, because that is
+   * where the lint configuration expects an accessor to sit.
+   */
+  public get qualifiedName(): string {
+    return this.definition?.context
+      ? `${this.definition.name} · ${this.definition.context}`
+      : this.definition?.name;
+  }
+
+  /**
    * Starts watching the module's body for anything that could change what is
    * reachable inside it: the user scrolling, the cell being resized, and the
    * module's own content arriving or growing - a table that paginates in 50 rows

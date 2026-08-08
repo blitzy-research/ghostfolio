@@ -11,12 +11,19 @@
   translated where the shared metadata declares it, so it is interpolated
   verbatim, and the failure notice reuses an existing source message
   character-for-character. No string here carries a custom identifier.
+
+  Everything that identifies WHICH module this is goes through `qualifiedName`, so
+  the region, the visible title and both controls agree with each other and with
+  the catalog row the viewer added it from. That matters because two registry
+  entries can share a name - `Markets` and `Settings` each appear twice - and both
+  of a pair can be on the canvas at once, at which point a bare name identifies
+  nothing.
 -->
 <mat-card
   appearance="outlined"
   role="region"
   [attr.aria-busy]="!resolvedComponent && !hasLoadError"
-  [attr.aria-label]="definition?.name"
+  [attr.aria-label]="qualifiedName"
 >
   <!--
     The narrower inline padding is measured, not a preference. In a four-column
@@ -53,18 +60,34 @@
       element, and landing on it puts the arrow keys straight back under the
       reader's fingers.
     -->
+    <!--
+      Named from its own CONTENT rather than from an `aria-label`, and that is what
+      lets the module's name into the name of the control without inventing a
+      message. A label attribute can only hold one string, so saying which module
+      this handle belongs to would have meant a new parameterised source message and
+      an untranslated string in twelve locales. Clipped content costs nothing: the
+      action wording is the same already-translated message it always was, and the
+      module name is interpolated data.
+
+      Worth saying which module, because on a canvas holding both `Settings`
+      modules there would otherwise be two handles announced identically, and a
+      handle is exactly the control whose effect a reader cannot see. `title` stays
+      as the pointer affordance and becomes the accessible description.
+    -->
     <button
       #dragHandle
       aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
-      aria-label="Move or resize module"
       class="gf-dashboard-module-drag-handle p-2"
-      i18n-aria-label
       i18n-title
       title="Drag to move module"
       type="button"
       (keydown)="onDragHandleKeydown($event)"
     >
       <ion-icon aria-hidden="true" name="reorder-two-outline" />
+      <span class="sr-only"
+        ><ng-container i18n>Move or resize module</ng-container>:
+        {{ qualifiedName }}</span
+      >
     </button>
 
     <!--
@@ -74,9 +97,17 @@
       clipping - a clipped flex item contributes a minimum size of ZERO, which is
       exactly how the title collapsed to nothing in a narrow module.
     -->
+    <!--
+      The qualifier is shown rather than only announced, because the ambiguity is
+      visual first: a viewer looking at two cards both headed `Settings` cannot tell
+      which is the account one either. It appears on exactly the three registry
+      entries that declare a context - the two `Settings` modules and the premium
+      `Markets` one - so every other title is unchanged, and `text-truncate` handles
+      a narrow module as it already did.
+    -->
     <div class="module-title">
       <mat-card-title class="mb-0 text-truncate">{{
-        definition?.name
+        qualifiedName
       }}</mat-card-title>
     </div>
 
@@ -87,15 +118,23 @@
       names ellipsized early. The trigger pushes itself to the trailing edge
       instead, which leaves the title everything that is left over.
     -->
+    <!--
+      Named from content for the same reason as the handle above, and it matters more
+      here: this menu's only item REMOVES the module, so a reader arriving at two
+      identically announced triggers has no way to know which arrangement they are
+      about to take apart.
+    -->
     <button
-      aria-label="Module actions"
       class="module-actions"
-      i18n-aria-label
       mat-icon-button
       [matMenuTriggerFor]="moduleActionsMenu"
       (click)="$event.stopPropagation()"
     >
       <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
+      <span class="sr-only"
+        ><ng-container i18n>Module actions</ng-container>:
+        {{ qualifiedName }}</span
+      >
     </button>
     <mat-menu #moduleActionsMenu="matMenu" xPosition="before">
       <button mat-menu-item (click)="onRemove()">

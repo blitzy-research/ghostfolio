@@ -10,10 +10,12 @@ import {
   ChangeDetectorRef,
   Component,
   DestroyRef,
+  ElementRef,
   HostListener,
   Input,
   OnInit,
   QueryList,
+  ViewChild,
   ViewChildren,
   output
 } from '@angular/core';
@@ -131,16 +133,6 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
   public moduleCatalogItems: QueryList<GfModuleCatalogItemComponent>;
 
   /**
-   * The definitions currently on display: permission-eligible, then narrowed by the
-   * active search term.
-   *
-   * Assigned rather than mutated, but note that an empty search term assigns
-   * {@link eligibleModules} itself, so this is not always a fresh reference - the
-   * explicit `markForCheck()` in {@link setModules} is what re-reads the view.
-   */
-  public modules: DashboardModuleDefinition[] = [];
-
-  /**
    * The module types currently on the canvas.
    *
    * Supplied by the canvas, which owns the arrangement, and read for one purpose
@@ -161,6 +153,27 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
    * canvas answers it and this only reports the answer.
    */
   @Input() unavailableModuleTypes: DashboardModuleType[] = [];
+
+  /**
+   * The search field, which is this panel's own first tabbable control.
+   *
+   * Queried so the canvas can hand keyboard focus to the catalog when a viewer
+   * opens it deliberately; see {@link GfModuleCatalogComponent.focusSearchField}.
+   * Read as an `ElementRef` explicitly, because the element the reference names
+   * also hosts Material's input directive and the intent here is the element.
+   */
+  @ViewChild('search', { read: ElementRef })
+  private searchField: ElementRef<HTMLInputElement>;
+
+  /**
+   * The definitions currently on display: permission-eligible, then narrowed by the
+   * active search term.
+   *
+   * Assigned rather than mutated, but note that an empty search term assigns
+   * {@link eligibleModules} itself, so this is not always a fresh reference - the
+   * explicit `markForCheck()` in {@link setModules} is what re-reads the view.
+   */
+  public modules: DashboardModuleDefinition[] = [];
 
   public searchFormControl = new FormControl<string>('');
 
@@ -364,6 +377,58 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     // term - the state the catalog opens in - resolve to the full eligible list
     // through exactly the same path every later term takes.
     this.searchFormControl.setValue('');
+  }
+
+  /**
+   * Puts keyboard focus inside the catalog, reporting whether it landed.
+   *
+   * Exists because the canvas mounts this panel in a Material drawer configured
+   * `mode="side"`, and a side drawer moves focus in neither direction: its
+   * `autoFocus` resolves to `'dialog'` for that mode, and both the take-focus and
+   * the restore-focus paths return immediately for that value. So a viewer who
+   * opened the catalog from the keyboard was left standing on the trigger behind
+   * the panel, able to reach the rows only by tabbing through the whole canvas.
+   * Asking Material for `autoFocus="first-tabbable"` instead would be wrong in the
+   * other direction: the drawer cannot tell an open a viewer asked for from the
+   * unprompted first-visit open, so it would seize focus during that one too.
+   * Hence the canvas calls this, and calls it only for an open a viewer initiated.
+   *
+   * The search field is the target rather than the first row because it is this
+   * panel's own first tabbable and the one control that reaches every row: a
+   * viewer who lands there can type to narrow the list or Tab onward into it,
+   * whereas landing on a row silently skips the field. The first row is the
+   * fallback for the only case where there is no field to land on - a view query
+   * that has not resolved yet.
+   *
+   * Reports rather than assumes, exactly as the module host's `focusDragHandle`
+   * does and for the same reason: `focus()` on a detached or hidden element is a
+   * silent no-op in every browser, so the only honest way to answer is to ask the
+   * document where focus actually ended up. The canvas needs that answer because
+   * it only owes the trigger a restoration for focus it actually moved.
+   *
+   * @returns Whether focus is now inside the catalog.
+   */
+  public focusSearchField(): boolean {
+    const searchField = this.searchField?.nativeElement;
+
+    if (searchField) {
+      searchField.focus();
+
+      if (searchField.ownerDocument?.activeElement === searchField) {
+        return true;
+      }
+    }
+
+    // Falls through to the roving list rather than giving up. `setFirstItemActive`
+    // moves real DOM focus onto the first row AND leaves the key manager measuring
+    // from it, so an arrow press straight afterwards steps to the second row
+    // instead of jumping to one end of the list. The row's own focus event keeps
+    // the tab stop in step, so nothing is assigned here.
+    this.keyManager?.setFirstItemActive();
+
+    const firstRow = this.moduleCatalogItems?.first?.rowElement?.nativeElement;
+
+    return !!firstRow && firstRow.ownerDocument?.activeElement === firstRow;
   }
 
   public onAddModule(moduleType: DashboardModuleType) {

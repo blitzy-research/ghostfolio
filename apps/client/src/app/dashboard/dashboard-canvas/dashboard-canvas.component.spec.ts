@@ -10,13 +10,17 @@ import { DataService } from '@ghostfolio/ui/services';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
+  ElementRef,
   EventEmitter,
+  forwardRef,
   Input,
   Output,
-  reflectComponentType
+  reflectComponentType,
+  ViewChild
 } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Gridster, GridsterItem } from 'angular-gridster2';
 import type { GridsterItemConfig } from 'angular-gridster2';
@@ -149,7 +153,34 @@ class GfTestPublicPortfolioComponent {}
 @Component({ selector: 'gf-sign-in-prompt', template: '' })
 class GfTestSignInPromptComponent {}
 
-@Component({ selector: 'gf-module-catalog', template: '' })
+/**
+ * Stands in for the catalog panel, and answers a focus request the way the real
+ * panel does.
+ *
+ * It is registered under the real component's token as well as its own, which is
+ * what lets the canvas's `@ViewChild(GfModuleCatalogComponent)` resolve it: a view
+ * query with a type predicate resolves that type through the matched element's
+ * injector, so a stand-in that provides the token is found even though it is a
+ * different class. Without it the query would simply be `undefined` here and the
+ * focus hand-off - the thing under test - would never run.
+ *
+ * The search field is a real focusable element rather than a spy, so the assertions
+ * below can read `document.activeElement` and see where focus actually went. That
+ * matters more than it looks: `focus()` on a hidden element is a silent no-op, so a
+ * spy that merely records being called would pass whether or not focus moved.
+ */
+@Component({
+  providers: [
+    {
+      provide: GfModuleCatalogComponent,
+      // Wrapped because the class is referenced inside its own decorator, which is
+      // the textbook case for a forward reference.
+      useExisting: forwardRef(() => GfTestModuleCatalogComponent)
+    }
+  ],
+  selector: 'gf-module-catalog',
+  template: '<input #search type="text" />'
+})
 class GfTestModuleCatalogComponent {
   /**
    * Both inputs the canvas binds, declared rather than left off - and for a
@@ -166,6 +197,39 @@ class GfTestModuleCatalogComponent {
   @Input() public unavailableModuleTypes: DashboardModuleType[] = [];
 
   @Output() public moduleAdded = new EventEmitter<DashboardModuleType>();
+
+  @ViewChild('search', { read: ElementRef })
+  private searchField: ElementRef<HTMLInputElement>;
+
+  /** How many times the canvas asked this panel to take focus. */
+  public focusRequestCount = 0;
+
+  /**
+   * Whether the search field should report that focus landed.
+   *
+   * A test flips this to model the one case the canvas has to cope with - a panel
+   * that could not take focus - without having to detach or hide anything.
+   */
+  public willTakeFocus = true;
+
+  /**
+   * The real panel's contract: move focus to the search field and report whether it
+   * landed. Mirrored rather than stubbed, so the canvas is exercised against the
+   * same true/false answer the real panel gives.
+   */
+  public focusSearchField(): boolean {
+    this.focusRequestCount += 1;
+
+    const searchField = this.searchField?.nativeElement;
+
+    if (!this.willTakeFocus || !searchField) {
+      return false;
+    }
+
+    searchField.focus();
+
+    return searchField.ownerDocument?.activeElement === searchField;
+  }
 }
 
 @Component({ selector: 'gf-dashboard-module-host', template: '' })
@@ -613,6 +677,17 @@ describe('GfDashboardCanvasComponent', () => {
           useValue: dashboardLayoutServiceMock
         },
         { provide: LayoutService, useValue: layoutServiceMock },
+        // Required rather than tidy-minded, and the catalog drawer is why. Material
+        // enables CSS transitions on a drawer container 200ms after it is
+        // constructed, and from that point on the drawer only reports `openedChange`
+        // when it receives a real `transitionend` - an event this environment
+        // performs no layout to produce, so the report the focus lifecycle hangs off
+        // would simply never arrive. Worse, it depends on wall-clock timing: a test
+        // that ran inside those 200ms would see the report and one that ran after it
+        // would not. Disabling animations keeps the drawer on its no-transition
+        // path, where it reports on a macrotask every time. It also removes that
+        // stray timer from every other test in this suite.
+        provideNoopAnimations(),
         { provide: Router, useValue: routerMock },
         { provide: TokenStorageService, useValue: tokenStorageServiceMock },
         { provide: UserService, useValue: userServiceMock }
@@ -2421,11 +2496,18 @@ describe('GfDashboardCanvasComponent', () => {
       // outlives what it describes is worse than none.
       expect(component.modules).toHaveLength(1);
       expect(component.hasCapacityError).toBe(false);
-      expect(queryElements('[role="status"]')).not.toContainEqual(
-        expect.objectContaining({
-          textContent: expect.stringContaining('no room')
-        })
+
+      // Read through the same typed predicate the positive assertion above uses.
+      // `toContainEqual(expect.objectContaining(...))` was both untyped and a poor
+      // fit here: it structurally walks a live DOM node, so it can report a match
+      // or a miss for reasons that have nothing to do with the notice's wording.
+      const notice = queryElements('[role="status"]').find(
+        ({ textContent }) => {
+          return textContent.includes('no room');
+        }
       );
+
+      expect(notice).toBeUndefined();
     });
 
     it('should stop claiming there is no room once a module is removed', async () => {
@@ -5125,9 +5207,14 @@ describe('GfDashboardCanvasComponent', () => {
 
       commitGeometry(0, { y: 92 });
 
+      // Read without an assertion. The mock is declared with the real argument
+      // tuple, so `modules` already arrives as `DashboardLayoutItem[]` and its
+      // `moduleType` is already the typed discriminator - which is also what makes
+      // the comparison below enum-against-enum rather than string-against-enum.
+      // Casting to a plain-string shape was what widened one side of it.
       const reported = dashboardLayoutServiceMock.scheduleSave.mock.calls.map(
         ([, modules]) =>
-          (modules as { moduleType: string; y: number }[]).find(
+          modules.find(
             ({ moduleType }) => moduleType === DashboardModuleType.HOLDINGS
           )?.y
       );
@@ -5340,6 +5427,244 @@ describe('GfDashboardCanvasComponent', () => {
 
       expect(component.isCatalogOpen).toBe(false);
       expect(queryElement('mat-sidenav.mat-drawer-opened')).toBeNull();
+    });
+  });
+
+  /**
+   * Where keyboard focus goes as the catalog opens and closes.
+   *
+   * A Material drawer in `side` mode manages focus in neither direction: its
+   * `autoFocus` resolves to `'dialog'` for that mode, and both the take-focus and
+   * the restore-focus paths return immediately for that value. `side` is not
+   * negotiable - an `over` or `push` drawer lays down a backdrop that swallows the
+   * drag events the grid needs - so the canvas owns the whole lifecycle, and these
+   * tests are what hold it to that.
+   *
+   * They read `document.activeElement` rather than a spy, because `focus()` on a
+   * hidden or detached element is a silent no-op: only the document can say where
+   * focus actually ended up.
+   */
+  describe('keyboard focus and the catalog drawer', () => {
+    /** One placed module, so the catalog starts closed rather than auto-opened. */
+    const placedLayout: UserDashboardLayout = {
+      modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+      version: 1
+    };
+
+    /**
+     * Lets the drawer finish reporting the transition it has begun, then repaints.
+     *
+     * Two asynchronous hops separate an interaction from the report the focus
+     * lifecycle hangs off, which is why this waits for the zone to run dry rather
+     * than counting them: the drawer schedules its animation-end on a macrotask, and
+     * `openedChange` is an asynchronous `EventEmitter`, so delivery to the canvas is
+     * deferred again. Draining is also what makes this independent of how many hops
+     * a future Material version uses.
+     */
+    const settleDrawer = async () => {
+      await fixture.whenStable();
+
+      paint();
+    };
+
+    const catalogSearchField = () => {
+      return queryElement<HTMLInputElement>('gf-module-catalog input');
+    };
+
+    const catalogTriggerButton = () => {
+      return queryElement<HTMLButtonElement>(
+        '.gf-dashboard-catalog-trigger button'
+      );
+    };
+
+    it('should hand focus to the catalog when the viewer asks for it', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(false);
+
+      const trigger = catalogTriggerButton();
+
+      // Focused explicitly because `HTMLElement.click()` does not move focus in
+      // this environment, whereas a real pointer press on a button does - and the
+      // control the viewer came from is the whole subject of the restoration below.
+      trigger.focus();
+      trigger.click();
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(true);
+
+      // Asked exactly once, and where focus lands inside the panel is the panel's
+      // own decision - the canvas delegates it rather than reaching past the
+      // component into its markup.
+      expect(moduleCatalogComponent().focusRequestCount).toBe(1);
+      expect(document.activeElement).toBe(catalogSearchField());
+    });
+
+    it('should give focus back to the trigger when the drawer closes itself', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+      await settleDrawer();
+
+      const trigger = catalogTriggerButton();
+
+      trigger.focus();
+      trigger.click();
+      paint();
+      await settleDrawer();
+
+      expect(document.activeElement).toBe(catalogSearchField());
+
+      // The drawer closing itself, which is what Escape does. Without the
+      // restoration, focus goes to the document body and a keyboard-only viewer is
+      // ejected from the application.
+      component.onCatalogOpenedChange(false);
+      paint();
+
+      expect(component.isCatalogOpen).toBe(false);
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('should not take focus when it opens the catalog by itself', async () => {
+      // No saved arrangement, so the canvas opens the panel unprompted - the one
+      // open a viewer did not ask for.
+      await createCanvas();
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(true);
+
+      // Never even asked. A viewer meeting an empty canvas is reading it, and
+      // moving the caret into a search field they did not reach for would interrupt
+      // them and lose their place.
+      expect(moduleCatalogComponent().focusRequestCount).toBe(0);
+      expect(document.activeElement).toBe(document.body);
+
+      // That count has to be a decision rather than a dead wire, so the same fixture
+      // is now driven through a dismissal and a deliberate reopen. Focus arrives on
+      // the second open, which proves the hand-off was live all along and simply
+      // declined for the open the viewer had not asked for.
+      const trigger = catalogTriggerButton();
+
+      trigger.click();
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(false);
+
+      trigger.focus();
+      trigger.click();
+      paint();
+      await settleDrawer();
+
+      expect(moduleCatalogComponent().focusRequestCount).toBe(1);
+      expect(document.activeElement).toBe(catalogSearchField());
+    });
+
+    it('should owe nothing back after an open the viewer did not ask for', async () => {
+      await createCanvas();
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(true);
+      expect(document.activeElement).toBe(document.body);
+
+      // The drawer closing itself after an unprompted open. Focus was never taken,
+      // so there is nothing to give back and the trigger must not be focused - a
+      // viewer who never touched it would find the caret on a control they did not
+      // choose.
+      component.onCatalogOpenedChange(false);
+      paint();
+
+      expect(component.isCatalogOpen).toBe(false);
+      expect(document.activeElement).toBe(document.body);
+    });
+
+    it('should return focus to the empty canvas affordance the viewer opened it from', async () => {
+      await createCanvas();
+      paint();
+      await settleDrawer();
+
+      // Dismissed first, so the open below is a deliberate one rather than the
+      // unprompted open the canvas has just performed.
+      component.onCatalogOpenedChange(false);
+      paint();
+      await settleDrawer();
+
+      const affordance = queryElement<HTMLButtonElement>(
+        'gf-empty-canvas-state button'
+      );
+
+      affordance.focus();
+      affordance.click();
+      paint();
+      await settleDrawer();
+
+      expect(document.activeElement).toBe(catalogSearchField());
+
+      component.onCatalogOpenedChange(false);
+      paint();
+
+      // The control the viewer actually came from, not the floating trigger. Both
+      // are correct destinations in general; this one is where they were.
+      expect(document.activeElement).toBe(affordance);
+    });
+
+    it('should leave focus where it is when the catalog cannot take it', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+      await settleDrawer();
+
+      moduleCatalogComponent().willTakeFocus = false;
+
+      const trigger = catalogTriggerButton();
+
+      trigger.focus();
+      trigger.click();
+      paint();
+      await settleDrawer();
+
+      // Asked, refused, and no pretence either way: focus stays on the control the
+      // viewer pressed rather than being dropped somewhere unreachable.
+      expect(moduleCatalogComponent().focusRequestCount).toBe(1);
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('should not pull focus off something the viewer is using', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+      await settleDrawer();
+
+      const trigger = catalogTriggerButton();
+
+      trigger.focus();
+      trigger.click();
+      paint();
+      await settleDrawer();
+
+      expect(document.activeElement).toBe(catalogSearchField());
+
+      // A focusable control outside the drawer, standing in for anywhere the viewer
+      // may have moved on to while the panel stayed open. Appended rather than
+      // found, because with a module placed the empty-canvas affordance is not
+      // drawn and every other stand-in on this surface renders nothing focusable.
+      const elsewhere = document.createElement('button');
+
+      (fixture.nativeElement as HTMLElement).appendChild(elsewhere);
+      elsewhere.focus();
+
+      expect(document.activeElement).toBe(elsewhere);
+
+      component.onCatalogOpenedChange(false);
+      paint();
+
+      // Untouched. Only focus that the closing panel is about to orphan is worth
+      // rescuing; focus anywhere else is in use, and moving it would be a theft.
+      expect(document.activeElement).toBe(elsewhere);
+
+      elsewhere.remove();
     });
   });
 

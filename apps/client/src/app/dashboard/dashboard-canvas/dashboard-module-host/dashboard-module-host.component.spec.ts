@@ -252,7 +252,53 @@ describe('GfDashboardModuleHostComponent', () => {
 
     expect(query('mat-card-title').textContent.trim()).toBe(moduleName);
 
-    expect(query('button[aria-label="Module actions"]')).toBeTruthy();
+    expect(query('button.module-actions')).toBeTruthy();
+
+    // A module with no qualifier reads exactly as its registry title, with no
+    // separator and nothing appended - so the composition below cannot cost the
+    // seventeen unambiguous modules anything.
+    expect(query('mat-card').getAttribute('aria-label')).toBe(moduleName);
+    expect(query('button.module-actions').textContent.trim()).toBe(
+      `Module actions: ${moduleName}`
+    );
+  });
+
+  it('should qualify a module whose name the registry reuses, everywhere the chrome names it', async () => {
+    // Two registry entries share the name `Settings` and two share `Markets`, each
+    // pair distinguished only by a `context`. Both of a pair can be placed at once,
+    // and before this the chrome said `Settings` in all four places - so a reader
+    // met two identical regions, two identical drag handles and two identical
+    // action menus, one of which removes the wrong arrangement.
+    //
+    // The qualifier is asserted in all four places at once, because agreeing with
+    // itself is the point: the visible title, the region name and both controls have
+    // to say the same thing as the catalog row the module was added from.
+    fixture.componentRef.setInput('definition', {
+      ...createDefinition(() =>
+        Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent)
+      ),
+      context: 'Admin Control',
+      name: 'Settings'
+    });
+
+    await settle();
+
+    const qualifiedName = 'Settings · Admin Control';
+
+    expect(component.qualifiedName).toBe(qualifiedName);
+    expect(query('mat-card-title').textContent.trim()).toBe(qualifiedName);
+    expect(query('mat-card').getAttribute('aria-label')).toBe(qualifiedName);
+    expect(query('.gf-dashboard-module-drag-handle').textContent.trim()).toBe(
+      `Move or resize module: ${qualifiedName}`
+    );
+    expect(query('button.module-actions').textContent.trim()).toBe(
+      `Module actions: ${qualifiedName}`
+    );
+
+    // The same separator the catalog row uses, so the two cannot drift apart. Both
+    // halves are already-translated registry values, so composing them here adds no
+    // source message and leaves no locale with an untranslated string.
+    expect(qualifiedName).toContain(' · ');
   });
 
   it('should preserve readable title space and a module-scale content gutter', async () => {
@@ -265,7 +311,7 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(query('mat-card-title').parentElement.classList).toContain(
       'module-title'
     );
-    expect(query('button[aria-label="Module actions"]').classList).toContain(
+    expect(query('button.module-actions').classList).toContain(
       'module-actions'
     );
     expect(query('.gridster-item-content').classList).toContain('p-3');
@@ -482,7 +528,18 @@ describe('GfDashboardModuleHostComponent', () => {
     // button now because it genuinely acts on keys, and it says which ones.
     expect(handle.tagName).toBe('BUTTON');
     expect(handle.disabled).toBe(false);
-    expect(handle.getAttribute('aria-label')).toBe('Move or resize module');
+
+    // Named from its own clipped content rather than from a label attribute, which
+    // is what lets the module's name join the action wording without a new
+    // parameterised source message. An attribute could hold only one of the two.
+    expect(handle.getAttribute('aria-label')).toBeNull();
+    expect(handle.textContent.trim()).toBe(
+      `Move or resize module: ${moduleName}`
+    );
+    expect(query('.gf-dashboard-module-drag-handle span').classList).toContain(
+      'sr-only'
+    );
+
     expect(handle.getAttribute('aria-keyshortcuts')).toBe(
       'ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight'
     );

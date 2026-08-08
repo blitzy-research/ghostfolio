@@ -50,8 +50,47 @@ describe('GfEntityLogoComponent', () => {
     fixture.detectChanges();
   };
 
+  /**
+   * The rendered image, or `null` when this component is deliberately showing
+   * nothing.
+   *
+   * The host is narrowed BEFORE it is used, because `nativeElement` is typed `any`
+   * and every call through it - the `querySelector` lookup and the member access
+   * that reaches it - was therefore unchecked.
+   *
+   * Nullable, and honestly so. "No image at all" is a state this suite asserts more
+   * than a dozen times, so a helper that claimed otherwise would be describing the
+   * opposite of what half its call sites measure. It used to claim otherwise, and
+   * that claim could not simply be rewritten either: with the host narrowed, `as
+   * HTMLImageElement` is reported as a style error in favour of `!`, and `!` is in
+   * turn reported as a forbidden non-null assertion - so the only way out is for the
+   * value to genuinely not be nullable, which is what {@link requireImageOf}
+   * provides for the call sites that need it.
+   */
   const imageOf = (fixture: ComponentFixture<GfEntityLogoComponent>) => {
-    return fixture.nativeElement.querySelector('img') as HTMLImageElement;
+    return (fixture.nativeElement as HTMLElement).querySelector('img');
+  };
+
+  /**
+   * The rendered image, for the assertions that go on to read it.
+   *
+   * Throws rather than returning `null`, which is what narrows the type for the
+   * caller. A matcher could not: `expect(...).not.toBeNull()` tells the reader the
+   * image is there but tells the compiler nothing, so every following property read
+   * would still be an access on a possibly-absent element.
+   *
+   * A missing image therefore fails the test right here, naming the component state
+   * that was expected, instead of failing further down as an unexplained read on
+   * `undefined`.
+   */
+  const requireImageOf = (fixture: ComponentFixture<GfEntityLogoComponent>) => {
+    const image = imageOf(fixture);
+
+    if (!image) {
+      throw new Error('Expected a rendered logo image, but none was rendered.');
+    }
+
+    return image;
   };
 
   beforeEach(() => {
@@ -66,7 +105,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(fixture, 'first-attempt');
 
-    const image = imageOf(fixture);
+    const image = requireImageOf(fixture);
 
     expect(image).not.toBeNull();
     expect(image.getAttribute('src')).toBe(logoUrlFor('first-attempt'));
@@ -77,7 +116,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(fixture, 'goes-missing');
 
-    imageOf(fixture).dispatchEvent(new Event('error'));
+    requireImageOf(fixture).dispatchEvent(new Event('error'));
 
     fixture.detectChanges();
 
@@ -92,7 +131,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(first, 'shared-between-two-tables');
 
-    imageOf(first).dispatchEvent(new Event('error'));
+    requireImageOf(first).dispatchEvent(new Event('error'));
 
     first.detectChanges();
 
@@ -128,7 +167,7 @@ describe('GfEntityLogoComponent', () => {
     // was made. The second waits on the first rather than repeating it.
     expect(imageOf(second)).toBeNull();
 
-    imageOf(first).dispatchEvent(new Event('error'));
+    requireImageOf(first).dispatchEvent(new Event('error'));
 
     first.detectChanges();
     second.detectChanges();
@@ -153,12 +192,12 @@ describe('GfEntityLogoComponent', () => {
     // would leave every row after the first permanently blank for logos that do
     // exist - a silent regression on the common path, traded for a saved request
     // on the rare one.
-    imageOf(first).dispatchEvent(new Event('load'));
+    requireImageOf(first).dispatchEvent(new Event('load'));
 
     second.detectChanges();
 
     expect(imageOf(second)).not.toBeNull();
-    expect(imageOf(second).getAttribute('src')).toBe(
+    expect(requireImageOf(second).getAttribute('src')).toBe(
       logoUrlFor('this-one-really-exists')
     );
   });
@@ -182,7 +221,7 @@ describe('GfEntityLogoComponent', () => {
     second.detectChanges();
 
     expect(imageOf(second)).not.toBeNull();
-    expect(imageOf(second).getAttribute('src')).toBe(
+    expect(requireImageOf(second).getAttribute('src')).toBe(
       logoUrlFor('probe-goes-away')
     );
   });
@@ -192,7 +231,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(failing, 'this-one-is-empty');
 
-    imageOf(failing).dispatchEvent(new Event('error'));
+    requireImageOf(failing).dispatchEvent(new Event('error'));
 
     failing.detectChanges();
 
@@ -205,7 +244,7 @@ describe('GfEntityLogoComponent', () => {
     // profile has no `url`, which is a fact about that profile and not about
     // manually-added holdings in general.
     expect(imageOf(other)).not.toBeNull();
-    expect(imageOf(other).getAttribute('src')).toBe(
+    expect(requireImageOf(other).getAttribute('src')).toBe(
       logoUrlFor('this-one-is-fine')
     );
   });
@@ -229,7 +268,7 @@ describe('GfEntityLogoComponent', () => {
     // with nobody probing it, it would have blocked the logo for every later row
     // showing that asset profile, silently and for the rest of the session.
     expect(imageOf(later)).not.toBeNull();
-    expect(imageOf(later).getAttribute('src')).toBe(
+    expect(requireImageOf(later).getAttribute('src')).toBe(
       logoUrlFor('abandoned-mid-flight')
     );
   });
@@ -239,7 +278,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(switching, 'answers-too-late');
 
-    const abandonedImage = imageOf(switching);
+    const abandonedImage = requireImageOf(switching);
 
     renderWith(switching, 'wanted-now-instead');
 
@@ -251,7 +290,7 @@ describe('GfEntityLogoComponent', () => {
     switching.detectChanges();
 
     expect(imageOf(switching)).not.toBeNull();
-    expect(imageOf(switching).getAttribute('src')).toBe(
+    expect(requireImageOf(switching).getAttribute('src')).toBe(
       logoUrlFor('wanted-now-instead')
     );
 
@@ -265,12 +304,12 @@ describe('GfEntityLogoComponent', () => {
     // address, that address would already be settled as empty, this `load` would
     // be refused as a second answer, and the waiting row would stay blank for a
     // logo that exists.
-    imageOf(switching).dispatchEvent(new Event('load'));
+    requireImageOf(switching).dispatchEvent(new Event('load'));
 
     waiting.detectChanges();
 
     expect(imageOf(waiting)).not.toBeNull();
-    expect(imageOf(waiting).getAttribute('src')).toBe(
+    expect(requireImageOf(waiting).getAttribute('src')).toBe(
       logoUrlFor('wanted-now-instead')
     );
   });
@@ -297,7 +336,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(waiting, 'the-one-being-probed');
 
-    imageOf(switching).dispatchEvent(new Event('load'));
+    requireImageOf(switching).dispatchEvent(new Event('load'));
 
     waiting.detectChanges();
 
@@ -319,14 +358,16 @@ describe('GfEntityLogoComponent', () => {
     // restart the probe, which is why the image is tracked by its address rather
     // than re-created whenever anything changes.
     expect(imageOf(rendered)).toBe(firstImage);
-    expect(imageOf(rendered).getAttribute('title')).toBe('Keeps Its Element');
+    expect(requireImageOf(rendered).getAttribute('title')).toBe(
+      'Keeps Its Element'
+    );
 
     renderWith(rendered, 'gets-a-new-element');
 
     // Different address, different element - and therefore different listeners,
     // which is what stops the previous address's answer arriving as this one's.
     expect(imageOf(rendered)).not.toBe(firstImage);
-    expect(imageOf(rendered).getAttribute('src')).toBe(
+    expect(requireImageOf(rendered).getAttribute('src')).toBe(
       logoUrlFor('gets-a-new-element')
     );
   });
@@ -336,7 +377,7 @@ describe('GfEntityLogoComponent', () => {
 
     renderWith(cleared, 'identified-then-not');
 
-    imageOf(cleared).dispatchEvent(new Event('load'));
+    requireImageOf(cleared).dispatchEvent(new Event('load'));
 
     cleared.detectChanges();
 
@@ -373,7 +414,7 @@ describe('GfEntityLogoComponent', () => {
     // Same obligation as a row moving on: an emptied row stops probing, so the
     // address it was probing has to go back rather than stay pending forever.
     expect(imageOf(later)).not.toBeNull();
-    expect(imageOf(later).getAttribute('src')).toBe(
+    expect(requireImageOf(later).getAttribute('src')).toBe(
       logoUrlFor('cleared-mid-flight')
     );
   });
@@ -393,7 +434,7 @@ describe('GfEntityLogoComponent', () => {
 
     waiting.detectChanges();
 
-    imageOf(probing).dispatchEvent(new Event('load'));
+    requireImageOf(probing).dispatchEvent(new Event('load'));
 
     waiting.detectChanges();
 

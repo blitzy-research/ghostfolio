@@ -122,6 +122,19 @@
           >
             <ng-container i18n>Priority</ng-container>
           </th>
+          <!--
+            The glyph is the whole of what this cell shows, so it needs a textual
+            equivalent rather than only a decorative marking. Hiding the icon without
+            adding one left the cell announced as empty: a reader was told the column
+            is called "Priority" and then given nothing for any row in it, which is
+            worse than the untranslated glyph name it replaced.
+
+            `.sr-only` rather than an `aria-label` on the icon, and rather than
+            visible text. An `aria-label` on a custom element carries no role, so it
+            is not reliably announced; visible text would change a table that is
+            deliberately glyph-dense. This adds a name for the same three states the
+            colours and arrows already distinguish visually, and nothing else.
+          -->
           <td *matCellDef="let element" class="px-1 py-2" mat-cell>
             @if (element.opts.priority === DATA_GATHERING_QUEUE_PRIORITY_LOW) {
               <ion-icon
@@ -129,6 +142,7 @@
                 class="h6 mb-0"
                 name="chevron-down-circle-outline"
               />
+              <span class="sr-only" i18n>Low</span>
             } @else if (
               element.opts.priority === DATA_GATHERING_QUEUE_PRIORITY_MEDIUM
             ) {
@@ -137,6 +151,7 @@
                 class="h6 mb-0"
                 name="remove-circle-outline"
               />
+              <span class="sr-only" i18n>Medium</span>
             } @else if (
               element.opts.priority === DATA_GATHERING_QUEUE_PRIORITY_HIGH
             ) {
@@ -145,6 +160,7 @@
                 class="h6 mb-0"
                 name="chevron-up-circle-outline"
               />
+              <span class="sr-only" i18n>High</span>
             }
           </td>
         </ng-container>
@@ -192,6 +208,20 @@
           <th *matHeaderCellDef class="px-1 py-2" mat-header-cell scope="col">
             <ng-container i18n>Status</ng-container>
           </th>
+          <!--
+            Every branch pairs a decorative glyph with its own localized name, for
+            the same reason the Priority cell above does: the icon was the cell's
+            only content, so hiding it left the Status column announcing nothing at
+            all for every row.
+
+            The `delayed` branch was additionally the inconsistent inverse of the
+            others - the only glyph NOT marked decorative, and with no name of its
+            own, so a reader was handed whatever the icon element happened to expose.
+            It is now marked and named exactly like its five siblings, and its
+            conditional danger colour stays untouched: that colour distinguishes a
+            delayed job which has already failed at least once, and the distinction
+            now travels in the name as well, because no reader can see a colour.
+          -->
           <td *matCellDef="let element" class="px-1 py-2" mat-cell>
             @if (element.state === 'active') {
               <ion-icon
@@ -199,36 +229,47 @@
                 class="h6 mb-0"
                 name="play-outline"
               />
+              <span class="sr-only" i18n>Active</span>
             } @else if (element.state === 'completed') {
               <ion-icon
                 aria-hidden="true"
                 class="h6 mb-0 text-success"
                 name="checkmark-circle-outline"
               />
+              <span class="sr-only" i18n>Completed</span>
             } @else if (element.state === 'delayed') {
               <ion-icon
+                aria-hidden="true"
                 class="h6 mb-0"
                 name="time-outline"
                 [ngClass]="{ 'text-danger': element.stacktrace?.length > 0 }"
               />
+              @if (element.stacktrace?.length > 0) {
+                <span class="sr-only" i18n>Delayed after an error</span>
+              } @else {
+                <span class="sr-only" i18n>Delayed</span>
+              }
             } @else if (element.state === 'failed') {
               <ion-icon
                 aria-hidden="true"
                 class="h6 mb-0 text-danger"
                 name="alert-circle-outline"
               />
+              <span class="sr-only" i18n>Failed</span>
             } @else if (element.state === 'paused') {
               <ion-icon
                 aria-hidden="true"
                 class="h6 mb-0"
                 name="pause-outline"
               />
+              <span class="sr-only" i18n>Paused</span>
             } @else if (element.state === 'waiting') {
               <ion-icon
                 aria-hidden="true"
                 class="h6 mb-0"
                 name="cafe-outline"
               />
+              <span class="sr-only" i18n>Waiting</span>
             }
           </td>
         </ng-container>

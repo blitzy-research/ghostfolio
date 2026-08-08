@@ -252,8 +252,20 @@
       closes a drawer on Escape, and a viewer dismissing the panel that way would
       otherwise leave this flag - and with it the trigger's glyph - claiming the
       panel was still open.
+
+      `openedChange` also carries the focus lifecycle, because a `side` drawer
+      manages focus in neither direction - see `onCatalogOpenedChange`. Note that
+      `autoFocus` is deliberately left unset: its default for this mode is what
+      makes the drawer keep its hands off focus, and naming a value here would
+      either change nothing or make the panel seize focus on the unprompted
+      first-visit open as well.
+
+      Referenced so the canvas can ask whether focus is still inside the panel
+      when it closes, which is what keeps returning focus to the trigger from
+      taking it away from somewhere the viewer put it themselves.
     -->
       <mat-sidenav
+        #catalogDrawer
         id="gfDashboardModuleCatalog"
         mode="side"
         position="end"
