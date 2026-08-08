@@ -122,6 +122,17 @@ export class RedisCacheService {
   private static readonly CLIENT_ERROR_LOG_INTERVAL = ms('1 minute');
 
   private client: Keyv;
+
+  /**
+   * The store probe that is currently running, if any.
+   *
+   * Held so concurrent callers of {@link isHealthy} share one probe rather than
+   * each queuing their own commands against a store that may be unreachable. Reset
+   * the moment the probe settles, so this bounds concurrent work without ever
+   * caching a verdict.
+   */
+  private inFlightHealthCheck: Promise<boolean>;
+
   private lastClientErrorCategory: RedisFaultCategory;
   private lastClientErrorLoggedAt = 0;
   private suppressedClientErrorCount = 0;
@@ -197,13 +208,79 @@ export class RedisCacheService {
     return `quote-${getAssetProfileIdentifier({ dataSource, symbol })}`;
   }
 
-  public async isHealthy() {
+  /**
+   * Whether the store is reachable and answers correctly.
+   *
+   * Single-flight, and that is a resource-consumption safeguard rather than an
+   * optimisation. This is reached from the **public** health endpoint, which is
+   * also polled by container orchestration, so during an outage it is called
+   * repeatedly and concurrently - and while the store is unreachable its client
+   * holds every command in an offline queue until it reconnects. One probe per
+   * outage window instead of one per caller is what keeps that queue, and the
+   * pending promises behind it, bounded no matter how often the endpoint is hit.
+   *
+   * Every concurrent caller is handed the same answer, which is correct as well as
+   * cheap: they are all asking about the same store at the same moment and cannot
+   * be told apart by the answer. The memo is released as soon as the probe settles,
+   * so this never becomes a cache of a stale verdict - the next caller after it
+   * settles probes again.
+   */
+  public async isHealthy(): Promise<boolean> {
+    this.inFlightHealthCheck ??= this.probeStore().finally(() => {
+      this.inFlightHealthCheck = undefined;
+    });
+
+    return this.inFlightHealthCheck;
+  }
+
+  public async remove(key: string) {
+    return this.cache.del(key);
+  }
+
+  public async removePortfolioSnapshotsByUserId({
+    userId
+  }: {
+    userId: string;
+  }) {
+    const keys = await this.getKeys(
+      `${this.getPortfolioSnapshotKey({ userId })}`
+    );
+
+    return this.cache.mdel(keys);
+  }
+
+  public async reset() {
+    return this.cache.clear();
+  }
+
+  public async set(key: string, value: string, ttl?: number) {
+    return this.cache.set(
+      key,
+      value,
+      ttl ?? this.configurationService.get('CACHE_TTL')
+    );
+  }
+
+  /**
+   * Performs one store probe: write, read back, compare.
+   *
+   * Separated from {@link isHealthy} so the single-flight memo has something to
+   * wrap; everything in here runs at most once per outage window.
+   */
+  private async probeStore() {
     const HEALTH_CHECK_TIMEOUT = ms('5 seconds');
 
     const testKey = `__health_check__${randomUUID().replace(/-/g, '')}`;
     const testValue = Date.now().toString();
 
     let healthCheckTimeout: NodeJS.Timeout;
+
+    // Whether the probe's own write reached the store, which decides below whether
+    // there is anything to clean up. Without it the cleanup was dispatched
+    // unconditionally, so a probe that timed out because the store was unreachable
+    // added a *second* command to the very offline queue that had just failed to
+    // drain the first.
+    let hasWrittenTestKey = false;
 
     // Set at the two points this probe diagnoses itself, so the outcome is
     // reported from what happened rather than from what the failure was called.
@@ -215,6 +292,8 @@ export class RedisCacheService {
       await Promise.race([
         (async () => {
           await this.set(testKey, testValue, HEALTH_CHECK_TIMEOUT);
+
+          hasWrittenTestKey = true;
 
           const result = await this.get(testKey);
 
@@ -252,49 +331,28 @@ export class RedisCacheService {
       // the window.
       clearTimeout(healthCheckTimeout);
 
-      // Detached on purpose: this method must resolve even when the store does
-      // not. While the store is unreachable its client holds every command in
-      // an offline queue until it reconnects, so awaiting the removal here would
-      // hold `isHealthy()` open for as long as the outage lasts - the health
-      // handler would then never write a response at all, and a liveness probe
-      // would time out instead of receiving the 503 the outage warrants.
-      // Losing the deletion costs nothing: the key was written with a TTL, so it
-      // expires on its own.
-      void this.remove(testKey).catch(() => {
-        // Swallowed deliberately. A cleanup that cannot reach the store carries
-        // no information the health result does not already convey, and the
-        // client error handler above reports connection failures once per
-        // window on its own.
-      });
+      // Only when the write actually landed. A probe that timed out because the
+      // store was unreachable has nothing to remove, and enqueuing a removal
+      // anyway would add work to the same offline queue that had just failed to
+      // drain the write - turning every repeated probe during an outage into two
+      // queued commands instead of none.
+      if (hasWrittenTestKey) {
+        // Detached on purpose: this method must resolve even when the store does
+        // not. While the store is unreachable its client holds every command in
+        // an offline queue until it reconnects, so awaiting the removal here would
+        // hold `isHealthy()` open for as long as the outage lasts - the health
+        // handler would then never write a response at all, and a liveness probe
+        // would time out instead of receiving the 503 the outage warrants.
+        // Losing the deletion costs nothing: the key was written with a TTL, so it
+        // expires on its own.
+        void this.remove(testKey).catch(() => {
+          // Swallowed deliberately. A cleanup that cannot reach the store carries
+          // no information the health result does not already convey, and the
+          // client error handler above reports connection failures once per
+          // window on its own.
+        });
+      }
     }
-  }
-
-  public async remove(key: string) {
-    return this.cache.del(key);
-  }
-
-  public async removePortfolioSnapshotsByUserId({
-    userId
-  }: {
-    userId: string;
-  }) {
-    const keys = await this.getKeys(
-      `${this.getPortfolioSnapshotKey({ userId })}`
-    );
-
-    return this.cache.mdel(keys);
-  }
-
-  public async reset() {
-    return this.cache.clear();
-  }
-
-  public async set(key: string, value: string, ttl?: number) {
-    return this.cache.set(
-      key,
-      value,
-      ttl ?? this.configurationService.get('CACHE_TTL')
-    );
   }
 
   /**

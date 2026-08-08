@@ -41,6 +41,26 @@ npm-debug.log
 testem.log
 /typings
 
+# Local TLS material for the HTTPS dev server
+#
+# Generated per workstation with `npm run certificates:generate` and never
+# committed: a key in version control is the same key in every clone and on every
+# machine that has ever had a copy, so it cannot be rotated and cannot be trusted.
+#
+# The certificate is ignored alongside its key even though a certificate is public,
+# because the two are only valid as a pair - shipping one without the other leaves
+# the dev server presenting a certificate no local key matches.
+#
+# The extension patterns are the guard against the next one: they cover the formats
+# that carry a private key, so a key added anywhere in this workspace is ignored by
+# default rather than by remembering to add it here.
+apps/client/localhost.cert
+apps/client/localhost.pem
+*.key
+*.p12
+*.pem
+*.pfx
+
 # System Files
 .DS_Store
 Thumbs.db

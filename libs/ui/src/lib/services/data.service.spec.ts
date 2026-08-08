@@ -1,3 +1,7 @@
+import {
+  KEY_STORAGE_AUTHORIZATION_TOKEN,
+  KEY_STORAGE_IMPERSONATION_ID
+} from '@ghostfolio/common/config';
 import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
 import {
   PortfolioDetails,
@@ -637,5 +641,272 @@ describe('DataService in-flight read sharing', () => {
     // a rejected request would turn one server error into a permanent one for
     // every caller that followed.
     httpTestingController.expectOne(detailsPath).flush(detailsResponse());
+  });
+});
+
+/**
+ * Who a shared read was issued as.
+ *
+ * The request line is only part of what distinguishes these requests. The bearer
+ * token, the impersonated account and the timezone are attached afterwards, by the
+ * application's outgoing request interceptor, and are invisible to the sharing
+ * decision - so on the request line alone two reads of `/portfolio/details` made
+ * as two different accounts are indistinguishable, and the second would be handed
+ * the first one's response.
+ *
+ * That is reachable in one document without any race being contrived. A sign-out
+ * followed by a sign-in, an access-token sign-in, a 401 from any request, and every
+ * impersonation change all swap the identity while reads are outstanding, because
+ * the canvas keeps several of them in flight at once. The disclosed values are
+ * holdings, performance, positions and summary figures - the whole of the portfolio.
+ *
+ * Each test below therefore reproduces the same shape: start a read, change the
+ * identity **without flushing**, start the same read again, and require that the
+ * second one reaches the network on its own. `httpTestingController.verify()` in
+ * `afterEach` is what makes the request counts exact.
+ */
+describe('DataService in-flight read sharing across identities', () => {
+  const detailsPath = '/api/v1/portfolio/details';
+
+  /**
+   * The storage keys the outgoing request interceptor reads to decide which
+   * account a request is made as. Imported rather than spelled out, because the
+   * partitioning is only correct while the facade and the interceptor read the
+   * same keys - and a copy here would keep passing after a rename that had already
+   * un-partitioned production.
+   */
+  const authorizationTokenKey = KEY_STORAGE_AUTHORIZATION_TOKEN;
+  const impersonationIdKey = KEY_STORAGE_IMPERSONATION_ID;
+
+  const responseFor = (holding: string) => {
+    return { holdings: { [holding]: { value: 1 } } };
+  };
+
+  let dataService: DataService;
+  let httpTestingController: HttpTestingController;
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+
+    TestBed.configureTestingModule({
+      providers: [DataService, provideHttpClient(), provideHttpClientTesting()]
+    });
+
+    dataService = TestBed.inject(DataService);
+    httpTestingController = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpTestingController.verify();
+
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it('does not let a read issued as one account join a request created as another', () => {
+    window.sessionStorage.setItem(authorizationTokenKey, 'token-of-account-a');
+
+    let receivedByB: unknown;
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestAsAccountA = httpTestingController.expectOne(detailsPath);
+
+    // The identity changes while account A's read is still outstanding, which is
+    // exactly what a sign-out and sign-in, an access-token sign-in, or a 401 does.
+    window.sessionStorage.setItem(authorizationTokenKey, 'token-of-account-b');
+
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      receivedByB = response;
+    });
+
+    const requestsAsAccountB = httpTestingController.match(
+      ({ url }) => url === detailsPath && url !== undefined
+    );
+
+    // One request for A, one for B. Before this partitioning there was one request
+    // in total and B was subscribed to it.
+    expect(requestsAsAccountB.length).toBe(1);
+
+    requestAsAccountA.flush(responseFor('ACCOUNT_A_HOLDING'));
+
+    // A's response landed and B is still waiting, which is the assertion that
+    // matters: B was never subscribed to A's request and therefore cannot have
+    // been handed A's portfolio.
+    expect(receivedByB).toBeUndefined();
+
+    requestsAsAccountB[0].flush(responseFor('ACCOUNT_B_HOLDING'));
+
+    expect(receivedByB).toEqual(responseFor('ACCOUNT_B_HOLDING'));
+  });
+
+  it('does not let a read join a request created under a different impersonation', () => {
+    window.sessionStorage.setItem(authorizationTokenKey, 'token-of-an-admin');
+    window.localStorage.setItem(impersonationIdKey, 'impersonated-user-1');
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestAsFirstSubject = httpTestingController.expectOne(detailsPath);
+
+    // The token is unchanged; only who it is being used on behalf of has changed.
+    // The server scopes the whole response by this header, so it varies the answer
+    // just as completely as the token does.
+    window.localStorage.setItem(impersonationIdKey, 'impersonated-user-2');
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestAsSecondSubject = httpTestingController.match(
+      ({ url }) => url === detailsPath
+    );
+
+    expect(requestAsSecondSubject.length).toBe(1);
+
+    requestAsFirstSubject.flush(responseFor('SUBJECT_1_HOLDING'));
+    requestAsSecondSubject[0].flush(responseFor('SUBJECT_2_HOLDING'));
+  });
+
+  it('does not let a read join a request created before impersonation was cleared', () => {
+    window.sessionStorage.setItem(authorizationTokenKey, 'token-of-an-admin');
+    window.localStorage.setItem(impersonationIdKey, 'impersonated-user-1');
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestWhileImpersonating =
+      httpTestingController.expectOne(detailsPath);
+
+    // Leaving impersonation is the same transition in the opposite direction, and
+    // the one where joining would disclose the *admin's* own portfolio to a view
+    // that was showing somebody else's.
+    window.localStorage.removeItem(impersonationIdKey);
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestAfterLeaving = httpTestingController.match(
+      ({ url }) => url === detailsPath
+    );
+
+    expect(requestAfterLeaving.length).toBe(1);
+
+    requestWhileImpersonating.flush(responseFor('SUBJECT_HOLDING'));
+    requestAfterLeaving[0].flush(responseFor('ADMIN_HOLDING'));
+  });
+
+  it('does not let a signed-out read join one issued while signed in', () => {
+    window.sessionStorage.setItem(authorizationTokenKey, 'token-of-account-a');
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestWhileSignedIn = httpTestingController.expectOne(detailsPath);
+
+    // Sign-out clears the token, and the response interceptor does exactly this on
+    // any 401. An anonymous read must not be answered from a request that carried
+    // somebody's credentials.
+    window.sessionStorage.removeItem(authorizationTokenKey);
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestWhileSignedOut = httpTestingController.match(
+      ({ url }) => url === detailsPath
+    );
+
+    expect(requestWhileSignedOut.length).toBe(1);
+
+    requestWhileSignedIn.flush(responseFor('ACCOUNT_A_HOLDING'));
+    requestWhileSignedOut[0].flush(responseFor('NOTHING'));
+  });
+
+  it('reads the token from local storage when the session holds none', () => {
+    // "Stay signed in" writes to local storage, and the interceptor falls back to
+    // it. A facade that only looked at session storage would treat every one of
+    // those visitors as anonymous and share their reads with each other.
+    window.localStorage.setItem(authorizationTokenKey, 'token-of-account-a');
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestAsAccountA = httpTestingController.expectOne(detailsPath);
+
+    window.localStorage.setItem(authorizationTokenKey, 'token-of-account-b');
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requestAsAccountB = httpTestingController.match(
+      ({ url }) => url === detailsPath
+    );
+
+    expect(requestAsAccountB.length).toBe(1);
+
+    requestAsAccountA.flush(responseFor('ACCOUNT_A_HOLDING'));
+    requestAsAccountB[0].flush(responseFor('ACCOUNT_B_HOLDING'));
+  });
+
+  it('still shares two overlapping reads issued as the same account', () => {
+    window.sessionStorage.setItem(authorizationTokenKey, 'token-of-account-a');
+    window.localStorage.setItem(impersonationIdKey, 'impersonated-user-1');
+
+    const received: unknown[] = [];
+
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      received.push(response);
+    });
+    dataService.fetchPortfolioDetails().subscribe((response) => {
+      received.push(response);
+    });
+
+    // The partitioning must not have been achieved by abandoning the sharing. Two
+    // modules on one canvas asking the same question as the same account is the
+    // case the sharing exists for, and it still collapses to one request.
+    const requests = httpTestingController.match(detailsPath);
+
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(responseFor('ACCOUNT_A_HOLDING'));
+
+    expect(received.length).toBe(2);
+  });
+
+  it('ignores an impersonation identifier left behind with no token', () => {
+    // Impersonation is only sent alongside a bearer token, so a stale identifier
+    // in storage does not change an anonymous request and must not split reads that
+    // are in fact identical.
+    window.localStorage.setItem(impersonationIdKey, 'stale-impersonation');
+
+    dataService.fetchPortfolioDetails().subscribe();
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const requests = httpTestingController.match(detailsPath);
+
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(responseFor('ANONYMOUS'));
+  });
+
+  it('keeps no bearer token in the key it partitions by', () => {
+    const token = 'token-that-must-not-be-retained';
+
+    window.sessionStorage.setItem(authorizationTokenKey, token);
+
+    dataService.fetchPortfolioDetails().subscribe();
+
+    const request = httpTestingController.expectOne(detailsPath);
+
+    // The register is keyed by a generation counter, not by the context itself. A
+    // credential has no business being a map key in a service that lives as long
+    // as the document, reachable from anything holding a reference to it.
+    const registerKeys = [
+      ...(
+        dataService as unknown as {
+          inFlightGetRequests: Map<string, unknown>;
+        }
+      ).inFlightGetRequests.keys()
+    ];
+
+    expect(registerKeys.length).toBe(1);
+
+    for (const key of registerKeys) {
+      expect(key).not.toContain(token);
+    }
+
+    request.flush(responseFor('ACCOUNT_A_HOLDING'));
   });
 });

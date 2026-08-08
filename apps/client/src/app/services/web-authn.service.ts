@@ -1,5 +1,6 @@
 import { SettingsStorageService } from '@ghostfolio/client/services/settings-storage.service';
 import type { AuthDeviceDto } from '@ghostfolio/common/dtos';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON
@@ -68,8 +69,16 @@ export class WebAuthnService {
         {}
       )
       .pipe(
-        catchError((error) => {
-          console.warn('Could not register device', error);
+        catchError((error: unknown) => {
+          // The event identifier and the HTTP status, and nothing else. The caught
+          // value here is an `HttpErrorResponse`, which carries the request URL and
+          // whatever the server put in the response body - and this particular
+          // response body is the output of a credential ceremony, so it describes
+          // the enrolment attempt in detail. Written to the console it would be
+          // readable by every script on the page and captured verbatim by
+          // session-replay tooling.
+          reportSanitizedError('GF-WEBAUTHN-DEVICE-REGISTRATION-FAILED', error);
+
           return of(null);
         }),
         switchMap((attOps) => {
@@ -100,8 +109,19 @@ export class WebAuthnService {
     return this.http
       .delete<AuthDeviceDto>(`/api/v1/auth-device/${deviceId}`)
       .pipe(
-        catchError((error) => {
-          console.warn(`Could not deregister device ${deviceId}`, error);
+        catchError((error: unknown) => {
+          // Deliberately without `deviceId`. It is this browser's persistent
+          // WebAuthn credential identifier, it does not change between sessions,
+          // and it is the one value here that identifies the device across every
+          // log line it ever appears in - which is precisely what makes it a
+          // tracking identifier rather than diagnostic detail. Knowing that a
+          // deregistration failed, and with what status, is what an operator can
+          // act on; knowing which credential it was is not.
+          reportSanitizedError(
+            'GF-WEBAUTHN-DEVICE-DEREGISTRATION-FAILED',
+            error
+          );
+
           return of(null);
         }),
         tap(() =>

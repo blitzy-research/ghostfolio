@@ -114,9 +114,26 @@ https://www.prisma.io/docs/concepts/components/prisma-migrate#getting-started-wi
 
 ## SSL
 
-Generate `localhost.cert` and `localhost.pem` files.
+The client dev server is served over HTTPS and needs a certificate and key at
+`apps/client/localhost.cert` and `apps/client/localhost.pem`. Generate your own
+before the first `npm run start:client`:
+
+```
+npm run certificates:generate
+```
+
+Both files are git-ignored, so the pair is unique to your workstation and is never
+committed. That is deliberate: a key in version control is the same key in every
+clone and on every machine that has ever held a copy, so it can neither be rotated
+nor trusted, and anyone with it can bind or intercept the local origin your browser
+has been told to trust. If you ever find one committed, treat it as compromised and
+generate a new pair rather than reusing it.
+
+The script writes the key mode 0600 so it is readable only by you. It is equivalent
+to running:
 
 ```
 openssl req -x509 -newkey rsa:2048 -nodes -keyout apps/client/localhost.pem -out apps/client/localhost.cert -days 365 \
-  -subj "/C=CH/ST=State/L=City/O=Organization/OU=Unit/CN=localhost"
+  -subj "/C=CH/ST=State/L=City/O=Organization/OU=Unit/CN=localhost" \
+  && chmod 600 apps/client/localhost.pem
 ```

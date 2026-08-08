@@ -30,19 +30,27 @@ describe('SubscriptionController', () => {
   const rootUrl = 'https://ghostfolio.example';
   const userId = 'c0a8012e-4f7b-4d1a-9f3e-2b6d8c5a1e44';
 
+  let createStripeCheckoutSession: jest.Mock;
   let createSubscriptionViaStripe: jest.Mock;
+  let loggerError: jest.SpyInstance;
   let loggerLog: jest.SpyInstance;
   let loggerWarn: jest.SpyInstance;
   let redirect: jest.Mock;
   let subscriptionController: SubscriptionController;
 
   beforeEach(async () => {
+    createStripeCheckoutSession = jest
+      .fn()
+      .mockResolvedValue({ sessionUrl: 'https://checkout.example/session' });
     createSubscriptionViaStripe = jest.fn().mockResolvedValue(userId);
     redirect = jest.fn();
 
     // The handler reports the created subscription through Nest's logger. Silenced
     // so the suite output stays readable, and asserted below rather than merely
     // suppressed, because that line is the operator's only record of the event.
+    loggerError = jest
+      .spyOn(Logger, 'error')
+      .mockImplementation(() => undefined);
     loggerLog = jest.spyOn(Logger, 'log').mockImplementation(() => undefined);
     loggerWarn = jest.spyOn(Logger, 'warn').mockImplementation(() => undefined);
 
@@ -59,7 +67,7 @@ describe('SubscriptionController', () => {
         { provide: REQUEST, useValue: { user: { id: userId } } },
         {
           provide: SubscriptionService,
-          useValue: { createSubscriptionViaStripe }
+          useValue: { createStripeCheckoutSession, createSubscriptionViaStripe }
         }
       ]
     }).compile();
@@ -68,6 +76,7 @@ describe('SubscriptionController', () => {
   });
 
   afterEach(() => {
+    loggerError.mockRestore();
     loggerLog.mockRestore();
     loggerWarn.mockRestore();
   });
@@ -240,6 +249,70 @@ describe('SubscriptionController', () => {
           `${rootUrl}/${DEFAULT_LANGUAGE_CODE}/`
         );
       });
+    });
+  });
+
+  /**
+   * What the log says when a checkout session cannot be created.
+   *
+   * The payment provider's error object is the thing that must not reach the log:
+   * it names the request it was raised for, carries request and account
+   * identifiers, echoes the price and coupon the caller submitted, and maps out
+   * this application through its stack. All of that would land verbatim in a log
+   * that is read by everyone who can read it and outlives the attempt.
+   */
+  describe('createStripeCheckoutSession', () => {
+    const failure = Object.assign(
+      new Error(`No such price: 'price_secret' for account 'acct_secret'`),
+      { requestId: 'req_secret' }
+    );
+
+    it('reports the failure as an event and nothing the provider said', () => {
+      createStripeCheckoutSession.mockImplementation(() => {
+        throw failure;
+      });
+
+      expect(() => {
+        return subscriptionController.createStripeCheckoutSession({
+          priceId: 'price_secret'
+        });
+      }).toThrow();
+
+      expect(loggerError).toHaveBeenCalledWith(
+        'GF-STRIPE-CHECKOUT-SESSION-FAILED',
+        'SubscriptionController'
+      );
+
+      const emitted = (loggerError.mock.calls as unknown[][])
+        .map((call) =>
+          call
+            .map((argument) =>
+              typeof argument === 'string' ? argument : inspect(argument)
+            )
+            .join(' ')
+        )
+        .join('\n');
+
+      for (const disclosure of [
+        'acct_secret',
+        'price_secret',
+        'req_secret',
+        'No such price'
+      ]) {
+        expect(emitted).not.toContain(disclosure);
+      }
+    });
+
+    it('returns the session the service created when nothing fails', async () => {
+      // The success path is asserted alongside the failure so the logging change
+      // cannot have been achieved by breaking the handler.
+      await expect(
+        subscriptionController.createStripeCheckoutSession({
+          priceId: 'price_allowlisted'
+        })
+      ).resolves.toEqual({ sessionUrl: 'https://checkout.example/session' });
+
+      expect(loggerError).not.toHaveBeenCalled();
     });
   });
 });

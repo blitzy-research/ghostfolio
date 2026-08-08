@@ -16,6 +16,7 @@
     "angular": "node --max_old_space_size=32768 ./node_modules/@angular/cli/bin/ng",
     "build:production": "nx run api:copy-assets && nx run api:build:production && nx run client:copy-assets && nx run client:build:production && nx run ui:build-storybook && npm run replace-placeholders-in-build",
     "build:storybook": "nx run ui:build-storybook",
+    "certificates:generate": "openssl req -x509 -newkey rsa:2048 -nodes -keyout apps/client/localhost.pem -out apps/client/localhost.cert -days 365 -subj \"/C=CH/ST=State/L=City/O=Organization/OU=Unit/CN=localhost\" && chmod 600 apps/client/localhost.pem",
     "database:format-schema": "prisma format",
     "database:generate-typings": "prisma generate",
     "database:gui": "prisma studio",

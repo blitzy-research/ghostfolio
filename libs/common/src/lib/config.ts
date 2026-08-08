@@ -133,6 +133,16 @@ export const DEFAULT_REDACTED_PATHS = [
   'holdings[*].quantity',
   'holdings[*].valueInBaseCurrency',
   'interestInBaseCurrency',
+  // Deliberately no `latestActivities[*]` entry here, and the reason is worth
+  // recording because adding one looks like an improvement. This list is applied
+  // by `RedactValuesInResponseInterceptor`, which redacts whenever
+  // `isRestrictedView` holds - and that returns `true` when there is no viewer at
+  // all. A public share request has no viewer, so an entry here would redact on
+  // *every* share request and would therefore overrule the grant, stripping the
+  // figures from a link whose owner deliberately granted unrestricted read. The
+  // capability is the only authority a public request carries, so the share route
+  // reads `Access.permissions` and decides there instead; see
+  // `apps/api/src/app/endpoints/public/public.controller.ts`.
   'investmentInBaseCurrencyWithCurrencyEffect',
   'netPerformance',
   'netPerformanceWithCurrencyEffect',
@@ -225,6 +235,26 @@ export const HEADER_KEY_IMPERSONATION = 'Impersonation-Id';
 export const HEADER_KEY_TIMEZONE = 'Timezone';
 export const HEADER_KEY_TOKEN = 'Authorization';
 export const HEADER_KEY_SKIP_INTERCEPTOR = 'X-Skip-Interceptor';
+
+/**
+ * The browser storage keys that together determine which account a request is
+ * made as.
+ *
+ * They live here, beside the request headers they end up producing, because two
+ * layers now need them and they must not drift apart: the client's outgoing
+ * request interceptor reads them to set `HEADER_KEY_TOKEN` and
+ * `HEADER_KEY_IMPERSONATION`, and the shared data facade reads them to decide
+ * whether two overlapping reads were issued as the same account and may therefore
+ * share one request. Duplicating the literals would let a rename in one layer
+ * silently un-partition the other - and it would fail *open*, by making every
+ * caller look identical, which is precisely the direction that must not be
+ * possible.
+ *
+ * The values are unchanged from where they were first declared, so nothing already
+ * in a browser's storage is orphaned.
+ */
+export const KEY_STORAGE_AUTHORIZATION_TOKEN = 'auth-token';
+export const KEY_STORAGE_IMPERSONATION_ID = 'impersonationId';
 
 export const MAX_TOP_HOLDINGS = 50;
 

@@ -1,3 +1,7 @@
+import {
+  KEY_STORAGE_AUTHORIZATION_TOKEN,
+  KEY_STORAGE_IMPERSONATION_ID
+} from '@ghostfolio/common/config';
 // `import type`, and not merely as a style: every one of these is used only in a
 // parameter or return position here, while a value import pulls the whole DTO
 // barrel - and the validation decorators every DTO carries - into the bundle of
@@ -185,8 +189,20 @@ export class DataService {
   private readonly http = inject(HttpClient);
 
   /**
+   * How many times the account a request would be made as has changed in this
+   * document, used to keep the register below partitioned by it.
+   *
+   * An integer rather than the authorization context itself, deliberately: the
+   * context is derived from a bearer token, and a token has no business being a
+   * key in a long-lived map where it would be reachable from anything holding a
+   * reference to this service. The number is meaningless on its own and is exactly
+   * enough to tell one context from another.
+   */
+  private authorizationContextGeneration = 0;
+
+  /**
    * The reads that are currently on the wire, keyed by the exact request they
-   * represent.
+   * represent *and* by the account it would be made as.
    *
    * An entry lives only for as long as its request does. It is removed the
    * moment the response arrives, the request errors, or the last subscriber
@@ -195,6 +211,15 @@ export class DataService {
    * it did. See `coalesceInFlightGet`.
    */
   private readonly inFlightGetRequests = new Map<string, Observable<unknown>>();
+
+  /**
+   * The authorization context the register was last observed under.
+   *
+   * Held so a change can be *detected*, which is what makes the partitioning
+   * automatic rather than something every sign-in, sign-out and impersonation site
+   * has to remember to announce. Private and never emitted.
+   */
+  private lastObservedAuthorizationContext: string;
 
   public buildFiltersAsQueryParams({ filters }: { filters?: Filter[] }) {
     let params = new HttpParams();
@@ -1053,18 +1078,100 @@ export class DataService {
   /**
    * Builds the key that decides whether two reads are the same read.
    *
-   * The key is the request line itself - path plus serialised query string - so
-   * two callers collide only when the bytes they would each have put on the wire
-   * are identical. That direction of error matters: `HttpParams.toString()`
+   * The key is the request line itself - path plus serialised query string -
+   * prefixed with the generation of the authorization context the read is issued
+   * under, so two callers collide only when the bytes they would each have put on
+   * the wire are identical **and** the request would be made as the same account.
+   *
+   * The second half is not a refinement, it is what makes the sharing safe at all.
+   * The request line is only part of what distinguishes these requests: the bearer
+   * token, the impersonation identifier and the timezone are attached later, by the
+   * application's outgoing request interceptor, and are invisible here. Without the
+   * generation in the key, a read issued after an account change could join a
+   * request that was created with the *previous* account's headers and be handed
+   * that account's holdings, performance and values - a cross-account disclosure
+   * produced by an optimisation.
+   *
+   * That direction of error matters in both halves: `HttpParams.toString()`
    * preserves append order, so two callers that assemble the same parameters in
    * a different order produce different keys and are simply not shared. Missing
    * a chance to share is harmless; sharing a response between callers that asked
-   * different questions would not be, and this key makes that impossible.
+   * different questions, or asked as different accounts, would not be, and this
+   * key makes both impossible.
    */
   private buildInFlightGetKey(url: string, params: HttpParams): string {
     const queryString = params.toString();
+    const requestLine = queryString ? `${url}?${queryString}` : url;
 
-    return queryString ? `${url}?${queryString}` : url;
+    return `${this.getAuthorizationContextGeneration()}\u0000${requestLine}`;
+  }
+
+  /**
+   * The generation of the account the next request would be made as, dropping the
+   * register whenever it changes.
+   *
+   * Derived on every coalescing decision rather than pushed in from the places
+   * where identity changes, and that is a security property rather than a style
+   * choice. Identity changes in this application at a sign-in hand-off, at an
+   * access-token sign-in, at a sign-out, on a 401 from any request, and on every
+   * impersonation change - and a pushed notification that any one of those sites
+   * forgot to send would restore the very defect this closes, silently and with no
+   * failing test. Reading the same three inputs the request interceptor reads means
+   * there is no site that *can* forget.
+   *
+   * The three inputs are exactly what varies the request's authorization: the
+   * bearer token, the impersonated account, and the timezone the server scopes
+   * dates by. They are read from the same storage keys the interceptor reads,
+   * shared through `@ghostfolio/common/config` so the two cannot drift apart.
+   *
+   * Dropping the register on a change does not disturb a request already in flight
+   * or the caller waiting on it: that caller asked as the previous account and is
+   * still answered correctly. What it prevents is a *later* caller joining it.
+   *
+   * Storage access is guarded because this facade is also constructed in
+   * environments that have none - Storybook and the test runner among them - where
+   * every read is anonymous and a single context is the correct answer.
+   */
+  private getAuthorizationContextGeneration(): number {
+    const authorizationContext = this.readAuthorizationContext();
+
+    if (authorizationContext !== this.lastObservedAuthorizationContext) {
+      this.lastObservedAuthorizationContext = authorizationContext;
+      this.authorizationContextGeneration += 1;
+
+      // Every entry belonged to the previous context, and none of them may be
+      // joined now. Clearing rather than filtering, because there is nothing in
+      // here worth keeping: an entry is a request in progress, and one issued as
+      // another account is exactly what must not be reused.
+      this.inFlightGetRequests.clear();
+    }
+
+    return this.authorizationContextGeneration;
+  }
+
+  /**
+   * Reads the authorization context as an opaque string.
+   *
+   * The value contains the bearer token and therefore never leaves this class: it
+   * is compared, and what is published is the generation counter instead. The
+   * separator is a NUL so no combination of the three inputs can be reassembled
+   * into a different combination that compares equal.
+   */
+  private readAuthorizationContext(): string {
+    const token =
+      window.sessionStorage?.getItem(KEY_STORAGE_AUTHORIZATION_TOKEN) ??
+      window.localStorage?.getItem(KEY_STORAGE_AUTHORIZATION_TOKEN) ??
+      '';
+
+    // Read only alongside a token, mirroring the request interceptor, which
+    // attaches the impersonation header only when it is sending a bearer token.
+    const impersonationId = token
+      ? (window.localStorage?.getItem(KEY_STORAGE_IMPERSONATION_ID) ?? '')
+      : '';
+
+    const timeZone = Intl?.DateTimeFormat().resolvedOptions().timeZone ?? '';
+
+    return `${token}\u0000${impersonationId}\u0000${timeZone}`;
   }
 
   /**

@@ -236,13 +236,19 @@ model SymbolProfileOverrides {
 }
 
 model Subscription {
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-  id        String   @id @default(uuid())
-  price     Float?
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], onDelete: Cascade, references: [id])
-  userId    String
+  createdAt               DateTime @default(now())
+  expiresAt               DateTime
+  id                      String   @id @default(uuid())
+  price                   Float?
+  // The payment session this entitlement was provisioned from, unique so the
+  // database itself refuses a second subscription for the same payment. Nullable
+  // because a coupon redemption has no payment session, and because every row
+  // that existed before this column did has none either - which is also what
+  // makes the accompanying migration purely additive.
+  stripeCheckoutSessionId String?  @unique
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId                  String
 
   @@index([userId])
 }

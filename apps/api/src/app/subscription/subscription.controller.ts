@@ -31,6 +31,18 @@ import { StatusCodes, getReasonPhrase } from 'http-status-codes';
 
 import { SubscriptionService } from './subscription.service';
 
+/**
+ * The stable event identifier a failed checkout-session creation is reported
+ * under.
+ *
+ * Fixed, because a log line is read by everyone who can read the log, is captured
+ * verbatim by log shipping, and outlives the attempt that produced it. The
+ * identifier is what makes the event searchable; the provider's own error text is
+ * what would make it a disclosure.
+ */
+const STRIPE_CHECKOUT_SESSION_FAILED_EVENT =
+  'GF-STRIPE-CHECKOUT-SESSION-FAILED';
+
 @Controller('subscription')
 export class SubscriptionController {
   public constructor(
@@ -148,7 +160,16 @@ export class SubscriptionController {
         user: this.request.user
       });
     } catch (error) {
-      Logger.error(error, 'SubscriptionController');
+      // A fixed event identifier, not the caught object. The payment provider's
+      // error carries its own request and account identifiers, echoes the price
+      // and coupon the caller submitted, and maps out this application through
+      // its stack - none of which helps an operator decide what to do, and all of
+      // which lands verbatim in a log that is read by everyone who can read it and
+      // outlives the checkout attempt it describes.
+      Logger.error(
+        STRIPE_CHECKOUT_SESSION_FAILED_EVENT,
+        'SubscriptionController'
+      );
 
       throw new HttpException(
         getReasonPhrase(StatusCodes.BAD_REQUEST),

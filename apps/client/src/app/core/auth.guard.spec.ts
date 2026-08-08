@@ -65,7 +65,11 @@ describe('AuthGuard', () => {
     getSetting: jest.Mock;
     setSetting: jest.Mock;
   };
-  let tokenStorageServiceMock: { getToken: jest.Mock; saveToken: jest.Mock };
+  let tokenStorageServiceMock: {
+    consumeExternalSignInMark: jest.Mock;
+    getToken: jest.Mock;
+    saveToken: jest.Mock;
+  };
   let userServiceMock: { get: jest.Mock; reset: jest.Mock };
 
   /**
@@ -113,6 +117,15 @@ describe('AuthGuard', () => {
     };
 
     tokenStorageServiceMock = {
+      // A sign-in started from this browser, which is the state a legitimate
+      // hand-off arrives in. Defaulted to `true` so the tests below are about the
+      // other conditions; the tests that are about *this* condition override it,
+      // and they are the ones that prove an unsolicited link is refused.
+      consumeExternalSignInMark: jest.fn(() => {
+        callOrder.push('consumeExternalSignInMark');
+
+        return true;
+      }),
       // Signed out, which is the state every hand-off below is offered in. The
       // guard reads this to refuse a token aimed at a viewer who already holds a
       // session, so returning a value here is what exercises the refusal path.
@@ -241,7 +254,11 @@ describe('AuthGuard', () => {
 
       // The ordering is the whole point of this test; see this suite's
       // documentation for the failure it prevents.
-      expect(callOrder).toEqual(['saveToken', 'get']);
+      expect(callOrder).toEqual([
+        'consumeExternalSignInMark',
+        'saveToken',
+        'get'
+      ]);
     });
 
     it('honours a stored preference to stay signed in', async () => {
@@ -338,6 +355,107 @@ describe('AuthGuard', () => {
         guard.canActivate(createSnapshot({ jwt: HANDED_OFF_TOKEN }))
       ).resolves.toBe(true);
     });
+  });
+
+  /**
+   * Whether the sign-in that produced the token was started in this browser.
+   *
+   * A signed-out visitor's storage is empty and a valid token is shaped exactly
+   * like any other, so on those two facts alone `/?jwt=<the sender's own token>`
+   * is indistinguishable from the provider's own hand-off. Adopting it signs the
+   * visitor into the *sender's* account: every activity, account and holding they
+   * then enter is written into somebody else's portfolio and is readable by them,
+   * and nothing about the session looks wrong from the inside.
+   *
+   * The Google and OpenID Connect links record the intent in session storage
+   * immediately before navigating away, and that record comes back with the tab.
+   * A link opened in a fresh tab, or followed out of a message, carries no such
+   * record - which is the difference these tests are about.
+   */
+  describe('proof that the sign-in started in this browser', () => {
+    it('refuses a token this browser never asked for', async () => {
+      const guard = createGuard();
+
+      tokenStorageServiceMock.consumeExternalSignInMark.mockReturnValue(false);
+
+      await expect(
+        guard.canActivate(createSnapshot({ jwt: HANDED_OFF_TOKEN }))
+      ).resolves.toBe(true);
+
+      // Activation still succeeds - there is nowhere else to send the visitor, and
+      // the root host renders its signed-out state - but nothing is adopted.
+      expect(tokenStorageServiceMock.saveToken).not.toHaveBeenCalled();
+    });
+
+    it('adopts a token whose sign-in this browser did start', async () => {
+      const guard = createGuard();
+
+      await guard.canActivate(createSnapshot({ jwt: HANDED_OFF_TOKEN }));
+
+      // The complement of the test above, so the refusal cannot have been achieved
+      // by breaking the legitimate hand-off.
+      expect(tokenStorageServiceMock.saveToken).toHaveBeenCalledWith(
+        HANDED_OFF_TOKEN,
+        false
+      );
+    });
+
+    it('spends the proof, so one started sign-in authorises one hand-off', async () => {
+      const guard = createGuard();
+
+      await guard.canActivate(createSnapshot({ jwt: HANDED_OFF_TOKEN }));
+
+      // Consumption is what makes a reload of the same address - and a second
+      // token offered afterwards - refusable. The service removes the mark on
+      // read; asserting the call is what holds the guard to using that API rather
+      // than a plain lookup.
+      expect(
+        tokenStorageServiceMock.consumeExternalSignInMark
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not spend the proof when there is no token to adopt', async () => {
+      const guard = createGuard();
+
+      await guard.canActivate(createSnapshot({ utm_source: 'ios' }));
+
+      // A visit that carries no hand-off must leave a sign-in started moments ago
+      // still redeemable, or a slow provider round trip would race an unrelated
+      // navigation and lose.
+      expect(
+        tokenStorageServiceMock.consumeExternalSignInMark
+      ).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      {
+        description: 'the parameter is not shaped like a token',
+        queryParams: { jwt: 'not-a-token' }
+      },
+      {
+        description: 'a session is already held',
+        queryParams: { jwt: HANDED_OFF_TOKEN },
+        signedIn: true
+      }
+    ])(
+      'does not spend the proof when $description',
+      async ({ queryParams, signedIn }) => {
+        const guard = createGuard();
+
+        if (signedIn) {
+          tokenStorageServiceMock.getToken.mockReturnValue('an-existing-token');
+        }
+
+        await guard.canActivate(createSnapshot(queryParams));
+
+        // Checked last for exactly this reason: spending the mark while refusing for
+        // another reason would consume a legitimately started sign-in and strand the
+        // hand-off that was still on its way.
+        expect(
+          tokenStorageServiceMock.consumeExternalSignInMark
+        ).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('the acquisition source', () => {

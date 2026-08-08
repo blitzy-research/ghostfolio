@@ -123,6 +123,99 @@ describe('RedisCacheService', () => {
       await expect(isHealthy).resolves.toBe(false);
     });
 
+    /**
+     * How much work a repeatedly probed outage is allowed to leave behind.
+     *
+     * The endpoint this reaches is public and is also polled by container
+     * orchestration, so during an outage it is called again and again while the
+     * store's client is holding every command in an offline queue until it
+     * reconnects. Two independent leaks followed from that, and both are asserted
+     * here rather than reasoned about, because neither is visible in a passing
+     * build: the probe queued a fresh write and read per caller, and it queued a
+     * removal even when the write it was meant to undo had never landed.
+     */
+    describe('during an outage that is probed repeatedly', () => {
+      beforeEach(() => {
+        del.mockReturnValue(neverSettles());
+        get.mockReturnValue(neverSettles());
+        set.mockReturnValue(neverSettles());
+      });
+
+      it('queues one probe for many concurrent callers', async () => {
+        const probes = [
+          redisCacheService.isHealthy(),
+          redisCacheService.isHealthy(),
+          redisCacheService.isHealthy(),
+          redisCacheService.isHealthy(),
+          redisCacheService.isHealthy()
+        ];
+
+        await jest.advanceTimersByTimeAsync(ms('5 seconds'));
+
+        // Five callers, one command on the store. Without this the queue grew by
+        // a write and a read per caller, and by two more for every poll that
+        // followed, for as long as the outage lasted.
+        expect(set).toHaveBeenCalledTimes(1);
+        expect(await Promise.all(probes)).toEqual([
+          false,
+          false,
+          false,
+          false,
+          false
+        ]);
+      });
+
+      it('enqueues no cleanup for a write that never landed', async () => {
+        const isHealthy = redisCacheService.isHealthy();
+
+        await jest.advanceTimersByTimeAsync(ms('5 seconds'));
+
+        await expect(isHealthy).resolves.toBe(false);
+
+        // The removal exists to undo the probe's own write. When the write never
+        // reached the store there is nothing to undo, and enqueuing one anyway
+        // added a second command to the very queue that had just failed to drain
+        // the first.
+        expect(del).not.toHaveBeenCalled();
+      });
+
+      it('keeps the queued work bounded across many polls', async () => {
+        for (let poll = 0; poll < 20; poll += 1) {
+          void redisCacheService.isHealthy();
+
+          await jest.advanceTimersByTimeAsync(ms('5 seconds'));
+        }
+
+        // One command per poll rather than three, and none of them a cleanup for a
+        // write that never happened. The point is that this number is a function
+        // of the polling schedule alone - it cannot be inflated by an external
+        // caller hitting the endpoint harder, because concurrent callers share a
+        // probe.
+        expect(set).toHaveBeenCalledTimes(20);
+        expect(del).not.toHaveBeenCalled();
+      });
+    });
+
+    it('probes again once the previous probe has settled', async () => {
+      await expect(redisCacheService.isHealthy()).resolves.toBe(true);
+      await expect(redisCacheService.isHealthy()).resolves.toBe(true);
+
+      // Sharing a probe must not become caching a verdict: an operator asking
+      // twice needs the second answer to describe the store now, not a moment ago.
+      expect(set).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports a store that recovered rather than repeating the outage', async () => {
+      set.mockReturnValueOnce(Promise.reject(new Error('ECONNREFUSED')));
+
+      await expect(redisCacheService.isHealthy()).resolves.toBe(false);
+
+      // The released memo is what makes recovery observable. Holding the failed
+      // probe would have left the deployment reporting itself unhealthy for as
+      // long as the process lived.
+      await expect(redisCacheService.isHealthy()).resolves.toBe(true);
+    });
+
     it('does not wait for its own cleanup', async () => {
       // The read and write succeed, so the outcome is known immediately; only
       // the removal hangs. Awaiting it would hold a healthy answer hostage to an

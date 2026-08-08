@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the public pages: about, blog, features, Frequently Asked Questions (FAQ), landing, _Open Startup_, pricing and resources
 - Removed _Zen Mode_ as a separate navigation mode, while keeping its setting persisted and readable
 
+### Security
+
+- Bounded the health probes by restricting the deep data provider and data enhancer probes to administrators and by making the _Redis_ probe single-flight, so that a repeated outage can no longer accumulate pending work
+- Hardened the provisioning of a subscription via _Stripe_ to verify the status, the payment status, the mode, the server-side price and the amount of a checkout session, and to reject a session which has already been redeemed
+- Partitioned the coalescing of in-flight `GET` requests by authorization context, so that a response can no longer be shared across a change of user, impersonation or session
+- Removed the committed development certificate and private key, rotated the key, ignored local key material and added the `certificates:generate` script to create a per-workstation pair
+- Replaced `Math.random()` with a cryptographically secure random number generator for the handles of the _OpenID Connect_ state store
+- Replaced raw error objects and device identifiers in the logs with a fixed vocabulary of event identifiers and fault categories, and generalized the error returned by the _WebAuthn_ endpoints
+- Required a single-use, browser-bound intent marker before a token handed over in a url is adopted, so that an unsolicited sign-in link is refused
+- Restricted the public portfolio endpoint to withhold the exact monetary figures of the latest activities unless the share link grants unrestricted read access
+
 ### Todo
 
 - **Breaking Change**: The share link of a public portfolio changed from `/<language>/p/<accessId>` to `/<language>/?accessId=<accessId>`. Please share the updated links, since previously issued links no longer resolve.
