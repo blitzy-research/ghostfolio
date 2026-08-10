@@ -44,6 +44,31 @@ describe('SubscriptionService', () => {
   let subscriptionService: SubscriptionService;
 
   /**
+   * The budget the constructed client will actually enforce, captured before the
+   * stub replaces the client.
+   *
+   * Read after construction rather than asserted against the options object,
+   * because the library validates each option and quietly substitutes its own
+   * default for anything that is not an integer. Asserting what was passed would
+   * therefore pass while an 80-second default was in force; this reads what will
+   * be enforced.
+   */
+  let stripeApiBounds: { maxNetworkRetries: number; timeout: number };
+
+  /**
+   * A one-field view of the private client, rather than a cast to `any`: it names
+   * exactly what is read, so renaming the field breaks this file instead of
+   * silently reading `undefined`.
+   */
+  const readStripeApiBounds = (service: SubscriptionService) => {
+    return (
+      service as unknown as {
+        stripe: { _api: { maxNetworkRetries: number; timeout: number } };
+      }
+    ).stripe._api;
+  };
+
+  /**
    * A settled session for the allowlisted offer: what the legitimate return leg
    * looks like. Every refusal test below is this object with one property changed,
    * so what each test is about is exactly the difference.
@@ -89,8 +114,20 @@ describe('SubscriptionService', () => {
             // Switched on, so the constructor builds a Stripe client for the stub
             // below to replace. With the feature off there is no client at all and
             // none of this code path exists.
-            get: (key: string) =>
-              key === 'ENABLE_FEATURE_SUBSCRIPTION' ? true : 'unused'
+            //
+            // `REQUEST_TIMEOUT` answers with a real number because the constructor
+            // now passes it to the client as its per-attempt budget. A string here
+            // would not fail: the library validates the option and silently falls
+            // back to its own 80-second default, which is the very wait the bound
+            // exists to prevent - so the suite would go green over an unbounded
+            // client. The bound itself is asserted below.
+            get: (key: string) => {
+              if (key === 'ENABLE_FEATURE_SUBSCRIPTION') {
+                return true;
+              }
+
+              return key === 'REQUEST_TIMEOUT' ? 3000 : 'unused';
+            }
           }
         },
         { provide: PrismaService, useValue: { subscription: { create } } },
@@ -108,6 +145,8 @@ describe('SubscriptionService', () => {
     }).compile();
 
     subscriptionService = module.get(SubscriptionService);
+
+    stripeApiBounds = readStripeApiBounds(subscriptionService);
 
     // Installed over the client the constructor created, so the code under test
     // reaches the stub through exactly the call it makes in production. Written
@@ -130,6 +169,37 @@ describe('SubscriptionService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  /**
+   * How long somebody can be made to wait on the payment provider.
+   *
+   * Both calls this client makes happen while a person waits: one behind a button,
+   * and one - the checkout callback - while the payer's browser sits on a blank
+   * redirect returning from payment. The library's defaults are 80 seconds per
+   * attempt with two retries, so an unresponsive provider held that browser for
+   * over a minute. Neither number is visible in any signature, and a regression
+   * here reappears only as a slow page nobody can attribute, which is why they are
+   * pinned.
+   */
+  describe('the budget the payment provider is given', () => {
+    it('bounds each attempt by the deployment request timeout', () => {
+      expect(stripeApiBounds.timeout).toBe(3000);
+    });
+
+    it('retries once, so a dropped connection does not cost a paid entitlement', () => {
+      // One rather than the library's two: the answer decides whether an
+      // entitlement somebody paid for is granted, so a single retry is worth the
+      // wait it adds - a second is not.
+      expect(stripeApiBounds.maxNetworkRetries).toBe(1);
+    });
+
+    it('is far below the library default the wait used to come from', () => {
+      // Stated as a relation rather than a second literal: what matters is that
+      // this deployment no longer inherits the 80-second default, whatever the
+      // configured timeout happens to be.
+      expect(stripeApiBounds.timeout).toBeLessThan(80000);
+    });
   });
 
   describe('createSubscriptionViaStripe', () => {

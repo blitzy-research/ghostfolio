@@ -95,6 +95,21 @@ export interface GfAppQueryParams extends Params {
   holdingDetailDialog?: string;
   jwt?: string;
   platformId?: string;
+  /**
+   * Set by the API's federated sign-in callbacks when the provider round trip came
+   * back without an identity, so the signed-out prompt can say so instead of
+   * looking untouched.
+   *
+   * A closed vocabulary of one value, `provider`. It arrives in an address the
+   * visitor can read and edit, so consumers must **compare** it and never display
+   * it: rendering the value would turn a query parameter into a message anybody
+   * could write. Narrowing to the exact string is also what keeps a forged
+   * `?signInError=<anything else>` inert.
+   *
+   * Cleared by the root host in the same way `jwt` is, so it does not outlive the
+   * attempt it describes or reappear on a reload.
+   */
+  signInError?: string;
   symbol?: string;
   tagId?: string;
   transferBalanceDialog?: string;

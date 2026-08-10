@@ -97,7 +97,34 @@ export class SubscriptionService {
       this.stripe = new Stripe(
         this.configurationService.get('STRIPE_SECRET_KEY'),
         {
-          apiVersion: '2026-02-25.clover'
+          apiVersion: '2026-02-25.clover',
+          // Bounded, because both calls this client makes are made while somebody
+          // waits on them. The library's own defaults are 80 seconds per attempt
+          // and two retries, which is a budget written for a server-to-server job
+          // rather than for a browser: the checkout callback is the *return leg of
+          // a payment*, so an unresponsive provider left the payer looking at a
+          // blank redirect for over a minute before the redirect was finally
+          // written. Nothing was wrong with what happened at the end of that wait
+          // - the failure was already logged and the browser was already returned
+          // to the application - the wait itself was the defect.
+          //
+          // `REQUEST_TIMEOUT` rather than a literal, because it is this
+          // deployment's existing answer to "how long may an outbound call take",
+          // enforced the same way on every data-provider request; an operator on a
+          // slow network already turns that one knob. It defaults to 3 seconds,
+          // which is an order of magnitude above Stripe's typical response and
+          // still inside what a person will wait through.
+          //
+          // One retry rather than the default two, and rather than none. Retrying
+          // is worth keeping because this GET is idempotent and its answer decides
+          // whether an entitlement somebody *paid for* is granted - a single
+          // dropped connection should not cost them that. Two retries triples the
+          // worst case for no further protection, so the budget is: attempt,
+          // provider backoff, attempt. With the default timeout that is roughly
+          // 6.5 seconds before the failure path runs, against the 60-78 seconds
+          // observed with the library defaults.
+          maxNetworkRetries: 1,
+          timeout: this.configurationService.get('REQUEST_TIMEOUT')
         }
       );
     }

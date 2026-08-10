@@ -1,8 +1,25 @@
 :host {
   display: block;
 
+  // 2 / 1 rather than 16 / 9, for the reason set out in full on the sibling
+  // container in `portfolio-analysis.scss`, which this shares exactly: the canvas
+  // carries Bootstrap's `.h-100`, whose `height: 100% !important` beats the
+  // non-important inline height Chart.js writes, so the canvas displays at this
+  // box's height while holding a bitmap composed at the chart's own ratio, and the
+  // browser scales the difference.
+  //
+  // The chart here is a `bar` rather than a line chart, which changes nothing that
+  // matters: it is `responsive: true` with no explicit `aspectRatio`, and Chart.js
+  // falls back to 2 for every type except the radial ones, composing a bitmap of
+  // exactly `width / 2`. A 16 / 9 box therefore stretched it vertically by
+  // 2 / (16 / 9) = 1.125x - nothing mis-drawn, every gridline and label simply
+  // painted 12.5% too tall.
+  //
+  // This value belongs to the same family as the two in the client and has to move
+  // with them; it is stated here rather than shared because this component lives
+  // in the shared library and may not reach into application styles.
   .chart-container {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 2 / 1;
 
     ngx-skeleton-loader {
       height: 100%;

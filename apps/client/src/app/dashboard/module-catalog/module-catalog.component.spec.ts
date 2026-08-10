@@ -1,7 +1,14 @@
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { permissions } from '@ghostfolio/common/permissions';
 
-import { A, DOWN_ARROW, ENTER, UP_ARROW } from '@angular/cdk/keycodes';
+import {
+  A,
+  DOWN_ARROW,
+  END,
+  ENTER,
+  HOME,
+  UP_ARROW
+} from '@angular/cdk/keycodes';
 import { Component, reflectComponentType } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -338,9 +345,14 @@ describe('GfModuleCatalogComponent', () => {
     return queryElements<HTMLButtonElement>('gf-module-catalog-item button');
   }
 
+  // Non-breaking spaces are folded to ordinary ones so the expectations below
+  // stay readable. The row writes its separators as `&nbsp;` deliberately - see
+  // `module-catalog-item.html`, and the dedicated test that asserts the code
+  // point - and every assertion here is about the words rather than about which
+  // kind of space holds them apart.
   function renderedModuleNames() {
     return queryElements('gf-module-catalog-item').map((row) => {
-      return row.textContent.trim();
+      return row.textContent.replace(/\u00a0/g, ' ').trim();
     });
   }
 
@@ -390,6 +402,34 @@ describe('GfModuleCatalogComponent', () => {
     Object.defineProperty(event, 'keyCode', { get: () => keyCode });
 
     catalogElement.dispatchEvent(event);
+
+    fixture.detectChanges();
+
+    return event;
+  }
+
+  /**
+   * The same dispatch, but from a chosen element inside the catalog.
+   *
+   * The handler is bound on the host and reads `event.target` to decide whether a
+   * press belongs to the search field or to the row list, so a test about that
+   * decision has to dispatch from the field itself - `catalogElement.dispatchEvent`
+   * would report the host as the target and the distinction would never be exercised.
+   */
+  function dispatchKeydownFrom(
+    element: HTMLElement,
+    key: string,
+    keyCode: number
+  ) {
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key
+    });
+
+    Object.defineProperty(event, 'keyCode', { get: () => keyCode });
+
+    element.dispatchEvent(event);
 
     fixture.detectChanges();
 
@@ -491,6 +531,33 @@ describe('GfModuleCatalogComponent', () => {
         ]);
       });
 
+      it('should hold the separator inside the qualifier rather than between the two', () => {
+        emitViewerState(entitledViewer);
+        advance();
+
+        const qualifier = queryElement(
+          'gf-module-catalog-item .context-qualifier'
+        );
+
+        // The space belongs to the qualifier's own text run. Written between the
+        // two elements it became a text node of its own, and Material lays this
+        // row out inside a flex container, where a whitespace-only anonymous item
+        // is not rendered at all - so the row painted `Markets· Market Data`
+        // while every text assertion passed. Asserting the code point here is
+        // what makes that failure mode visible from a unit test: a separator
+        // that is part of an inline box paints, and one that is a box of its own
+        // does not.
+        expect(qualifier.textContent).toBe('\u00a0· Market Data');
+
+        // And nothing is left between them, which is the other half: two spaces
+        // would be one too many in a copied selection. Read from the row that
+        // actually carries the qualifier rather than from the first row in the
+        // list, which is a different module entirely.
+        expect(qualifier.closest('button').textContent).toBe(
+          'Markets\u00a0· Market Data'
+        );
+      });
+
       it('should keep the qualifier out of the announcement it duplicates', () => {
         emitViewerState(entitledViewer);
         advance();
@@ -520,10 +587,10 @@ describe('GfModuleCatalogComponent', () => {
             return row.getAttribute('aria-label');
           })
         ).toEqual([
-          'Add Holdings module',
-          'Add Markets module',
-          'Add Watchlist module',
-          'Add Markets · Market Data module'
+          'Holdings, add module',
+          'Markets, add module',
+          'Watchlist, add module',
+          'Markets · Market Data, add module'
         ]);
       });
 
@@ -558,6 +625,26 @@ describe('GfModuleCatalogComponent', () => {
       expect(queryElement('mat-form-field')).toBeTruthy();
       expect(searchField).toBeTruthy();
       expect(searchField.value).toBe('');
+    });
+
+    /**
+     * The field is a filter over a fixed list of names, not prose.
+     *
+     * Every one of those names is a product term - `X-ray`, `FIRE`, `Allocations`,
+     * `Watchlist` - so a spell checker underlines most of what the viewer types with
+     * a red squiggle that means nothing, and on a touch keyboard autocorrect will
+     * replace a partly typed one with an English word, which changes what the list
+     * shows. `autocomplete` and `autocorrect` were already off for that reason;
+     * `spellcheck` is the third of the same set and was the one still missing.
+     */
+    it('should leave the field out of spelling and correction assistance', () => {
+      advance();
+
+      const searchField = queryElement<HTMLInputElement>('input[matInput]');
+
+      expect(searchField.getAttribute('spellcheck')).toBe('false');
+      expect(searchField.getAttribute('autocomplete')).toBe('off');
+      expect(searchField.getAttribute('autocorrect')).toBe('off');
     });
 
     /**
@@ -969,8 +1056,124 @@ describe('GfModuleCatalogComponent', () => {
     });
   });
 
+  /**
+   * The region that reports how a search went, and the reason it is a separate
+   * element from the notice a viewer reads.
+   *
+   * A live region is announced when its CONTENTS change, which means assistive
+   * technology has to have been observing the region before the text arrived in it.
+   * The no-results notice used to carry `role="status"` itself and was mounted
+   * together with its own sentence, so there was nothing to observe until the moment
+   * there was nothing left to announce.
+   *
+   * It reports the SIZE of the result set rather than repeating the notice, because
+   * a count is the one thing a reader cannot get from the list without walking it -
+   * and because the empty result is not the interesting case. A term that narrows
+   * fifteen rows to two changes the list in complete silence: focus stays in the
+   * search field and the rows below it are simply replaced.
+   */
+  describe('reporting how a search went', () => {
+    const liveRegion = () => queryElement('[role="status"].sr-only');
+
+    const announcement = () => liveRegion().textContent.trim();
+
+    it('should keep the region mounted before anything is typed', () => {
+      advance();
+
+      // Present and empty, which is the whole point: the region outlives every
+      // message that will pass through it.
+      expect(liveRegion()).toBeTruthy();
+      expect(liveRegion().getAttribute('aria-live')).toBe('polite');
+      expect(liveRegion().getAttribute('aria-atomic')).toBe('true');
+      expect(announcement()).toBe('');
+    });
+
+    // The full catalog is not a search result, and an announcement on open would talk
+    // over the panel's own name at the moment a reader is being told where they are.
+    it('should stay silent while no term has narrowed anything', () => {
+      advance();
+
+      expect(rowElements().length).toBeGreaterThan(1);
+      expect(announcement()).toBe('');
+    });
+
+    it('should report how many rows a term left', () => {
+      // The premium viewer, so that both modules titled `Markets` are eligible: a
+      // count is only worth announcing when more than one row can survive a term, and
+      // the collision this fixture reproduces is the clearest case of it.
+      emitViewerState({
+        user: { permissions: [permissions.readMarketDataOfMarkets] }
+      });
+      advance();
+
+      setSearchTerm('Markets');
+      advance();
+
+      expect(rowElements()).toHaveLength(2);
+      expect(announcement()).toBe('2 modules match Markets');
+    });
+
+    // A count of one is a different sentence in most languages, so it is a different
+    // message rather than a numeral interpolated into a plural.
+    it('should report a single match in the singular', () => {
+      advance();
+
+      setSearchTerm('Holdings');
+      advance();
+
+      expect(rowElements()).toHaveLength(1);
+      expect(announcement()).toBe('1 module matches Holdings');
+    });
+
+    it('should report a term that matched nothing', () => {
+      advance();
+
+      setSearchTerm('zzzzzzzz');
+      advance();
+
+      expect(rowElements()).toHaveLength(0);
+      expect(announcement()).toBe('No modules match zzzzzzzz');
+    });
+
+    /**
+     * The term is named as well as the count, and that is load-bearing rather than
+     * decorative: two successive searches can leave the same number of rows, and a
+     * live region says nothing when its text does not change. Naming what was
+     * searched for is what makes each answer differ from the last.
+     */
+    it('should distinguish two searches that left the same number of rows', () => {
+      advance();
+
+      setSearchTerm('Holdings');
+      advance();
+
+      const first = announcement();
+
+      setSearchTerm('Watchlist');
+      advance();
+
+      expect(rowElements()).toHaveLength(1);
+      expect(announcement()).not.toBe(first);
+      expect(announcement()).toBe('1 module matches Watchlist');
+    });
+
+    it('should fall silent again when the term is cleared', () => {
+      advance();
+
+      setSearchTerm('Holdings');
+      advance();
+
+      expect(announcement()).not.toBe('');
+
+      setSearchTerm('');
+      advance();
+
+      expect(announcement()).toBe('');
+    });
+  });
+
   describe('empty search results', () => {
-    it('should replace the list with a polite no-results notice', () => {
+    it('should replace the list with a no-results notice', () => {
       advance();
 
       setSearchTerm('zzzzzzzz');
@@ -981,7 +1184,25 @@ describe('GfModuleCatalogComponent', () => {
       expect(rowElements()).toHaveLength(0);
       expect(notice).toBeTruthy();
       expect(notice.textContent.trim()).toBe('No results found...');
-      expect(notice.getAttribute('role')).toBe('status');
+    });
+
+    /**
+     * The notice is the VISIBLE half only, and must not try to be the announcing
+     * half as well.
+     *
+     * It used to carry `role="status"` itself, and that could not work: a live region
+     * is announced when its contents change, so assistive technology has to have been
+     * observing the region before the text arrived in it - and nothing was observing
+     * an element that did not exist a moment earlier. The announcing is done by the
+     * region that outlives every message, asserted in the suite below.
+     */
+    it('should leave the announcing to the region that is always mounted', () => {
+      advance();
+
+      setSearchTerm('zzzzzzzz');
+      advance();
+
+      expect(queryElement('.no-results').getAttribute('role')).toBeNull();
     });
 
     it('should drop the results region rather than leave it standing empty', () => {
@@ -1026,6 +1247,125 @@ describe('GfModuleCatalogComponent', () => {
 
       expect(queryElement('.no-results')).toBeNull();
       expect(renderedModuleNames()).toEqual(['Watchlist']);
+    });
+  });
+
+  /**
+   * Home and End, which the WAI-ARIA patterns for both a listbox and a menu expect
+   * and which did nothing here at all.
+   *
+   * The cost of their absence was concrete rather than theoretical: reaching the last
+   * row of this catalog took fifteen ArrowDown presses.
+   *
+   * The interesting half is the exception. Both keys ALSO have a meaning inside a text
+   * field - move the caret to the start, move it to the end - and this catalog's key
+   * handler is bound on the host, so it sees every press made while typing in the
+   * search field. `ListKeyManager` calls `preventDefault()` on the keys it handles, so
+   * claiming them unconditionally would not merely add a jump: it would stop the caret
+   * moving even by the browser's own default.
+   */
+  describe('jumping to the ends of the list', () => {
+    it('should move the roving focus to the last row on End', () => {
+      advance();
+
+      expect(rowElements()).toHaveLength(3);
+
+      dispatchKeydown('End', END);
+
+      expect(focusedRowIndexes()).toEqual([2]);
+    });
+
+    it('should move the roving focus to the first row on Home', () => {
+      advance();
+
+      dispatchKeydown('End', END);
+      dispatchKeydown('Home', HOME);
+
+      expect(focusedRowIndexes()).toEqual([0]);
+    });
+
+    // The one tab stop has to travel with the jump. Left behind, Tab would return to
+    // whichever row the roving point was on before, and the row the viewer is looking
+    // at would not be reachable from the keyboard at all.
+    it('should carry the single tab stop to the row it jumps to', () => {
+      advance();
+
+      dispatchKeydown('End', END);
+
+      expect(component.tabbableIndex).toBe(2);
+      expect(rowElements().map(({ tabIndex }) => tabIndex)).toEqual([
+        -1, -1, 0
+      ]);
+
+      dispatchKeydown('Home', HOME);
+
+      expect(component.tabbableIndex).toBe(0);
+      expect(rowElements().map(({ tabIndex }) => tabIndex)).toEqual([
+        0, -1, -1
+      ]);
+    });
+
+    it('should scroll the row it jumps to into view', () => {
+      advance();
+
+      scrollIntoViewMock.mockClear();
+
+      dispatchKeydown('End', END);
+
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({ block: 'nearest' });
+    });
+
+    it('should suppress the browser default for a jump it handles', () => {
+      advance();
+
+      expect(dispatchKeydown('End', END).defaultPrevented).toBe(true);
+      expect(dispatchKeydown('Home', HOME).defaultPrevented).toBe(true);
+    });
+
+    it('should jump within a narrowed list rather than the whole catalog', () => {
+      advance();
+
+      setSearchTerm('Watch');
+      advance();
+
+      expect(rowElements()).toHaveLength(1);
+
+      dispatchKeydown('End', END);
+
+      expect(focusedRowIndexes()).toEqual([0]);
+    });
+
+    /**
+     * Pressed while typing, both keys belong to the field.
+     *
+     * Asserted through `defaultPrevented` as well as through focus, because the
+     * failure this guards against is not that focus moves - it is that the caret does
+     * not, which is invisible to a focus assertion.
+     */
+    it('should leave both keys to the search field when that is where they were pressed', () => {
+      advance();
+
+      const searchField = queryElement<HTMLInputElement>('input');
+      const homeEvent = dispatchKeydownFrom(searchField, 'Home', HOME);
+      const endEvent = dispatchKeydownFrom(searchField, 'End', END);
+
+      expect(focusedRowIndexes()).toEqual([]);
+      expect(homeEvent.defaultPrevented).toBe(false);
+      expect(endEvent.defaultPrevented).toBe(false);
+    });
+
+    // The arrow keys are the opposite case and stay claimed: a caret has nowhere
+    // vertical to go in a single-line field, so taking them for the list costs the
+    // field nothing and is what lets a viewer step through the rows while still
+    // typing.
+    it('should still take the arrow keys pressed in the search field', () => {
+      advance();
+
+      const searchField = queryElement<HTMLInputElement>('input');
+
+      dispatchKeydownFrom(searchField, 'ArrowDown', DOWN_ARROW);
+
+      expect(focusedRowIndexes()).toEqual([0]);
     });
   });
 
@@ -1143,7 +1483,7 @@ describe('GfModuleCatalogComponent', () => {
       expect(row.tagName).toBe('BUTTON');
       expect(row.type).toBe('button');
       expect(row.disabled).toBe(false);
-      expect(row.getAttribute('aria-label')).toBe('Add Holdings module');
+      expect(row.getAttribute('aria-label')).toBe('Holdings, add module');
     });
 
     // The rows share exactly one tab stop, which is what makes this a roving
@@ -1559,9 +1899,9 @@ describe('GfModuleCatalogComponent', () => {
           return row.getAttribute('aria-label');
         })
       ).toEqual([
-        'Add Holdings module',
-        'Reveal Markets module',
-        'Add Watchlist module'
+        'Holdings, add module',
+        'Markets added, reveal module',
+        'Watchlist, add module'
       ]);
     });
 
@@ -1644,9 +1984,9 @@ describe('GfModuleCatalogComponent', () => {
           return row.getAttribute('aria-label');
         })
       ).toEqual([
-        'Add Holdings module',
-        'Add Markets module',
-        'Add Watchlist module, no room on the dashboard'
+        'Holdings, add module',
+        'Markets, add module',
+        'Watchlist no room, add module - remove or resize a module to make space'
       ]);
     });
 
@@ -1709,7 +2049,9 @@ describe('GfModuleCatalogComponent', () => {
 
       const [row] = rowElements();
 
-      expect(row.getAttribute('aria-label')).toBe('Reveal Holdings module');
+      expect(row.getAttribute('aria-label')).toBe(
+        'Holdings added, reveal module'
+      );
       expect(queryElements('.placed-marker')).toHaveLength(1);
       expect(queryElements('.unavailable-marker')).toHaveLength(0);
     });

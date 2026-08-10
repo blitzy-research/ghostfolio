@@ -1,0 +1,94 @@
+// Bounds the performance chart by the height of the cell rather than by its own
+// aspect ratio, so the value block underneath it is inside the module.
+//
+// The leaf draws a 16/9 chart and then the performance figures below it. An
+// aspect-ratio box derives its height from its WIDTH, while a grid cell derives
+// its height from its ROW COUNT - two independent quantities - so the chart's
+// height grows with the module's width and takes the value block with it. At this
+// module's own registry default the chart alone is taller than the body it is
+// given, which put the headline figure the module exists to show entirely below
+// the fold: the one number a viewer opens a portfolio overview to read was
+// reachable only by scrolling, at the size the catalog places the module at.
+//
+// Fixed by making the chart the part that yields. The leaf already lays its rows
+// out as a flex column filling the cell, so the chart's row is allowed to shrink
+// and the value block's row is not, and the chart box is then capped by the
+// height the flex line hands it. Where there IS room the aspect ratio still
+// resolves within that cap and the chart is unchanged; where there is not, the
+// chart gives up height instead of the figures giving up their place.
+//
+// Done here rather than in the leaf on purpose. This is precisely a wrapper's job
+// under the module contract - adapt a component written for a page to a cell,
+// without changing what it renders - and the same component keeps its page
+// proportions anywhere else it is used.
+//
+// `::ng-deep` is required rather than stylistic: every element below is written
+// in the leaf's own template and so never carries this component's content
+// attribute. The host selector above it keeps the rules inside this module.
+:host {
+  display: block;
+  height: 100%;
+
+  // Keeps the module's content from bleeding out of its own inline START edge,
+  // where nothing can ever reach it again.
+  //
+  // The headline figure is 56px type, and a currency amount offers no break
+  // opportunity - `3,450.00` is one unbreakable token - so the leaf's flex chain
+  // has a min-content inline size of about 247px that no amount of available width
+  // can reduce. The leaf then lays its rows out inside a column flex container with
+  // `align-items: center`, which sizes a flex item to its content and CENTRES it:
+  // given less room than the figure needs, the row was centred inside a box
+  // narrower than itself and hung out of BOTH sides by half the difference. On a
+  // 375px window the figure began 38px left of the module's content box and the
+  // rendered number read `,450.0` - the leading digit permanently gone. The right
+  // half of that bleed is recoverable by scrolling; the left half is not, because
+  // an left-to-right scroller has no negative scroll position to reach it with.
+  //
+  // Taking the content's own minimum as this host's floor is what removes the
+  // splitting. The centring then happens INSIDE a box that is at least as wide as
+  // the thing being centred, so nothing is pushed out of the start edge, and every
+  // pixel of the remaining overflow is on the end side - where the module body's
+  // own scroller reaches it and where the module chrome already draws a hint
+  // saying so.
+  //
+  // Inert wherever the figure fits, which is every module width the canvas gives
+  // this module at or above its registry default: a `min-inline-size` below the
+  // available width changes nothing at all, so the wide layout is untouched.
+  min-inline-size: min-content;
+
+  ::ng-deep {
+    // The chart's row. Named by exclusion rather than by a class of its own
+    // because the leaf gives it none, and `:not()` is exact here: the value
+    // block's row is the only one that carries `.overview-container`, and the
+    // introduction state - which renders neither - is a single row that needs no
+    // capping and is left entirely alone by both rules.
+    .overview > .row:not(.overview-container) {
+      // Shrink-only. Growing is left off so a module with spare height keeps the
+      // leaf's own centring rather than having the chart stretched to fill it.
+      flex: 0 1 auto;
+
+      // Clears the automatic minimum size, which would otherwise floor this row
+      // at its content's height and make the shrink factor above unreachable.
+      min-block-size: 0;
+
+      > .col {
+        block-size: 100%;
+        min-block-size: 0;
+      }
+    }
+
+    // Refuses to shrink, which is the half of the fix that decides WHICH row
+    // yields. Without it both rows shrink in proportion to their heights and the
+    // figures still lose their place, just more slowly.
+    .overview > .overview-container {
+      flex: 0 0 auto;
+    }
+
+    // Resolves against the row above, whose height flex layout has made definite.
+    // The leaf already clips this box, so a chart that has not yet re-converged on
+    // a narrower box cannot paint past the cap either.
+    .chart-container {
+      max-block-size: 100%;
+    }
+  }
+}

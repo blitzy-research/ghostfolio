@@ -59,6 +59,7 @@
       title="Drag to move module"
       type="button"
       (keydown)="onDragHandleKeydown($event)"
+      (pointerdown)="onDragHandlePointerDown()"
     >
       <ion-icon aria-hidden="true" name="reorder-two-outline" />
       <span class="sr-only"
@@ -82,10 +83,29 @@
       entries that declare a context - the two `Settings` modules and the premium
       `Markets` one - and `text-truncate` handles a narrow module.
     -->
+    <!--
+      Given a heading role and a level rather than being left as a styled div.
+      Material's card title carries no heading semantics of its own, and with the
+      screens that used to supply the page headings gone the document had NO
+      headings at all - so the heading shortcut every screen-reader user reaches
+      for first, and the outline a rotor draws from it, addressed nothing on the
+      whole canvas.
+
+      Declared as `role`/`aria-level` instead of swapping in an `<h2>` element,
+      because the title is a Material directive on its own element and the level
+      is a property of where the module sits rather than of the component: every
+      module is one level below the canvas's own heading, whatever order the
+      arrangement puts them in. It is also visually inert, which a real heading
+      element would not be - the browser's default heading type and margins would
+      repaint every module header.
+    -->
     <div class="module-title">
-      <mat-card-title class="mb-0 text-truncate">{{
-        qualifiedName
-      }}</mat-card-title>
+      <mat-card-title
+        aria-level="2"
+        class="mb-0 text-truncate"
+        role="heading"
+        >{{ qualifiedName }}</mat-card-title
+      >
     </div>
 
     <!--
@@ -158,7 +178,30 @@
       `role="region"` for this content, and naming the scrollport as well would
       announce the module's name twice on the way in.
     -->
-    <div #moduleContent class="gridster-item-content p-3" tabindex="0">
+    <!--
+      The gutter is declared in this component's stylesheet rather than by the
+      Bootstrap `p-3` utility this element used to carry, and the reason is a
+      measured defect rather than a preference. That utility resolves to
+      `padding: 1rem !important`, and `!important` outranks every non-important
+      declaration regardless of specificity - including the conditional
+      `padding-block-end` the canvas sets on exactly the modules that pin a
+      floating action button inside themselves. The reserve was therefore
+      computed, emitted and then discarded on every one of those modules, and
+      their last table row sat 16px from the card edge instead of 80px, directly
+      underneath both that button and the canvas's own fixed catalog trigger -
+      making a row's actions menu unreachable at a full viewport.
+
+      The two declarations cannot simply be reordered into one place, because
+      they are authored in two different components: the base gutter belongs to
+      this region and the reserve is the canvas's business, and both compile to
+      selectors of equal specificity, so which one won would come down to
+      stylesheet order in the bundle. They are kept apart on DIFFERENT property
+      names instead - this rule declares the custom property that holds the
+      gutter and reads an optional override, and the canvas declares only that
+      override. No property is written in both files, so no tie exists to
+      resolve and neither file can silently outrank the other.
+    -->
+    <div #moduleContent class="gridster-item-content" tabindex="0">
       @if (resolvedComponent) {
         <ng-container [ngComponentOutlet]="resolvedComponent" />
       } @else if (hasLoadError) {
@@ -175,8 +218,52 @@
           sentence in all twelve locales while its twin stays translated.
           `ng-container` renders no DOM, so nothing about the layout changes.
         -->
+        <!--
+          The failure carries a way out of it. Without one this state was a dead
+          end: the module said only that something had gone wrong, and nothing on
+          the card, in its menu or on the control bar could bring it back - the
+          arrangement-wide refresh asked for it again and got the same failure,
+          and so did removing the module and adding it back.
+
+          A retry first, because it is cheap and reversible and it does recover
+          the failures that are not chunk failures. The document reload only after
+          that retry has failed, because a failed dynamic import is recorded
+          against its url for the lifetime of the document and no amount of asking
+          again within that document will reach the network - so a second retry
+          would be offering the viewer something already known not to work.
+
+          The sentence explaining that is rendered only in the escalated state.
+          Offered up front it would read as an instruction to reload for a failure
+          that a retry was about to fix.
+
+          Neither control is a layout write: `reload()` re-mounts just this module
+          and touches no cell, so no grid callback fires and nothing is persisted -
+          which is the point, because a chunk that failed to arrive was never a
+          layout problem. Both buttons are the plain text variant for the same
+          reason the canvas notices are: a filled button inside a module body would
+          read as that module's own primary action.
+        -->
         <div class="secondary-text text-center" role="alert">
           <ng-container i18n>Oops! Something went wrong.</ng-container>
+
+          @if (hasExhaustedInPlaceRecovery) {
+            <div class="mt-2" i18n>
+              This module cannot be loaded again on its own. Reload the page to
+              bring it back.
+            </div>
+
+            <div class="d-flex justify-content-center mt-2">
+              <button mat-button type="button" (click)="onReloadDocument()">
+                <span i18n>Reload page</span>
+              </button>
+            </div>
+          } @else {
+            <div class="d-flex justify-content-center mt-2">
+              <button mat-button type="button" (click)="onRetryLoad()">
+                <span i18n>Try again</span>
+              </button>
+            </div>
+          }
         </div>
       } @else {
         <ngx-skeleton-loader

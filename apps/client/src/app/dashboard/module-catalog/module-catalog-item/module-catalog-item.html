@@ -69,8 +69,7 @@
     (dragstart)="onDragStart($event)"
     (focus)="onFocus()"
   >
-    <span class="text-truncate">{{ definition.name }}</span
-    >&ngsp;
+    <span class="text-truncate">{{ definition.name }}</span>
     <!--
       The qualifier that tells two modules sharing one name apart - `Markets` for
       both market modules, `Settings` for both settings modules - which they share
@@ -83,16 +82,21 @@
       markers are: the button's accessible name already carries the qualifier, and
       announcing it twice is noise.
 
-      `&ngsp;` above is load-bearing. Angular strips whitespace between elements,
-      so without it the name and the qualifier abut and the row's text reads
-      `Markets· Market Data` - a gap drawn by padding would look right while
-      anything reading the text, a copied selection included, would not. It is the
-      compiler's own pseudo-entity for exactly this, and it survives whitespace
-      removal as a real space.
+      The leading `&nbsp;` is load-bearing, and it is INSIDE this span rather than
+      between the two, which is the whole fix. Angular strips whitespace between
+      elements, so the separator has to be written explicitly - but written
+      between them it becomes a text node of its own, and Material lays this row
+      out inside a flex container of its own making, where a whitespace-only
+      anonymous item is not rendered at all. Measured at 0.000px: the row painted
+      `Markets· Market Data` while `textContent` read correctly, so nothing about
+      the markup looked wrong. Held inside the qualifier's own text run the space
+      is part of a real inline box, so it paints - and it is still exactly one
+      space in the text, which is what a copied selection and a screen reader get.
+      Non-breaking so it can never become the point the row wraps at.
     -->
     @if (definition.context) {
       <span aria-hidden="true" class="context-qualifier text-truncate"
-        >· {{ definition.context }}</span
+        >&nbsp;· {{ definition.context }}</span
       >
     }
 
@@ -103,10 +107,31 @@
       the button's own name already carries the same distinction - announcing it
       twice would be noise - and marked as decorative rather than removed from
       the flow so the visual and the spoken form stay in step.
+
+      Two elements rather than one, and each does a different job. The outer span
+      positions the marker and carries the separator; the inner span is the badge,
+      and it is what makes this state legible: as plain secondary body copy the
+      word sat at the same weight as everything else on the row, so the only
+      distinguishing cue left was a three-pixel edge, and QA read the pair as one
+      state. As a filled, outlined pill it reads as a status about the row from
+      across the panel, while the row itself deliberately stays actionable -
+      clicking it reveals the module that is already placed, so making it look
+      inert would be a lie about what it does.
+
+      The `&nbsp;` is in the outer span, OUTSIDE the badge. It exists for the text
+      rather than for the paint - the visual gap is the automatic margin and the
+      padding beside it - and putting it outside means the badge's own box is not
+      padded asymmetrically by a leading space. Without it `textContent` ran the
+      label and the marker together as `Settings · AccountAdded`, which is what a
+      copied selection and anything reading the row programmatically saw.
+
+      The `i18n` marker moves to the badge with the words, so the message stays
+      exactly `Added` and keeps the trans-unit - and the twelve translations - it
+      already has.
     -->
     @if (isPlaced) {
-      <span aria-hidden="true" class="ml-auto placed-marker pl-2" i18n
-        >Added</span
+      <span aria-hidden="true" class="ml-auto placed-marker pl-2"
+        >&nbsp;<span class="marker-badge" i18n>Added</span></span
       >
     } @else if (isUnavailable) {
       <!--
@@ -115,9 +140,15 @@
         rendered independently so a row can never claim to be both, and hidden
         from assistive technology for the same reason the placed marker is - the
         button's own name already carries it, and saying it twice is noise.
+
+        The same badge, deliberately in its OUTLINED form rather than the filled
+        one the placed marker takes. That is the second axis these two states are
+        told apart on - alongside the solid against dotted leading edge and the
+        words themselves - so neither rests on colour and neither rests on the
+        same cue as the other.
       -->
-      <span aria-hidden="true" class="ml-auto pl-2 unavailable-marker" i18n
-        >No room</span
+      <span aria-hidden="true" class="ml-auto pl-2 unavailable-marker"
+        >&nbsp;<span class="marker-badge" i18n>No room</span></span
       >
     }
   </button>

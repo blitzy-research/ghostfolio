@@ -44,18 +44,44 @@
           <ng-container>.</ng-container>
         }
       </mat-checkbox>
+      <!--
+        Reported here rather than through a notification, because this is where the
+        control that failed is: the visitor has to be able to read what happened and
+        press it again without hunting for either.
+      -->
+      @if (hasCreationError) {
+        <div class="mt-3 registration-error" role="alert">
+          <!--
+            Two block elements rather than two inline ones. Angular strips the
+            whitespace between sibling elements, so inline spans render as
+            "went wrong.Please try again" with no gap - the same two-line shape the
+            canvas uses for the equivalent notice.
+          -->
+          <div i18n>Oops! Something went wrong.</div>
+          <div i18n>Please try again later.</div>
+        </div>
+      }
+
       <div class="mt-3" mat-dialog-actions>
         <div class="flex-grow-1">
           <button i18n mat-button [mat-dialog-close]="undefined">Cancel</button>
         </div>
         <div>
+          <!--
+            "Create Account", because this is the control that creates it. It used
+            to read "Continue" while a later control read "Create Account" and
+            issued nothing, so a visitor who stopped at the next step believed they
+            had created nothing - and had in fact created an account holding a
+            security token they never saved.
+          -->
           <button
             color="primary"
             mat-flat-button
-            [disabled]="!isDisclaimerChecked"
+            [attr.aria-busy]="isCreatingAccount ? 'true' : null"
+            [disabled]="!isDisclaimerChecked || isCreatingAccount"
             (click)="createAccount()"
           >
-            <span i18n>Continue</span>
+            <span i18n>Create Account</span>
             <ion-icon class="ml-1" name="arrow-forward-outline" />
           </button>
         </div>
@@ -92,6 +118,14 @@
       </mat-form-field>
       <div align="end" class="mt-1" mat-dialog-actions>
         <div>
+          <!--
+            "Continue", because that is all this control does: the account already
+            exists by the time this step is reached, and pressing this closes the
+            dialog and hands the session token to whoever opened it. Labelled
+            "Create Account" it claimed the creation that the previous step had
+            already performed, which is what made the step before it look
+            abandonable.
+          -->
           <button
             color="primary"
             mat-flat-button
@@ -99,7 +133,7 @@
             [disabled]="isCreateAccountButtonDisabled"
             [mat-dialog-close]="authToken"
           >
-            <ng-container i18n>Create Account</ng-container>
+            <ng-container i18n>Continue</ng-container>
           </button>
         </div>
       </div>

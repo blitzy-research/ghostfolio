@@ -1,3 +1,7 @@
+import {
+  GoogleCallbackGuard,
+  OidcCallbackGuard
+} from '@ghostfolio/api/app/auth/oauth-callback.guard';
 import { WebAuthService } from '@ghostfolio/api/app/auth/web-auth.service';
 import { HasPermissionGuard } from '@ghostfolio/api/guards/has-permission.guard';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
@@ -78,13 +82,17 @@ export class AuthController {
   }
 
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleCallbackGuard)
   @Version(VERSION_NEUTRAL)
   public googleLoginCallback(
     @Req() request: Request,
     @Res() response: Response
   ) {
-    const jwt: string = (request.user as any).jwt;
+    // Optional, because the callback guard expresses a provider round trip that
+    // yielded no identity as an absent user rather than as an exception. Reading
+    // through it unconditionally would replace the 500 this arrangement exists to
+    // remove with a `TypeError` producing another one.
+    const jwt: string = (request.user as any)?.jwt;
 
     if (jwt) {
       this.protectRedirectCarryingCredential(response);
@@ -95,9 +103,7 @@ export class AuthController {
         )}/${DEFAULT_LANGUAGE_CODE}/?jwt=${jwt}`
       );
     } else {
-      response.redirect(
-        `${this.configurationService.get('ROOT_URL')}/${DEFAULT_LANGUAGE_CODE}/`
-      );
+      response.redirect(this.buildSignInFailureUrl());
     }
   }
 
@@ -114,10 +120,12 @@ export class AuthController {
   }
 
   @Get('oidc/callback')
-  @UseGuards(AuthGuard('oidc'))
+  @UseGuards(OidcCallbackGuard)
   @Version(VERSION_NEUTRAL)
   public oidcLoginCallback(@Req() request: Request, @Res() response: Response) {
-    const jwt: string = (request.user as any).jwt;
+    // See the Google callback: an absent user is how a refused or unusable
+    // provider answer arrives here.
+    const jwt: string = (request.user as any)?.jwt;
 
     if (jwt) {
       this.protectRedirectCarryingCredential(response);
@@ -128,9 +136,7 @@ export class AuthController {
         )}/${DEFAULT_LANGUAGE_CODE}/?jwt=${jwt}`
       );
     } else {
-      response.redirect(
-        `${this.configurationService.get('ROOT_URL')}/${DEFAULT_LANGUAGE_CODE}/`
-      );
+      response.redirect(this.buildSignInFailureUrl());
     }
   }
 
@@ -171,6 +177,33 @@ export class AuthController {
         StatusCodes.FORBIDDEN
       );
     }
+  }
+
+  /**
+   * Where the browser is sent when a federated sign-in came back without an
+   * identity.
+   *
+   * The locale root, because that is the only route there is, and with a marker,
+   * because without one the visitor lands on the signed-out prompt they started
+   * from with nothing to distinguish "the provider declined" from "you have not
+   * signed in yet" - so the natural response is to press the same button and
+   * arrive back here. The marker is what turns a loop into a message.
+   *
+   * A fixed value from a closed vocabulary rather than anything about the failure.
+   * It travels in a URL the visitor can read and edit, so it must be worth nothing
+   * if forged and disclose nothing if genuine: which provider was involved, what it
+   * said, and whether the account exists are all absent, and the client compares
+   * the value rather than displaying it. `provider` covers both callbacks because
+   * the sentence the visitor needs is the same either way.
+   *
+   * The credential-protecting headers are deliberately not set on this redirect:
+   * there is no credential in it, and this URL is one a visitor may legitimately
+   * keep.
+   */
+  private buildSignInFailureUrl() {
+    return `${this.configurationService.get(
+      'ROOT_URL'
+    )}/${DEFAULT_LANGUAGE_CODE}/?signInError=provider`;
   }
 
   /**

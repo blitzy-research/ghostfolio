@@ -1,5 +1,13 @@
+<!--
+  Three states, not two. The index used to stand in for its own loading state -
+  the skeleton was drawn whenever no value was present - which conflated "the
+  figure has not arrived yet" with "the figure is not on offer". A provider that
+  supplies no index answers with an empty object, so the value never arrives, and
+  the skeleton pulsed indefinitely: the tile claimed to be loading a response it
+  had already received. The host now states which of the two it is.
+-->
 <div class="position-relative">
-  <div class="align-items-center d-flex flex-row" [hidden]="!fearAndGreedIndex">
+  <div class="align-items-center d-flex flex-row" [hidden]="!hasIndex">
     <div class="h2 mb-0 mr-2">{{ fearAndGreedIndexEmoji }}</div>
     <div>
       <div class="h4 mb-0">
@@ -12,7 +20,7 @@
       <small class="d-block" i18n>Current Market Mood</small>
     </div>
   </div>
-  @if (!fearAndGreedIndex) {
+  @if (isLoading) {
     <ngx-skeleton-loader
       animation="pulse"
       class="position-absolute w-100"
@@ -20,5 +28,12 @@
         height: '100%'
       }"
     />
+  } @else if (!hasIndex) {
+    <!--
+      The same sentence the benchmark table beside it uses for the same
+      situation, so a viewer looking at a market card with nothing in it reads
+      one answer rather than two.
+    -->
+    <small class="text-muted" i18n>No data available</small>
   }
 </div>

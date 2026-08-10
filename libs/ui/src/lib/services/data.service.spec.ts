@@ -4,11 +4,12 @@ import {
 } from '@ghostfolio/common/config';
 import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
 import {
+  InfoItem,
   PortfolioDetails,
   UserDashboardLayout
 } from '@ghostfolio/common/interfaces';
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpParams, provideHttpClient } from '@angular/common/http';
 import {
   HttpTestingController,
   provideHttpClientTesting
@@ -641,6 +642,293 @@ describe('DataService in-flight read sharing', () => {
     // a rejected request would turn one server error into a permanent one for
     // every caller that followed.
     httpTestingController.expectOne(detailsPath).flush(detailsResponse());
+  });
+
+  /**
+   * The deployment description, which is refreshed rather than merely read.
+   *
+   * Two administration components each refresh it after loading their own list,
+   * and both are hosted by the administration settings module - so one canvas load
+   * asked for it twice, milliseconds apart. Unlike the portfolio reads above, this
+   * one has a side effect: it republishes `window.info`, and its permission filter
+   * rewrites the response in place. So the count that matters is two: one request,
+   * and one application of that filter.
+   */
+  describe('the deployment description', () => {
+    const infoPath = '/api/v1/info';
+
+    const infoResponse = () => {
+      return {
+        globalPermissions: ['enableFearAndGreedIndex', 'enableSubscription']
+      };
+    };
+
+    afterEach(() => {
+      delete (window as unknown as { info?: unknown }).info;
+    });
+
+    it('serves two overlapping refreshes from one request', () => {
+      dataService.updateInfo();
+      dataService.updateInfo();
+
+      const requests = httpTestingController.match(infoPath);
+
+      expect(requests.length).toBe(1);
+
+      requests[0].flush(infoResponse());
+
+      expect(
+        (window as unknown as { info: { globalPermissions: string[] } }).info
+          .globalPermissions
+      ).toEqual(['enableFearAndGreedIndex', 'enableSubscription']);
+    });
+
+    it('republishes the description exactly once for a shared refresh', () => {
+      const published: unknown[] = [];
+
+      Object.defineProperty(window, 'info', {
+        configurable: true,
+        get: () => published.at(-1),
+        set: (value: unknown) => {
+          published.push(value);
+        }
+      });
+
+      dataService.updateInfo();
+      dataService.updateInfo();
+
+      httpTestingController.expectOne(infoPath).flush(infoResponse());
+
+      // Once, not once per caller. The permission filter rewrites
+      // `globalPermissions` in place, so a second pass would be handed the list
+      // the first pass produced - which is why the projection sits inside the
+      // shared request rather than in each subscriber.
+      expect(published.length).toBe(1);
+    });
+
+    it('goes back to the server for a refresh that follows a mutation', () => {
+      dataService.updateInfo();
+
+      httpTestingController.expectOne(infoPath).flush(infoResponse());
+
+      dataService.updateInfo();
+
+      // This is the whole reason these callers exist: a platform or tag was just
+      // written and the description has to be re-read. Answering from the previous
+      // response would show the mutation as not having happened.
+      httpTestingController.expectOne(infoPath).flush(infoResponse());
+    });
+  });
+});
+
+/**
+ * The parameterless reads that co-mounted modules ask for at the same moment.
+ *
+ * Each is asked for by more than one module and none carries a query string, so
+ * two callers always produce a byte-identical request line - which makes the
+ * duplication structural rather than a race that happens to be lost. The
+ * environment description is read by the tag list and by the platform list, both
+ * drawn inside the settings module; the admin document is read by the admin
+ * overview and by the admin settings, and again by either asset-profile dialog
+ * opened over them; the benchmark list is read by the free markets module and by
+ * the premium one, which a viewer entitled to both can place side by side. On a
+ * canvas that mounts whatever the viewer has arranged, any of those pairs can be
+ * on screen together.
+ *
+ * They are asserted separately from the portfolio reads above because they reach
+ * the register by two different routes: two from inside this facade, and one from
+ * the sibling admin facade through the narrow public entry point.
+ */
+describe('DataService sharing the reads co-mounted modules duplicate', () => {
+  const adminPath = '/api/v1/admin';
+  const benchmarksPath = '/api/v1/benchmarks';
+  const infoPath = '/api/v1/info';
+
+  let dataService: DataService;
+  let httpTestingController: HttpTestingController;
+
+  const infoResponse = () => {
+    return {
+      globalPermissions: ['enableSubscription', 'enableDataProviderGhostfolio'],
+      platforms: []
+    };
+  };
+
+  // The environment read answers by publishing onto the window rather than by
+  // returning, so the window is where it has to be read from. Declared once and
+  // typed, rather than reaching through `any` at each site, so that a change to
+  // what is published is a compile error here too.
+  const publishedWindow = () => {
+    return window as Window & { info?: InfoItem };
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+
+    TestBed.configureTestingModule({
+      providers: [DataService, provideHttpClient(), provideHttpClientTesting()]
+    });
+
+    dataService = TestBed.inject(DataService);
+    httpTestingController = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpTestingController.verify();
+
+    window.localStorage.clear();
+
+    delete publishedWindow().info;
+  });
+
+  it('serves two simultaneous environment reads from one request', () => {
+    dataService.updateInfo();
+    dataService.updateInfo();
+
+    const requests = httpTestingController.match(infoPath);
+
+    expect(requests.length).toBe(1);
+
+    requests[0].flush(infoResponse());
+  });
+
+  // The read answers by publishing rather than by returning, so sharing it is only
+  // correct if the publication still happens - and happens for the shared
+  // response, not for some earlier one.
+  it('publishes the environment description from the shared response', () => {
+    dataService.updateInfo();
+    dataService.updateInfo();
+
+    httpTestingController.expectOne(infoPath).flush(infoResponse());
+
+    expect(publishedWindow().info).toEqual(infoResponse());
+  });
+
+  // The publication sits inside the request precisely so it cannot be re-run over
+  // its own output by a second caller joining. Asserted through a source the
+  // publication rewrites in place: with this utm source the subscription
+  // permission is filtered out, and a second pass over the result would be a pass
+  // over an already-filtered array.
+  it('applies the platform filter to the shared response exactly once', () => {
+    window.localStorage.setItem('utm_source', 'ios');
+
+    dataService.updateInfo();
+    dataService.updateInfo();
+
+    httpTestingController.expectOne(infoPath).flush(infoResponse());
+
+    expect(publishedWindow().info?.globalPermissions).toEqual([
+      'enableDataProviderGhostfolio'
+    ]);
+  });
+
+  it('releases the environment read once it has answered', () => {
+    dataService.updateInfo();
+
+    httpTestingController.expectOne(infoPath).flush(infoResponse());
+
+    dataService.updateInfo();
+
+    // A read held after it answered would leave the description frozen at
+    // whatever it said the first time, which is the opposite of what a refresh is
+    // for.
+    httpTestingController.expectOne(infoPath).flush(infoResponse());
+  });
+
+  it('serves two simultaneous benchmark reads from one request', () => {
+    const received: unknown[] = [];
+
+    dataService.fetchBenchmarks().subscribe((response) => {
+      received.push(response);
+    });
+    dataService.fetchBenchmarks().subscribe((response) => {
+      received.push(response);
+    });
+
+    const requests = httpTestingController.match(benchmarksPath);
+
+    expect(requests.length).toBe(1);
+
+    requests[0].flush({ benchmarks: [] });
+
+    expect(received.length).toBe(2);
+  });
+
+  it('hands both benchmark readers the same list', () => {
+    const response = { benchmarks: [{ name: 'S&P 500' }] };
+    const received: unknown[] = [];
+
+    dataService.fetchBenchmarks().subscribe((value) => {
+      received.push(value);
+    });
+    dataService.fetchBenchmarks().subscribe((value) => {
+      received.push(value);
+    });
+
+    httpTestingController.expectOne(benchmarksPath).flush(response);
+
+    // Both readers hold the list rather than consuming it, so what matters is
+    // that each receives it intact - there is no mapping here that a second
+    // caller could re-run over the first one's output.
+    expect(received[0]).toEqual(response);
+    expect(received[1]).toEqual(response);
+  });
+
+  it('serves two simultaneous reads from the public entry point with one request', () => {
+    const received: unknown[] = [];
+
+    dataService.coalesceGet(adminPath).subscribe((response) => {
+      received.push(response);
+    });
+    dataService.coalesceGet(adminPath).subscribe((response) => {
+      received.push(response);
+    });
+
+    const requests = httpTestingController.match(adminPath);
+
+    expect(requests.length).toBe(1);
+
+    requests[0].flush({ settings: {}, version: '3.0.0' });
+
+    // Sharing a request is only correct if it still answers everyone who asked.
+    expect(received.length).toBe(2);
+  });
+
+  it('hands the public entry point the response unchanged', () => {
+    const response = { settings: { CURRENCY: 'USD' }, version: '3.0.0' };
+    let received: unknown;
+
+    dataService.coalesceGet(adminPath).subscribe((value) => {
+      received = value;
+    });
+
+    httpTestingController.expectOne(adminPath).flush(response);
+
+    // No mapping, which is what makes the entry point safe to expose: there is
+    // nothing that could be run twice over one shared object.
+    expect(received).toEqual(response);
+  });
+
+  it('keeps public-entry-point reads apart when their parameters differ', () => {
+    dataService.coalesceGet(adminPath).subscribe();
+    dataService
+      .coalesceGet(adminPath, new HttpParams().append('status', 'active'))
+      .subscribe();
+
+    const requests = httpTestingController.match(({ url }) => {
+      return url === adminPath;
+    });
+
+    expect(requests.length).toBe(2);
+
+    requests[0].flush({});
+    requests[1].flush({});
+  });
+
+  it('issues nothing from the public entry point before it is subscribed to', () => {
+    dataService.coalesceGet(adminPath);
+
+    httpTestingController.expectNone(adminPath);
   });
 });
 

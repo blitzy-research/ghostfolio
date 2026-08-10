@@ -1,9 +1,14 @@
 import { Component, Type } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { readFileSync } from 'fs';
 import { setImmediate } from 'node:timers';
+import { join } from 'path';
 
 import { DashboardModuleType } from '../../enums/dashboard-module-type';
-import type { DashboardModuleDefinition } from '../../interfaces/interfaces';
+import type {
+  DashboardModuleDefinition,
+  DashboardModuleGeometryStep
+} from '../../interfaces/interfaces';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host.component';
 
 // Cuts the one dependency of the chrome that this environment cannot load.
@@ -378,6 +383,69 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(qualifiedName).toContain(' · ');
   });
 
+  /**
+   * The module title is a heading, and the level it declares is what gives this
+   * canvas a document outline at all.
+   *
+   * The screens this replaced each opened with a page heading, and the module
+   * wrappers hide the one their hosted screen still renders - so with the shell gone
+   * the finished canvas contained no heading of any level anywhere, measured as an
+   * empty result for every heading selector and every heading audit reporting `not
+   * applicable`. That takes away the first shortcut a screen-reader user reaches for:
+   * walk the headings to find out what is on the page.
+   */
+  it('should declare its title as a second-level heading', async () => {
+    await bindResolvingDefinition();
+
+    const title = query('mat-card-title');
+
+    expect(title.getAttribute('role')).toBe('heading');
+
+    // One level below the canvas's own heading, whatever order the arrangement puts
+    // the modules in: a module is a part of the dashboard, not a section of another
+    // module.
+    expect(title.getAttribute('aria-level')).toBe('2');
+  });
+
+  /**
+   * Declared as a role and a level rather than by swapping in an `<h2>` element,
+   * which would have repainted every module header with the browser's default
+   * heading type and margins. This asserts the visual result of that choice rather
+   * than the choice: the title keeps the classes that give it the card's own title
+   * type and its truncation behaviour, and gains no heading element.
+   */
+  it('should carry that heading without changing how the header looks', async () => {
+    await bindResolvingDefinition();
+
+    const title = query('mat-card-title');
+
+    expect(title.tagName).toBe('MAT-CARD-TITLE');
+    expect(title.classList).toContain('text-truncate');
+    expect(title.classList).toContain('mb-0');
+    expect(query('h1, h2, h3, h4, h5, h6')).toBeNull();
+  });
+
+  // The heading names the module, and the qualifier is part of that name: two cards
+  // headed `Settings` are two identical entries in an outline.
+  it('should name the module in that heading, qualifier included', async () => {
+    fixture.componentRef.setInput('definition', {
+      ...createDefinition(() =>
+        Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent)
+      ),
+      context: 'Admin Control',
+      name: 'Settings'
+    });
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const title = query('mat-card-title');
+
+    expect(title.getAttribute('role')).toBe('heading');
+    expect(title.textContent.trim()).toBe('Settings · Admin Control');
+  });
+
   it('should preserve readable title space and a module-scale content gutter', async () => {
     await bindResolvingDefinition();
 
@@ -391,7 +459,18 @@ describe('GfDashboardModuleHostComponent', () => {
     expect(query('button.module-actions').classList).toContain(
       'module-actions'
     );
-    expect(query('.gridster-item-content').classList).toContain('p-3');
+
+    // The gutter is this component's own declaration and NOT the Bootstrap `p-3`
+    // utility it used to carry, which is asserted here because the utility was
+    // the defect rather than the mechanism: `.p-3` resolves to
+    // `padding: 1rem !important`, and `!important` outranks every non-important
+    // declaration whatever its specificity - including the conditional trailing
+    // reserve the canvas sets on modules that have to clear a floating button.
+    // That reserve was computed and then discarded on every one of them, so a
+    // module's last row sat 16px from the card edge instead of 80px, underneath
+    // the button. Re-adding the class would silently restore the defect while
+    // every other assertion here kept passing, so its ABSENCE is the assertion.
+    expect(query('.gridster-item-content').classList).not.toContain('p-3');
   });
 
   it('should paint the resolved module only once its loader settles', async () => {
@@ -593,6 +672,143 @@ describe('GfDashboardModuleHostComponent', () => {
     await settle();
 
     expect(emitSpy).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Focus after the handle is pressed with a pointer.
+   *
+   * The grid starts a drag on `mousedown` and `touchstart` and calls
+   * `preventDefault` on both, which is what suppresses the focus a press normally
+   * confers. The result is a handle that advertises eight arrow-key shortcuts and,
+   * after a press, has none of them working: focus is still on the document body,
+   * so the next arrow key is swallowed with no move, no message and nothing to
+   * explain it - and a viewer who nudges a module with the pointer and then reaches
+   * for the keyboard to line it up is exactly who meets that.
+   */
+  it('should take focus when the handle is pressed', async () => {
+    await bindResolvingDefinition();
+
+    const handle = query<HTMLButtonElement>('.gf-dashboard-module-drag-handle');
+
+    expect(document.activeElement).not.toBe(handle);
+
+    // `pointerdown` rather than `mousedown`, because it fires before both of the
+    // events the grid listens on - so focus is already here by the time either
+    // `preventDefault` runs, and `preventDefault` suppresses a focus that has not
+    // happened yet rather than undoing one that has. Dispatched on the element so
+    // the template binding is part of what this covers.
+    handle.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(handle);
+  });
+
+  /**
+   * The focus ring for this chrome, and the shape of the rule that carries it.
+   *
+   * The only item in this chrome's menu REMOVES the module, and a Material menu
+   * panel is moved into an overlay attached to the document body - so a rule nested
+   * inside `:host` compiles to a host-descendant selector that can never match it,
+   * and the most consequential control here had nothing at all to show under
+   * keyboard focus while every other control did. It is asserted from the source
+   * because this environment applies no component stylesheet and renders no
+   * overlay; the rendered ring is measured in a browser.
+   */
+  describe('the focus ring that has to reach a portalled menu row', () => {
+    const readStylesheet = () => {
+      return readFileSync(
+        join(__dirname, 'dashboard-module-host.scss'),
+        'utf8'
+      ).replace(/^\s*\/\/.*$/gm, '');
+    };
+
+    it('should declare the ring outside the host', () => {
+      // At column zero. Emulated encapsulation still stamps the menu row with this
+      // component's content attribute, so an unnested `button` selector reaches the
+      // card AND the panel while matching nothing a mounted module renders.
+      expect(readStylesheet()).toMatch(/^button:focus-visible \{/m);
+    });
+
+    it('should not nest a ring under the host, where the menu cannot be reached', () => {
+      // Indentation only, not `\s`, which spans the newlines the comment strip
+      // leaves behind and would match the column-zero rule itself.
+      const nested = readStylesheet().match(/^[ \t]+button:focus-visible/gm);
+
+      expect(nested).toBeNull();
+    });
+
+    it('should take its colour from the inherited one', () => {
+      const source = readStylesheet();
+      const start = source.indexOf('button:focus-visible {');
+      const ring = source.slice(start, source.indexOf('}', start));
+
+      // `currentColor` is the only value correct in both places the rule reaches:
+      // the card sets a themed colour its header controls inherit, and a menu row
+      // inherits the themed colour of the panel it sits in. A literal ink would need
+      // a `.theme-dark` mirror, and encapsulation rewrites that mirror into a
+      // selector requiring this component's content attribute on the document body -
+      // so it would compile, lint, ship and match nothing.
+      expect(ring).toContain('outline: 2px solid currentColor;');
+      expect(ring).toContain('outline-offset: 2px;');
+    });
+
+    /**
+     * The drag handle's ring, and the specificity that decides which declaration
+     * paints it.
+     *
+     * The handle carries no trailing margin, deliberately, so that a narrow module
+     * keeps its header width for the title. An outward ring therefore lands in the
+     * title's box - measured in a browser at 4px by 20px, painted over the stem of
+     * the first glyph of the module's name.
+     *
+     * The correction has to go on the handle's OWN rule, which is nested under
+     * `:host`. That nesting is exactly what made the first attempt inert: a sibling
+     * of the column-zero `button:focus-visible` rule above compiles one specificity
+     * step short of it, so the declaration shipped and never applied. Asserted as a
+     * position rather than as a value for that reason - a `-2px` sitting in the
+     * wrong rule is indistinguishable from no fix at all.
+     */
+    it('should draw the drag-handle ring inside the handle, on the rule that wins', () => {
+      const source = readStylesheet();
+      const handle = source.indexOf('.gf-dashboard-module-drag-handle {');
+
+      expect(handle).toBeGreaterThan(-1);
+
+      // The handle's own rule is nested under the host, so it outranks anything
+      // written beside the shared rule at column zero.
+      expect(source.slice(0, handle)).toContain(':host {');
+
+      const ring = source.indexOf('&:focus-visible {', handle);
+
+      expect(ring).toBeGreaterThan(-1);
+
+      expect(source.slice(ring, source.indexOf('}', ring))).toContain(
+        'outline-offset: -2px;'
+      );
+    });
+
+    it('should not leave an outward drag-handle ring anywhere in the sheet', () => {
+      const source = readStylesheet();
+
+      // The failed first attempt, and the shape it would take again: a rule for the
+      // handle written as a sibling of the shared one, where it cannot win.
+      expect(source).not.toContain('&.gf-dashboard-module-drag-handle {');
+    });
+
+    it('should draw the ring inside a menu row rather than around it', () => {
+      const source = readStylesheet();
+      const start = source.indexOf('&.mat-mdc-menu-item {');
+
+      expect(start).toBeGreaterThan(-1);
+
+      // A menu panel is sized to its widest row and clips its overflow, so an
+      // outward offset is trimmed on the left and right and only the top and bottom
+      // edges of the ring survive.
+      expect(source.slice(start, source.indexOf('}', start))).toContain(
+        'outline-offset: -2px;'
+      );
+    });
   });
 
   it('should expose the drag handle as a real button that advertises what its keys do', async () => {
@@ -908,12 +1124,369 @@ describe('GfDashboardModuleHostComponent', () => {
 
     expect(unhandledReasons).toEqual([]);
 
-    expect(
-      query('.gridster-item-content [role="alert"]').textContent.trim()
-    ).toBe('Oops! Something went wrong.');
+    // The sentence, and nothing about the failure beyond it plus the way out of
+    // it - asserted as a containment rather than an equality because the body now
+    // carries a recovery action, and asserted for the action too so that the
+    // "contained" state is not read as "silent". A module fails to arrive almost
+    // always transiently - a chunk request lost to a dropped connection, a service
+    // worker holding a stale manifest - and without an action the only recovery was
+    // reloading the whole canvas or removing and re-adding the module, which is a
+    // layout write to recover from something that was never a layout problem.
+    const alert = query('.gridster-item-content [role="alert"]');
+
+    expect(alert.textContent).toContain('Oops! Something went wrong.');
+    expect(alert.querySelector('button')).toBeTruthy();
     expect(query('ngx-skeleton-loader')).toBeNull();
 
     expectChromeToBeRendered();
+  });
+
+  // The action re-mounts only this module. Asserted through the same public entry
+  // point the canvas uses for a global reload, so the button cannot drift onto a
+  // second recovery path, and asserted to move NO cell - a failed chunk request is
+  // not a layout event and must not become one.
+  it('should re-mount just the failed module when its retry is pressed', async () => {
+    const unhandledReasons = collectUnhandledRejections();
+    let attempt = 0;
+
+    fixture.componentRef.setInput(
+      'definition',
+      createDefinition(() => {
+        attempt += 1;
+
+        return attempt === 1
+          ? Promise.reject(createChunkFailure())
+          : Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent);
+      })
+    );
+
+    await settle();
+
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+
+    fixture.detectChanges();
+
+    expect(component.hasLoadError).toBe(true);
+
+    const moveEvents: unknown[] = [];
+    const removeEvents: unknown[] = [];
+    const resizeEvents: unknown[] = [];
+
+    component.move.subscribe((event) => moveEvents.push(event));
+    component.remove.subscribe((event) => removeEvents.push(event));
+    component.resize.subscribe((event) => resizeEvents.push(event));
+
+    query<HTMLButtonElement>(
+      '.gridster-item-content [role="alert"] button'
+    ).click();
+
+    await settle();
+
+    expect(attempt).toBe(2);
+    expect(component.hasLoadError).toBe(false);
+    expect(query('.gridster-item-content [role="alert"]')).toBeNull();
+    expect(query('gf-first-test-module')).not.toBeNull();
+
+    expect(moveEvents).toEqual([]);
+    expect(removeEvents).toEqual([]);
+    expect(resizeEvents).toEqual([]);
+    expect(unhandledReasons).toEqual([]);
+  });
+
+  /**
+   * Getting out of a failed load.
+   *
+   * The state these tests are about used to be a dead end. A module whose chunk
+   * failed said only that something had gone wrong and offered nothing: not on the
+   * card, not in its menu, and not from the control bar, whose refresh asked for the
+   * module again and received the same failure. Removing the module and adding it
+   * back failed identically, because the browser records a failed dynamic import
+   * against the chunk's url for the lifetime of the DOCUMENT - measured as an
+   * instant rejection with no network request at all, while a plain `fetch()` of the
+   * same url returned 200.
+   *
+   * So there are two recoveries, and which one is right depends on evidence the
+   * component can only get by trying. The first failure is offered a retry, because
+   * a retry is cheap and genuinely fixes the failures that are not chunk failures.
+   * The second failure IS the evidence that this one is, and the module then offers
+   * the document reload, which always works.
+   */
+  describe('recovering from a failed load', () => {
+    /**
+     * Binds a definition whose loader rejects, and drains the turn of the event
+     * loop that decides whether the rejection went unhandled.
+     *
+     * @returns The rejections nothing handled, so every caller asserts that its
+     * failure was absorbed rather than escaping the cell.
+     */
+    const bindFailingDefinition = async (
+      loadComponent: () => Promise<Type<unknown>> = () =>
+        Promise.reject(createChunkFailure())
+    ) => {
+      const unhandledReasons = collectUnhandledRejections();
+
+      fixture.componentRef.setInput(
+        'definition',
+        createDefinition(loadComponent)
+      );
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      fixture.detectChanges();
+
+      return unhandledReasons;
+    };
+
+    /** The recovery actions the failed body is offering, by their visible text. */
+    const recoveryActions = () => {
+      return Array.from(
+        query('.gridster-item-content [role="alert"]').querySelectorAll(
+          'button'
+        )
+      ).map((button) => button.textContent.trim());
+    };
+
+    /**
+     * Collects the reports jsdom emits for a navigation it will not perform.
+     *
+     * Registered by extending the suite's existing `console.error` interception for
+     * the duration of one test, and torn down by that spy's own restore in
+     * `afterEach`, so nothing here can leak into the tests that follow.
+     */
+    const navigationReports = () => {
+      const reports: string[] = [];
+      const forward = consoleErrorSpy.getMockImplementation();
+
+      consoleErrorSpy.mockImplementation((...args: unknown[]) => {
+        const [detail] = args;
+
+        // Matched on shape rather than with `instanceof`: jsdom raises this from its
+        // own realm, so `detail instanceof Error` is false for the very object that
+        // arrives.
+        const report =
+          Object.prototype.toString.call(detail) === '[object Error]'
+            ? (detail as Error).message
+            : typeof detail === 'string'
+              ? detail
+              : '';
+
+        if (report.includes('Not implemented: navigation')) {
+          reports.push(report);
+
+          return;
+        }
+
+        forward(...args);
+      });
+
+      return reports;
+    };
+
+    const pressRecoveryAction = (label: string) => {
+      const action = Array.from(
+        query(
+          '.gridster-item-content [role="alert"]'
+        ).querySelectorAll<HTMLButtonElement>('button')
+      ).find((button) => button.textContent.trim() === label);
+
+      expect(action).toBeTruthy();
+
+      action.click();
+    };
+
+    it('should offer a retry on the first failure', async () => {
+      expect(await bindFailingDefinition()).toEqual([]);
+
+      expect(component.hasLoadError).toBe(true);
+      expect(component.loadFailureCount).toBe(1);
+      expect(component.hasExhaustedInPlaceRecovery).toBe(false);
+      expect(recoveryActions()).toEqual(['Try again']);
+    });
+
+    it('should ask for the module again when the retry is pressed', async () => {
+      const attempts: number[] = [];
+
+      await bindFailingDefinition(() => {
+        attempts.push(attempts.length);
+
+        return Promise.reject(createChunkFailure());
+      });
+
+      expect(attempts).toHaveLength(1);
+
+      const unhandledReasons = collectUnhandledRejections();
+
+      pressRecoveryAction('Try again');
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      fixture.detectChanges();
+
+      // The point of the retry: the loader really is called a second time. What the
+      // browser does with that call is the browser's business, and is exactly why
+      // the escalation below exists.
+      expect(attempts).toHaveLength(2);
+      expect(unhandledReasons).toEqual([]);
+    });
+
+    it('should recover in place when the retry succeeds', async () => {
+      let shouldFail = true;
+
+      await bindFailingDefinition(() => {
+        if (shouldFail) {
+          return Promise.reject(createChunkFailure());
+        }
+
+        return Promise.resolve<Type<unknown>>(GfFirstTestModuleComponent);
+      });
+
+      shouldFail = false;
+
+      pressRecoveryAction('Try again');
+
+      await settle();
+
+      expect(component.hasLoadError).toBe(false);
+      expect(query('.gf-first-test-module-body')).toBeTruthy();
+      expect(query('.gridster-item-content [role="alert"]')).toBeNull();
+
+      // Reset by the success, so a module that fails again much later is offered a
+      // retry again rather than being told at once to reload the page.
+      expect(component.loadFailureCount).toBe(0);
+      expect(component.hasExhaustedInPlaceRecovery).toBe(false);
+    });
+
+    it('should escalate to a document reload once a retry has failed', async () => {
+      await bindFailingDefinition();
+
+      const unhandledReasons = collectUnhandledRejections();
+
+      pressRecoveryAction('Try again');
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      fixture.detectChanges();
+
+      expect(unhandledReasons).toEqual([]);
+      expect(component.loadFailureCount).toBe(2);
+      expect(component.hasExhaustedInPlaceRecovery).toBe(true);
+
+      // The retry is withdrawn rather than kept alongside: offering it again would
+      // be offering something now known not to work.
+      expect(recoveryActions()).toEqual(['Reload page']);
+
+      // And the escalated state says why, so the reload reads as the remedy rather
+      // than as a shrug.
+      expect(
+        query('.gridster-item-content [role="alert"]').textContent
+      ).toContain('cannot be loaded again on its own');
+    });
+
+    it('should reload the document when the escalated action is pressed', async () => {
+      await bindFailingDefinition();
+
+      pressRecoveryAction('Try again');
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      fixture.detectChanges();
+
+      // Observed through the report jsdom emits rather than by replacing the method.
+      // `window.location` and its members are `[LegacyUnforgeable]` here, so
+      // `Object.defineProperty(window, 'location', …)` throws `Cannot redefine
+      // property: location` and spying on `reload` throws `Cannot assign to read
+      // only property`. What jsdom DOES give is a virtual-console error for the
+      // navigation it will not perform, and `reload()` reaches it even though the
+      // address is unchanged - it sets `reloadTriggered`, which is what bypasses the
+      // same-url short-circuit. This is the technique every other suite in this tree
+      // uses for the same reason.
+      const navigationAttempts = navigationReports();
+
+      pressRecoveryAction('Reload page');
+
+      expect(navigationAttempts).toHaveLength(1);
+    });
+
+    it('should count the arrangement-wide refresh as an attempt', async () => {
+      await bindFailingDefinition();
+
+      expect(component.hasExhaustedInPlaceRecovery).toBe(false);
+
+      const unhandledReasons = collectUnhandledRejections();
+
+      // What the control bar does to every module. For a module that is already
+      // failing it is the same request the retry makes, so it counts the same way -
+      // otherwise a viewer who reached for refresh first would be shown a retry that
+      // had, in substance, already been spent.
+      component.reload();
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      fixture.detectChanges();
+
+      expect(unhandledReasons).toEqual([]);
+      expect(component.hasExhaustedInPlaceRecovery).toBe(true);
+      expect(recoveryActions()).toEqual(['Reload page']);
+    });
+
+    it('should treat a loader that resolves to nothing as a failure it can retry', async () => {
+      await bindFailingDefinition(() =>
+        Promise.resolve<Type<unknown>>(undefined)
+      );
+
+      expect(component.hasLoadError).toBe(true);
+      expect(component.loadFailureCount).toBe(1);
+      expect(recoveryActions()).toEqual(['Try again']);
+    });
+
+    it('should move no cell and emit nothing while recovering', async () => {
+      const moveSteps: DashboardModuleGeometryStep[] = [];
+      const resizeSteps: DashboardModuleGeometryStep[] = [];
+
+      let removeCount = 0;
+
+      component.move.subscribe((step) => moveSteps.push(step));
+      component.remove.subscribe(() => (removeCount += 1));
+      component.resize.subscribe((step) => resizeSteps.push(step));
+
+      await bindFailingDefinition();
+
+      pressRecoveryAction('Try again');
+
+      await settle();
+
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      // Recovery is not an arrangement change. Nothing here may reach the canvas as
+      // a move, a resize or a removal, because any of those would be persisted.
+      expect(moveSteps).toEqual([]);
+      expect(resizeSteps).toEqual([]);
+      expect(removeCount).toBe(0);
+    });
   });
 
   describe('reporting a failed chunk request', () => {
@@ -1111,6 +1684,366 @@ describe('GfDashboardModuleHostComponent', () => {
     // this content, so naming the scrollport as well would announce the module's
     // name twice on the way in.
     expect(query('.gridster-item-content').getAttribute('role')).toBeNull();
+  });
+
+  /**
+   * Where the canvas is left when something opened from inside a module closes.
+   *
+   * The scrolling body is focusable, because a scrolling region that cannot be
+   * focused cannot be scrolled from the keyboard - which also makes it the element
+   * focus sits on when a dialog is opened from within the module, and therefore the
+   * element that dialog restores focus to. A menu restores focus to its trigger
+   * instead. A module is routinely taller than the grid's viewport, so the element
+   * focus comes back to usually straddles it, and restoring focus to an element that
+   * is not fully in view makes the browser scroll it in. What moves is the GRID, not
+   * the module: the viewer opened something, dismissed it, and came back several
+   * hundred pixels away from where they were, having scrolled nothing themselves.
+   *
+   * `preventScroll` is not available as a remedy, because the `focus()` call belongs
+   * to the dialog or the menu trigger, and those dialogs are opened by the feature
+   * components mounted inside modules rather than by anything here.
+   *
+   * What separates a hand-back from a viewer arriving is where focus sat in
+   * between, not the origin the CDK reports: Material stamps its restore with the
+   * interaction that dismissed the overlay, so these arrive as `keyboard` and
+   * `mouse` and never as `program`.
+   */
+  describe('keeping the canvas still when focus is handed back', () => {
+    /**
+     * A scrollable stand-in for the grid, wrapped around the fixture's own host.
+     *
+     * The real ancestor is the `gridster` element, which this spec deliberately does
+     * not mount - the whole point of this component is that it knows nothing about
+     * the grid. What it walks is `parentElement`, so any scrollable ancestor
+     * exercises the same code, and one built here can report a geometry that jsdom
+     * would otherwise pin to zero.
+     */
+    const createScrollableAncestor = () => {
+      const ancestor = document.createElement('div');
+
+      Object.defineProperty(ancestor, 'clientHeight', {
+        configurable: true,
+        value: 400
+      });
+      Object.defineProperty(ancestor, 'scrollHeight', {
+        configurable: true,
+        value: 2000
+      });
+      Object.defineProperty(ancestor, 'clientWidth', {
+        configurable: true,
+        value: 800
+      });
+      Object.defineProperty(ancestor, 'scrollWidth', {
+        configurable: true,
+        value: 800
+      });
+
+      const host = fixture.nativeElement as HTMLElement;
+
+      host.parentElement.insertBefore(ancestor, host);
+      ancestor.appendChild(host);
+
+      return ancestor;
+    };
+
+    const scrollport = () => query<HTMLElement>('.gridster-item-content');
+
+    let overlayContainer: HTMLElement;
+
+    /**
+     * A focusable element inside a real CDK overlay container.
+     *
+     * The class is the discriminator the component reads, and it is a structural
+     * fact of the CDK rather than anything this application applies, so the
+     * stand-in carries the real one. Attached to the document body, exactly where
+     * the CDK attaches it, so that a focus event dispatched inside it propagates
+     * through `document` and reaches the component's listener.
+     */
+    const createOverlayFocusTarget = () => {
+      overlayContainer = document.createElement('div');
+      overlayContainer.classList.add('cdk-overlay-container');
+
+      const pane = document.createElement('button');
+
+      overlayContainer.appendChild(pane);
+      document.body.appendChild(overlayContainer);
+
+      return pane;
+    };
+
+    /**
+     * Focus leaving the module for something outside it.
+     *
+     * `relatedTarget` left null by default: that is what a dialog opening looks
+     * like, because focus leaves before the dialog's own focus trap has claimed it.
+     */
+    const focusOutFrom = (
+      aElement: HTMLElement,
+      aRelatedTarget: HTMLElement = null
+    ) => {
+      aElement.dispatchEvent(
+        new FocusEvent('focusout', {
+          bubbles: true,
+          relatedTarget: aRelatedTarget
+        })
+      );
+
+      fixture.detectChanges();
+    };
+
+    /**
+     * Focus arriving on an element.
+     *
+     * Dispatched as a real event rather than by calling `focus()`, because jsdom
+     * refuses focus to anything it considers unfocusable and the component reads
+     * only the event's target. The component listens on `document` in the capture
+     * phase, which is the phase every dispatched event traverses.
+     */
+    const focusInOn = (aElement: HTMLElement) => {
+      aElement.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+
+      fixture.detectChanges();
+    };
+
+    // What the viewer scrolling does. The component listens for this on
+    // `document` in the capture phase, because scroll events do not bubble.
+    const scrollNoticed = (aElement: HTMLElement) => {
+      aElement.dispatchEvent(new Event('scroll'));
+
+      fixture.detectChanges();
+    };
+
+    beforeEach(() => {
+      component.definition = createDefinition(() =>
+        Promise.resolve(GfFirstTestModuleComponent)
+      );
+
+      fixture.detectChanges();
+    });
+
+    afterEach(() => {
+      overlayContainer?.remove();
+      overlayContainer = undefined;
+    });
+
+    it('should put the canvas back where it was when a dialog hands focus back', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+
+      ancestor.scrollTop = 1200;
+
+      // Focus leaves as the dialog opens, which is the last moment the offset is
+      // still the one the viewer chose, and the dialog's focus trap then claims it.
+      focusOutFrom(scrollport());
+      focusInOn(overlayTarget);
+
+      // What the browser does when focus is restored to a partly-visible element.
+      ancestor.scrollTop = 0;
+
+      focusInOn(scrollport());
+
+      expect(ancestor.scrollTop).toBe(1200);
+    });
+
+    it('should honour a scroll the viewer made while the overlay was up', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+
+      ancestor.scrollTop = 1200;
+
+      focusOutFrom(scrollport());
+      focusInOn(overlayTarget);
+
+      // Scrolling with a menu or a non-modal panel open is perfectly ordinary, and
+      // this is the offset the viewer is entitled to come back to - restoring the
+      // one from when the overlay opened would throw them somewhere they had
+      // already left.
+      ancestor.scrollTop = 900;
+      scrollNoticed(ancestor);
+
+      ancestor.scrollTop = 0;
+
+      focusInOn(scrollport());
+
+      expect(ancestor.scrollTop).toBe(900);
+    });
+
+    it('should correct a hand-back to the chrome as well as to the body', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+      const actionsTrigger = query<HTMLElement>('.module-actions');
+
+      ancestor.scrollTop = 1200;
+
+      // Opening the module's own actions menu: focus moves to the menu panel,
+      // which lives in an overlay outside this module.
+      focusOutFrom(actionsTrigger);
+      focusInOn(overlayTarget);
+
+      ancestor.scrollTop = 0;
+
+      // And closing it: Material restores focus to the trigger, which by then may
+      // have scrolled out of view - the same defect as the dialog case, from a
+      // different opener. Watching the whole host is what makes one correction
+      // serve both.
+      focusInOn(actionsTrigger);
+
+      expect(ancestor.scrollTop).toBe(1200);
+    });
+
+    it('should decline to correct a return no overlay preceded', () => {
+      const ancestor = createScrollableAncestor();
+
+      ancestor.scrollTop = 1200;
+
+      focusOutFrom(scrollport());
+
+      // Nothing took focus in the meantime, so nothing is handing it back: this is
+      // the viewer arriving, and the browser bringing what they focused into view
+      // is the right answer.
+      ancestor.scrollTop = 640;
+
+      focusInOn(scrollport());
+
+      expect(ancestor.scrollTop).toBe(640);
+    });
+
+    it('should abandon the correction once focus settles somewhere unrelated', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+      const elsewhere = document.createElement('button');
+
+      document.body.appendChild(elsewhere);
+
+      ancestor.scrollTop = 1200;
+
+      focusOutFrom(scrollport());
+      focusInOn(overlayTarget);
+
+      // The overlay closed and focus went to the page rather than back here. A
+      // record kept past this point would correct the viewer's next deliberate
+      // arrival with an offset they have long since moved past.
+      focusInOn(elsewhere);
+
+      ancestor.scrollTop = 300;
+
+      focusInOn(scrollport());
+
+      expect(ancestor.scrollTop).toBe(300);
+
+      elsewhere.remove();
+    });
+
+    it('should treat a move between its own controls as no departure at all', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+      const actionsTrigger = query<HTMLElement>('.module-actions');
+
+      ancestor.scrollTop = 1200;
+
+      // Tab from the body to the chrome: focus never leaves the module, so nothing
+      // has been interrupted and nothing is owed.
+      focusOutFrom(scrollport(), actionsTrigger);
+      focusInOn(overlayTarget);
+
+      ancestor.scrollTop = 400;
+
+      focusInOn(actionsTrigger);
+
+      expect(ancestor.scrollTop).toBe(400);
+    });
+
+    it('should restore only once per hand-back', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+
+      ancestor.scrollTop = 1200;
+
+      focusOutFrom(scrollport());
+      focusInOn(overlayTarget);
+
+      ancestor.scrollTop = 0;
+
+      focusInOn(scrollport());
+
+      expect(ancestor.scrollTop).toBe(1200);
+
+      // Whatever happens next belongs to the viewer. Holding the offset would fight
+      // their own scrolling every time focus came back.
+      ancestor.scrollTop = 50;
+
+      focusInOn(scrollport());
+
+      expect(ancestor.scrollTop).toBe(50);
+    });
+
+    it('should ignore an ancestor that does not scroll', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+
+      Object.defineProperty(ancestor, 'scrollHeight', {
+        configurable: true,
+        value: 400
+      });
+
+      ancestor.scrollTop = 1200;
+
+      focusOutFrom(scrollport());
+      focusInOn(overlayTarget);
+
+      ancestor.scrollTop = 0;
+
+      focusInOn(scrollport());
+
+      // Nothing about it could have moved the module into view, so nothing about it
+      // is this component's to put back.
+      expect(ancestor.scrollTop).toBe(0);
+    });
+
+    it('should stop watching focus when the module goes away', () => {
+      const removeEventListenerSpy = jest.spyOn(
+        document,
+        'removeEventListener'
+      );
+
+      fixture.destroy();
+
+      // Left registered, these outlive the module they were watching for - and a
+      // module is removed and re-added as often as the viewer likes.
+      expect(removeEventListenerSpy).toHaveBeenCalledWith(
+        'focusin',
+        expect.any(Function),
+        true
+      );
+      expect(removeEventListenerSpy).toHaveBeenCalledWith(
+        'scroll',
+        expect.any(Function),
+        true
+      );
+
+      removeEventListenerSpy.mockRestore();
+    });
+
+    it('should leave the canvas alone once the module is gone', () => {
+      const ancestor = createScrollableAncestor();
+      const overlayTarget = createOverlayFocusTarget();
+      const departing = scrollport();
+
+      ancestor.scrollTop = 1200;
+
+      focusOutFrom(departing);
+      focusInOn(overlayTarget);
+
+      fixture.destroy();
+
+      ancestor.scrollTop = 0;
+
+      // Dispatched from inside the overlay, which is still in the document, so the
+      // event genuinely reaches any listener that survived teardown.
+      focusInOn(overlayTarget);
+
+      expect(ancestor.scrollTop).toBe(0);
+    });
   });
 
   describe('scroll affordance', () => {

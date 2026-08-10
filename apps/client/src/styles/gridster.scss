@@ -20,6 +20,36 @@
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
 
+    // Confines the library's own easing to the one property it can animate
+    // without laying the page out again.
+    //
+    // The library declares `gridster-item { transition: .3s }`, and that
+    // shorthand means `all` - so every arrangement change eases the cell's
+    // `width` and `height` alongside its position. Position is a transform here,
+    // because the grid is configured with `useTransformPositioning`, and a
+    // transform animates on the compositor for nothing. Width and height cannot:
+    // every frame of one lays out the module inside the cell again, and a width
+    // change is rarely alone - narrowing the canvas resizes EVERY cell at once,
+    // so opening the catalog over a full dashboard sets as many simultaneous
+    // non-composited animations running as there are modules, each reflowing a
+    // chart or a table for the whole third of a second.
+    //
+    // Naming the property is the entire fix: the duration still comes from the
+    // library, so a cell that only MOVES glides exactly as it did, while a cell
+    // that changes size arrives at the new one in a single frame - which is what
+    // a layout change should look like in any case.
+    //
+    // Deliberately the longhand and never the `transition` shorthand, and that
+    // is what makes this safe rather than merely tidy: the library zeroes the
+    // DURATION itself while an item is moving or resizing, and that zero is what
+    // makes a drag track the pointer. Declaring only the property leaves every
+    // duration in this file's gift to the library, so nothing here can put a lag
+    // back between a pointer and the item it is moving, whichever order the two
+    // stylesheets are injected in. The reduced-motion block below switches
+    // transitions off wholesale and outranks this by coming later at the same
+    // specificity.
+    transition-property: transform;
+
     // Elevation while the user drags or resizes. `box-shadow` is deliberately the
     // only declaration made here: on these same two selectors the library zeroes
     // the 0.3s easing it otherwise applies to an item, so the element tracks the
@@ -28,6 +58,28 @@
     &.gridster-item-moving,
     &.gridster-item-resizing {
       box-shadow: var(--mat-sys-level3, 0 6px 10px rgba(0, 0, 0, 0.14));
+    }
+
+    // Takes the module's own content out of hit-testing for the length of a
+    // resize, which is the half of the reflow problem that CSS can carry.
+    //
+    // A resize drags the cell's south-east corner, so the pointer spends the
+    // gesture travelling ACROSS the module it is resizing. Every one of those
+    // moves is dispatched to whatever sits under it, and a module is full of
+    // things that answer: a chart runs a hit test to decide on a tooltip, a table
+    // row takes a hover state, a text region begins a selection. None of it is
+    // wanted here - the gesture belongs to the resize handle - and all of it
+    // competes with the frames the resize needs. Made unreachable, the moves land
+    // on the cell itself and cost nothing.
+    //
+    // Scoped to the resizing cell alone: hit-testing everywhere else stays
+    // exactly as it was, and the canvas releases this the instant the gesture
+    // ends because the library removes the class itself. Focus is untouched -
+    // `pointer-events` does not reach it - so the region keeps its tab stop and
+    // its ring throughout, and a keyboard resize is unaffected because it never
+    // sets this class.
+    &.gridster-item-resizing .gridster-item-content {
+      pointer-events: none;
     }
 
     // Gridster draws the southeast handle as a CSS triangle: a 10px box whose
@@ -60,6 +112,65 @@
     &:hover {
       .gridster-item-resizable-handler.handle-se {
         border-bottom-color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+      }
+    }
+
+    // Gives the south and east strips an affordance of their own.
+    //
+    // They are the other two edges the grid is configured to resize from, and
+    // they carried no ink whatsoever: `border-width: 0` leaves them pure
+    // 10px hit areas, so two of the three resize gestures the canvas offers were
+    // discoverable only by sweeping a pointer along an edge and noticing the
+    // cursor change. The corner triangle above cannot stand in for them - it
+    // resizes both axes at once, which is a different gesture from constraining
+    // one.
+    //
+    // Painted with a pseudo-element rather than by tinting the strip itself,
+    // because a filled 10px band along a whole edge reads as a heavy border on the
+    // module rather than as something to grab, and it would sit directly on top of
+    // the card's own 1px outline.
+    //
+    // Placed at the trailing end of each edge rather than centred, for two
+    // reasons. The module body's own "continues below" mark is a bar of exactly
+    // this length and thickness centred on the bottom edge, and a second centred
+    // bar 10px away from it would read as one confused affordance instead of two
+    // distinct ones. And meeting the corner triangle turns the three handles into a
+    // single L-shaped resize region in one corner, which is one thing to learn
+    // rather than three to find. Same length, thickness and radius as that mark, so
+    // the canvas keeps one grammar for "grab here" and distinguishes the two by
+    // WHERE they are.
+    //
+    // Shown on hover only, matching how the library reveals its own corner handle,
+    // so a canvas at rest carries no extra marking.
+    .gridster-item-resizable-handler.handle-e,
+    .gridster-item-resizable-handler.handle-s {
+      &::after {
+        background: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+        border-radius: var(--mat-sys-corner-full, 999px);
+        content: '';
+        display: none;
+        position: absolute;
+      }
+    }
+
+    .gridster-item-resizable-handler.handle-s::after {
+      block-size: 3px;
+      inline-size: 2rem;
+      inset-block-end: 3px;
+      inset-inline-end: 0.75rem;
+    }
+
+    .gridster-item-resizable-handler.handle-e::after {
+      block-size: 2rem;
+      inline-size: 3px;
+      inset-block-end: 0.75rem;
+      inset-inline-end: 3px;
+    }
+
+    &:hover {
+      .gridster-item-resizable-handler.handle-e::after,
+      .gridster-item-resizable-handler.handle-s::after {
+        display: block;
       }
     }
 
@@ -104,11 +215,146 @@
       outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
       outline-offset: -2px;
     }
+
+    // Makes a shared library table behave like module content rather than like the
+    // page it was written for. All three rules moved here from the module host's own
+    // stylesheet for the reason recorded above the focus ring: that stylesheet is a
+    // component stylesheet and carries the 6 kB `anyComponentStyle` budget, this
+    // partial is global and carries none. They lose nothing by the move - every one
+    // of them was already written with `::ng-deep`, so none was ever encapsulated -
+    // and they gain a better home, immediately beside the table surface re-base
+    // below that exists for the same reason they do.
+    .gridster-item-content {
+      // Header labels stop wrapping so that Material's own truncation can work.
+      // Material gives every table cell `overflow: hidden; text-overflow: ellipsis`
+      // but declares no `white-space`, so it computes to `normal` - and
+      // `text-overflow` has no effect on content that is allowed to wrap. A
+      // multi-word header therefore reflows onto further lines and grows the row
+      // instead of ellipsizing, however far the column is squeezed. With `nowrap` a
+      // squeezed header shows a real ellipsis, and the columns that no longer fit
+      // become reachable through the horizontal scrollbar.
+      //
+      // Header cells only. Data cells are left free to wrap, which is what keeps a
+      // long asset name readable in a narrow cell instead of forcing the whole table
+      // into horizontal scrolling.
+      th {
+        // Stops a header from being squeezed narrower than its own label, which is
+        // the second half of the same defect and the half `nowrap` alone cannot
+        // reach. Material gives every cell `overflow: hidden`, and a cell with a
+        // non-visible overflow contributes a min-content width of ZERO to its
+        // column - so a table will happily compress a header until only its first
+        // few characters survive. A real minimum means the column can only ever be
+        // as narrow as the text it holds; if the sum no longer fits, the table
+        // overflows and is scrolled instead, and every label stays legible at every
+        // module width.
+        //
+        // This is why no `title` attribute is needed to expose the full label: the
+        // label is never shortened in the first place, so there is nothing for a
+        // tooltip to reveal. `text-overflow: ellipsis`, which Material already sets,
+        // is left in place as the safety net for a cell constrained by something
+        // else.
+        min-width: max-content;
+
+        white-space: nowrap;
+      }
+
+      // Collapses a module's inner horizontal scroller into the module's own, so a
+      // module has exactly one scrolling region.
+      //
+      // Several of the table templates wrap themselves in a `.overflow-x-auto` div.
+      // On a full-width page that is invisible and harmless, but inside a module it
+      // swallows the overflow before the module's scrollport ever sees it, hiding
+      // whole columns in a nested scroller that reserves no gutter and paints
+      // nothing. Two stacked invisible scrollers is worse than one: neither the
+      // browser nor the module's own edge marks can advertise the inner one, because
+      // those marks watch the element they are positioned against.
+      //
+      // Letting the overflow through means the module scrolls the table, and that
+      // region already reports its own edges - so the columns become both reachable
+      // and advertised, with a single scroll gesture instead of two nested ones.
+      // Scoped to module content, so the same tables keep their inner scroller
+      // wherever else they are used.
+      .overflow-x-auto {
+        overflow-x: visible;
+      }
+
+      // Releases pinned table columns, which cost more than they earn in a grid
+      // cell. Several of these tables end in a `stickyEnd` actions column; pinned to
+      // the right of a full-width page that is a convenience, but pinned to the
+      // right of a module a few hundred pixels wide it parks an opaque block over
+      // whatever is scrolled underneath it. Letting the column scroll with its own
+      // table means nothing is ever covered, and the row actions stay reachable at
+      // the far right where the table ends.
+      //
+      // `!important` is unavoidable rather than lazy: Material declares
+      // `.mat-mdc-table-sticky { position: sticky !important }` in its own component
+      // styles, so nothing short of `!important` can release it. The offsets and
+      // stacking order the CDK writes inline alongside that class are left in place
+      // because they are inert once the element is no longer positioned. Confined to
+      // module content, so the same tables keep their pinned columns wherever else
+      // they appear.
+      //
+      // Only column stickiness is affected: no table in this workspace marks its
+      // header row sticky, so this cannot cost a pinned header.
+      .mat-mdc-table-sticky {
+        position: static !important;
+      }
+    }
+
+    // Re-bases the shared table surface onto the card it is now sitting on.
+    //
+    // `styles/table.scss` paints a table with the app's PAGE background and
+    // stripes its even rows one step off that. On a full-width page the table WAS
+    // the page, so the two agreed and no seam existed. Inside a module the table
+    // sits on a card instead, and in the dark theme the page background is
+    // thirteen units darker than that card - so every table rendered as a
+    // hard-edged recessed well, on all four sides, and one card showed three
+    // different surface values at once.
+    //
+    // The re-base is expressed through the table's own theming variable rather
+    // than by painting over it, so hover, the footer rule and every other table
+    // treatment continue to work unchanged. It has to be declared on the `.gf-table`
+    // element itself and not on an ancestor: the shared partial declares the same
+    // custom property on that element, and a declaration there beats any value
+    // inherited from above however specific the ancestor's selector is.
+    //
+    // Declared for BOTH themes even though the light values are unchanged by it -
+    // the light page background and the light card surface are the same white, and
+    // `whitesmoke` is exactly `surface-container-high`'s fallback - so that the two
+    // themes read from one place and a future theme migration moves them together.
+    .gridster-item-content .gf-table {
+      --mat-table-background-color: var(--mat-sys-surface-container, #ffffff);
+
+      .mat-mdc-row:nth-child(even) {
+        background-color: var(--mat-sys-surface-container-high, #f5f5f5);
+      }
+    }
   }
 
   gridster-preview {
     background: var(--mat-sys-primary-container, rgba(54, 207, 204, 0.16));
     border-radius: var(--mat-sys-corner-medium, 4px);
+
+    // Keeps the drop indicator out of the drag it is describing, and this one
+    // line is what makes dragging a catalog row onto an empty cell reliable.
+    //
+    // The library binds `dragover` and `drop` on the grid element and nothing
+    // else - notably NOT `dragenter` - and it reveals this element by setting
+    // `display: block` from inside that same `dragover` handler, which lands it
+    // directly under the cursor. With the element able to take pointer events,
+    // the browser then retargets the drag to it and signals the change with a
+    // `dragenter`; nothing cancels that event, so the browser concludes the new
+    // target refuses the drop and releasing over it fires no `drop` at all. The
+    // module is silently not added, with no indicator, no message and no write.
+    // Whether a gesture ends that way is decided by which event happened to be
+    // last before the release, so the same drag succeeded or did nothing at
+    // random.
+    //
+    // Made transparent to the pointer instead, the drag target never leaves the
+    // grid and the handlers that do the work keep receiving every update. The
+    // element is a painted rectangle with no behaviour of its own, so it loses
+    // nothing by being unreachable.
+    pointer-events: none;
   }
 
   // The two display-preference queries, together and emitted once.
@@ -125,6 +371,156 @@
   // viewport, so the canvas still has no breakpoint and `mobileBreakpoint: 0`
   // still keeps the library's mobile path permanently unreachable.
   @if not $darkTheme {
+    // Releases Bootstrap's page-scale width clamp from anything hosted in a cell.
+    //
+    // `.container` is a PAGE primitive: it centres content and clamps it to a
+    // breakpoint ladder that tops out at 1140px. That was right when a feature
+    // component WAS the page, and it is wrong the moment the same component is a
+    // module, because the cell already decides how wide the content may be - so the
+    // clamp only ever subtracts. Measured on the widest cells, it wasted 246px each
+    // in FIRE and in X-ray, and the same primitive opens the watchlist and
+    // admin-market-data templates and the value block inside Overview.
+    //
+    // Adapting away page-scale containers is the module wrapper's stated job, but
+    // it cannot be done from the wrappers: every one of these `.container` elements
+    // is written in ANOTHER component's template, so it never carries the wrapper's
+    // content attribute, and reaching it would need a `::ng-deep` rule repeated in
+    // twenty-one wrappers that each has to know its leaf's internal markup. One
+    // rule keyed on the engine's own content element is both narrower in what it
+    // touches and wider in what it covers - and it covers a leaf added tomorrow
+    // without anyone remembering this.
+    //
+    // Deliberately only `max-inline-size`. `.container`'s auto inline margins and
+    // its 15px padding are left alone: that padding is what absorbs the -15px
+    // margins of the `.row` inside it, so removing it is what makes a row escape
+    // its container - a mistake already made once here and corrected in
+    // `components/fire/fire.scss`.
+    //
+    // Scoped to `.gridster-item-content`, so a dialog is untouched. Every dialog in
+    // this app opens through the CDK into an overlay attached to the document body,
+    // outside any cell, and several of them legitimately use `.container` at page
+    // scale.
+    .gridster-item-content .container {
+      max-inline-size: none;
+    }
+
+    // Drops the page title a leaf renders for itself, because the module chrome
+    // already renders it.
+    //
+    // Four leaves open with a title of their own - markets twice, over the
+    // highlights module and the premium one, plus summary and watchlist - and each
+    // one repeats the name printed two lines above it in the card header. It read as
+    // a stutter, and it cost a heading's worth of height in every one of those
+    // cells.
+    //
+    // `h1.h3` is what distinguishes a PAGE title from a section heading here, and it
+    // is read off the markup rather than guessed: all four are an `h1` carrying `.h3`
+    // as the first child of the leaf's own container, while every section heading
+    // inside a module is either an unclassed `h2` or carries `.h6`. So this reaches
+    // the four titles and nothing else - the security-token and received-access
+    // headings, the data-provider and platform headings, the calculator and
+    // retirement-income headings all stay exactly as they are.
+    //
+    // Removed rather than hidden from assistive technology too: the accessible name
+    // of the module is on the card header, so nothing is lost from the accessibility
+    // tree that is not still present in it.
+    .gridster-item-content h1.h3 {
+      display: none;
+    }
+
+    // Keeps a heading inside a module subordinate to the module's own title.
+    //
+    // The card header is `--mat-sys-title-small`, i.e. 14px - it is the top of the
+    // local hierarchy, because it names the whole module. A leaf written for a page
+    // had no such constraint, so its section headings were sized against a page: the
+    // unclassed `h2`s in the admin settings leaf resolve to Bootstrap's 2rem and
+    // rendered at 32px, which is 2.3x the title above them. The visual hierarchy
+    // therefore ran backwards - the subordinate heading was by far the loudest thing
+    // in the card, and a reader's eye landed on "Data Providers" rather than on
+    // which module they were looking at.
+    //
+    // A descending ladder rather than one flat size, so a leaf that does nest two
+    // levels keeps the distinction between them; and it is anchored just above the
+    // title's 14px rather than below it, because a section heading still has to
+    // out-weigh the body text it introduces. `500` matches the weight the title
+    // carries, so the difference a reader sees is size, in the right direction.
+    .gridster-item-content {
+      h1,
+      h2 {
+        font-size: 1rem;
+        font-weight: 500;
+      }
+
+      h3,
+      h4 {
+        font-size: 0.9375rem;
+        font-weight: 500;
+      }
+
+      h5,
+      h6 {
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+
+      // A card title nested inside a module is a section title, and has to read like
+      // one.
+      //
+      // Angular Material sizes `mat-card-title` for a card that is the biggest thing
+      // on a page. Inside a cell it is not: the module's own name is a
+      // `mat-card-title` too, in the chrome above, and the design system sizes that at
+      // `title-small` - 14px. So an inner card's title rendered at 22px against the
+      // 14px name of the module containing it, and the loudest text in the card was
+      // the subordinate one. Allocations shows it most plainly, where "By Sector" and
+      // its eleven siblings each out-shouted the word "Allocations".
+      //
+      // Brought to the same 1rem/500 the heading ladder above uses, so a section title
+      // reads consistently whether the leaf expressed it as a heading or as a card.
+      // Scoped to module bodies, so a card title in a dialog - which really is the
+      // biggest thing on its own surface - is untouched.
+      mat-card-title {
+        font-size: 1rem;
+        font-weight: 500;
+      }
+
+      // Lets a button grow when its own label wraps.
+      //
+      // Angular Material pins every button variant to a fixed container height, which
+      // is correct on a page whose width no one is squeezing. In a grid cell it is
+      // not: a module can be four columns wide at 375px, and a two-word label then
+      // wraps to two lines inside a box that is still 36px tall - so the second line
+      // is painted OUTSIDE the button's own outline. "Manage Activities" in the
+      // holdings module does it, and so does the AI chat footer at its three-column
+      // minimum, which is where it was first patched locally; the cause is the fixed
+      // height rather than either module, so the accommodation belongs here where it
+      // reaches all of them.
+      //
+      // The themed height is kept as a FLOOR, so a label that still fits on one line
+      // renders at byte-identical size and nothing about the normal appearance moves.
+      // Each variant reads its own component token, so a theme that re-tokenises
+      // button heights is followed rather than overridden; the fallbacks are the
+      // Angular Material defaults this theme emits.
+      .mat-mdc-button {
+        block-size: auto;
+        min-block-size: var(--mat-button-text-container-height, 2.25rem);
+      }
+
+      .mat-mdc-outlined-button {
+        block-size: auto;
+        min-block-size: var(--mat-button-outlined-container-height, 2.25rem);
+      }
+
+      .mat-mdc-unelevated-button {
+        block-size: auto;
+        min-block-size: var(--mat-button-filled-container-height, 2.25rem);
+      }
+
+      .mat-mdc-raised-button {
+        block-size: auto;
+        min-block-size: var(--mat-button-protected-container-height, 2.25rem);
+      }
+    }
+
     // Motion preference, honoured on the library's behalf.
     //
     // The grid library animates two things of its own, both with hardcoded easing
@@ -175,6 +571,32 @@
       gridster-preview {
         border: 1px solid var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
       }
+
+      // The brand ghost is lost in this mode for the same reason as the drop
+      // indicator - it is a mask painted by a background - but its accommodation is
+      // NOT here. It was, and it did nothing: a rule keyed on `.gf-gridster gf-logo
+      // .logo` scores (0,2,1) and the component's own `background-color:
+      // currentColor` scores (0,3,0) once encapsulation attributes are stamped on, so
+      // this file could not win the cascade no matter what it declared. It now lives
+      // in `libs/ui/src/lib/logo/logo.component.scss`, beside the declaration it has
+      // to beat.
+
+      // Gain and loss are encoded by hue, and a forced palette collapses both to
+      // one colour - so a portfolio that is down reads exactly like one that is
+      // up. There IS a second cue, the sign glyph, but `+` and `-` differ by so
+      // little ink that it does not carry the distinction on its own.
+      //
+      // This is the one place in this file that opts content out of forcing, and
+      // it is the case the property exists for: colour here is not decoration, it
+      // is the meaning, and the mode destroys it. The opt-out is confined to the
+      // two classes that carry the encoding, inside module content only, so
+      // everything around them - surfaces, borders, body text, chrome - still
+      // honours the viewer's palette. Backgrounds stay transparent, so these
+      // glyphs still sit on the forced surface and remain legible against it.
+      .gridster-item-content .text-danger,
+      .gridster-item-content .text-success {
+        forced-color-adjust: none;
+      }
     }
   }
 
@@ -206,6 +628,16 @@
         }
       }
 
+      // Restated for the dark fallback for the same reason as the corner handle
+      // above: the light fallback is a near-black bar, which on the dark card
+      // surface is the invisible affordance this pair exists to fix. Only the
+      // colour is restated - the geometry, the radius and the hover gating are
+      // theme-invariant and stay in the shared block.
+      .gridster-item-resizable-handler.handle-e::after,
+      .gridster-item-resizable-handler.handle-s::after {
+        background: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
+      }
+
       .gf-dashboard-module-drag-handle {
         color: var(--mat-sys-on-surface, #ffffff);
       }
@@ -215,6 +647,18 @@
       // the inset offset are theme-invariant.
       .gridster-item-content:focus-visible {
         outline-color: var(--mat-sys-on-surface, #ffffff);
+      }
+
+      // The theme this re-base exists for. Card `#262626`, so the table takes that
+      // same surface and its even rows step one container level ABOVE it - away
+      // from the canvas, exactly as the light theme's even rows step away from
+      // white - instead of down to the `rgb(25, 25, 25)` page background.
+      .gridster-item-content .gf-table {
+        --mat-table-background-color: var(--mat-sys-surface-container, #262626);
+
+        .mat-mdc-row:nth-child(even) {
+          background-color: var(--mat-sys-surface-container-high, #2f2f2f);
+        }
       }
     }
   }

@@ -75,6 +75,14 @@ describe('GfAppComponent', () => {
   const FORCED_READ_DIAGNOSTIC =
     'Failed to read the newly created user account';
 
+  /**
+   * The sanitized marker the shell reports when the arrangement could not be
+   * stored on the way out. Named once, because two tests provoke it deliberately
+   * and both have to declare it as expected.
+   */
+  const SIGN_OUT_FLUSH_FAILED_REPORT =
+    'GF-DASHBOARD-LAYOUT-SIGN-OUT-FLUSH-FAILED';
+
   let dialogAfterClosed: Observable<unknown>;
   let dialogOpen: jest.Mock;
 
@@ -136,6 +144,20 @@ describe('GfAppComponent', () => {
 
   /** Every diagnostic the shell itself wrote, captured rather than printed. */
   let shellDiagnostics: unknown[][];
+
+  /**
+   * Every report that reached `console.error` and was none of the above.
+   *
+   * Asserted empty after each test, minus whatever that test declared in
+   * {@link expectedErrorReports}, so an error raised anywhere inside an Angular
+   * event listener - where the framework catches it and logs it through its own
+   * `ErrorHandler` - fails the test that provoked it rather than merely appearing
+   * in the output.
+   */
+  let errorReports: string[];
+
+  /** Sanitized markers a test provokes on purpose, declared by that test. */
+  let expectedErrorReports: string[];
 
   let colorSchemeListeners: ((event: { matches: boolean }) => void)[];
   let originalDocumentLanguage: string;
@@ -358,34 +380,36 @@ describe('GfAppComponent', () => {
 
   beforeEach(() => {
     colorSchemeListeners = [];
+    errorReports = [];
+    expectedErrorReports = [];
     navigationAttempts = [];
     shellDiagnostics = [];
     originalDocumentLanguage = document.documentElement.lang;
 
-    // Bound before the spy replaces it, so a report this harness does not
-    // recognise still reaches the real console instead of being swallowed. The
-    // assertion is on the expression rather than the binding, so the value being
-    // stored is typed too and not merely the name it is stored under.
-    const reportError = console.error.bind(console) as (
-      ...args: unknown[]
-    ) => void;
-
     consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation((...args: unknown[]) => {
-        const [detail] = args;
-
-        // Recognised by its shape rather than with `instanceof`. jsdom raises its
-        // navigation report from its own realm, so `detail instanceof Error` is
-        // false for the very object that arrives even though an error is
-        // precisely what it is - measured, not assumed, and narrowing that way
-        // silently stops matching.
-        const report =
-          Object.prototype.toString.call(detail) === '[object Error]'
-            ? (detail as Error).message
-            : typeof detail === 'string'
-              ? detail
-              : '';
+        // Every argument is folded into the report, not just the first, and that
+        // matters for one caller in particular: Angular's own `ErrorHandler` logs
+        // `'ERROR'` followed by the error object, so reading the first argument
+        // alone would record the word `ERROR` and lose the message that says what
+        // actually went wrong.
+        //
+        // Errors are recognised by their shape rather than with `instanceof`. jsdom
+        // raises its navigation report from its own realm, so
+        // `detail instanceof Error` is false for the very object that arrives even
+        // though an error is precisely what it is - measured, not assumed, and
+        // narrowing that way silently stops matching.
+        const report = args
+          .map((detail) => {
+            return Object.prototype.toString.call(detail) === '[object Error]'
+              ? `${(detail as Error).name}: ${(detail as Error).message}`
+              : typeof detail === 'string'
+                ? detail
+                : `[${typeof detail}]`;
+          })
+          .join(' ')
+          .trim();
 
         if (report.includes(JSDOM_NAVIGATION_REPORT)) {
           callOrder.push('navigate');
@@ -406,7 +430,14 @@ describe('GfAppComponent', () => {
           return;
         }
 
-        reportError(...args);
+        // Everything else is collected and asserted empty after each test rather
+        // than forwarded. Forwarding printed the report and let the test pass,
+        // which is what let two deliberately provoked sign-out reports appear on a
+        // fully green run - and, worse, would have let a genuine error raised
+        // inside an Angular event listener do the same, because the framework
+        // catches those and hands them to its `ErrorHandler` instead of letting
+        // them reach the test.
+        errorReports.push(report);
       });
 
     // jsdom implements no `matchMedia`, and the shell reads the operating system's
@@ -439,6 +470,14 @@ describe('GfAppComponent', () => {
   });
 
   afterEach(() => {
+    // Computed before the spy is handed back, so the message a failure produces
+    // names the report itself. A failing expectation in a hook fails the test it
+    // ran for, which is what makes an unexpected report a failure rather than a
+    // line in the output.
+    const unexpectedReports = errorReports.filter((report) => {
+      return !expectedErrorReports.some((marker) => report.includes(marker));
+    });
+
     window.matchMedia = originalMatchMedia;
 
     // Restored because the sign-out destination is composed from it, so a test
@@ -450,6 +489,8 @@ describe('GfAppComponent', () => {
     consoleErrorSpy.mockRestore();
 
     jest.restoreAllMocks();
+
+    expect(unexpectedReports).toEqual([]);
   });
 
   describe('the holding detail dialog', () => {
@@ -1146,6 +1187,11 @@ describe('GfAppComponent', () => {
     });
 
     it('tells the viewer when the arrangement could not be stored', async () => {
+      // Declared, because this test provokes the failure it is about: the sanitized
+      // marker is expected output rather than an escaped error, and naming it here
+      // is what keeps every other report a failure.
+      expectedErrorReports.push(SIGN_OUT_FLUSH_FAILED_REPORT);
+
       const component = await createComponent({ viewer: createViewer() });
 
       dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
@@ -1157,13 +1203,18 @@ describe('GfAppComponent', () => {
       component.onSignOut();
 
       // Told rather than left to guess, and nothing else has happened yet: the
-      // departure waits on the acknowledgement.
+      // departure waits on the acknowledgement. The failure is also reported
+      // through the sanitized channel, carrying the marker and nothing else.
       expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+      expect(errorReports).toEqual([SIGN_OUT_FLUSH_FAILED_REPORT]);
       expect(signOut).not.toHaveBeenCalled();
       expect(navigationAttempts).toHaveLength(0);
     });
 
     it('still lets the viewer leave once they acknowledge the failure', async () => {
+      // Same deliberate failure as above, so the same marker is declared here.
+      expectedErrorReports.push(SIGN_OUT_FLUSH_FAILED_REPORT);
+
       const component = await createComponent({ viewer: createViewer() });
 
       dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(

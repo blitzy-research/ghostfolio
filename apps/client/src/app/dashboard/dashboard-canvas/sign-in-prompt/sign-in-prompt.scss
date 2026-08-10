@@ -6,18 +6,59 @@
   display: flex;
   flex-direction: column;
 
+  // Keyboard focus indicator for the two controls this template declares.
+  //
+  // Two things remove it otherwise, and between them this - the only surface an
+  // unauthenticated visitor is ever shown - had no visible focus at all: the
+  // global stylesheet resets `button:focus`, and this theme builds with
+  // `mat.define-theme()` rather than opting into Material's strong focus
+  // indicators, leaving only a state layer that measured barely above 1:1 on the
+  // brand fill. Declared with the same width, token and offset as the rest of the
+  // dashboard chrome, so a reader meets one indicator throughout.
+  //
+  // The offset puts the ring on the card behind the button rather than on the
+  // button's own fill, which is the comparison a focus indicator is measured
+  // against - and it is what lets the primary control keep its brand fill.
+  button:focus-visible {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: 2px;
+  }
+
   .sign-in-card {
     background: var(--mat-sys-surface-container, #ffffff);
     border-color: var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   }
+
+  // Carried in the deployment's own error colour rather than in body text: this is
+  // the one sentence on the card that reports something having gone wrong, and it
+  // sits above two controls that look exactly as they do on an untouched first
+  // visit. The fallback is the palette's warn 500 - what the theme itself uses when
+  // it has an error to show.
+  .sign-in-error {
+    color: var(--mat-sys-error, rgb(220, 53, 69));
+    font: var(
+      --mat-sys-body-medium,
+      400 0.875rem/1.25rem var(--font-family-sans-serif)
+    );
+  }
 }
 
 :host-context(.theme-dark) {
+  button:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+
   .sign-in-card {
     background: var(--mat-sys-surface-container, #262626);
     border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
     color: var(--mat-sys-on-surface, #ffffff);
+  }
+
+  // Warn 300 rather than 500: the same hue, lightened so it still reads against
+  // the dark card, which the 500 does not.
+  .sign-in-error {
+    color: var(--mat-sys-error, rgb(231, 114, 125));
   }
 }

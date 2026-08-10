@@ -5,8 +5,11 @@ import { TokenStorageService } from '@ghostfolio/client/services/token-storage.s
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import type { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 import { permissions } from '@ghostfolio/common/permissions';
+import type { AlertParams, ConfirmParams } from '@ghostfolio/ui/notifications';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 
+import { ScrollDispatcher } from '@angular/cdk/scrolling';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
@@ -151,7 +154,12 @@ class GfTestDashboardToolbarComponent {}
 class GfTestPublicPortfolioComponent {}
 
 @Component({ selector: 'gf-sign-in-prompt', template: '' })
-class GfTestSignInPromptComponent {}
+class GfTestSignInPromptComponent {
+  // Declared so the canvas's binding resolves against the stand-in, and so a test
+  // can read what the canvas passed. The sentence it produces belongs to the real
+  // component's own suite.
+  @Input() hasSignInError = false;
+}
 
 /**
  * Stands in for the catalog panel, and answers a focus request the way the real
@@ -429,9 +437,14 @@ describe('GfDashboardCanvasComponent', () => {
   let dashboardLayoutServiceMock: {
     adoptIdentity: jest.Mock<void, [string]>;
     beginIdentityTransition: jest.Mock<void, []>;
+    discard: jest.Mock;
+    discardFailedSave: jest.Mock<void, []>;
+    dismissConflict: jest.Mock;
     get: jest.Mock;
+    getHasConflict: jest.Mock;
     getHasSaveError: jest.Mock;
     identityTransition$: Observable<void>;
+    overwriteAfterConflict: jest.Mock;
     retryFailedSave: jest.Mock;
     // Typed precisely, unlike its neighbours, for one reason: the assertions that
     // exactly one array is ever reported have to read the recorded argument and
@@ -440,7 +453,21 @@ describe('GfDashboardCanvasComponent', () => {
     // second argument.
     scheduleSave: jest.Mock<void, [string, DashboardLayoutItem[]]>;
   };
+  let conflictSubject: BehaviorSubject<boolean>;
+  // Whether the confirmation stand-in confirms of its own accord. Default true, so a
+  // test that is about the ACTION behind a destructive control does not have to
+  // drive the guard in front of it; flipped by the tests that are about the guard.
+  let confirmsAutomatically: boolean;
+  let confirmParams: ConfirmParams;
+  // What the discard reports. A subject rather than a fixed observable so the
+  // failure path is reachable, which is the path that must leave the viewer exactly
+  // where they were.
+  let discardResponse: Observable<void>;
   let identityTransitionSubject: Subject<void>;
+  let notificationServiceMock: {
+    alert: jest.Mock<void, [AlertParams]>;
+    confirm: jest.Mock;
+  };
   let queryParamsSubject: BehaviorSubject<Record<string, string>>;
   let dataServiceMock: {
     fetchUserDashboardLayout: jest.Mock;
@@ -538,6 +565,11 @@ describe('GfDashboardCanvasComponent', () => {
         permission: permissions.readAiPrompt
       },
       {
+        // The qualifier the real registry gives this entry, and the reason it is here:
+        // two modules are titled `Markets`, and every place a module is NAMED to a
+        // person has to distinguish them. Without a fixture that reproduces the
+        // collision, nothing in this file could tell whether it does.
+        context: 'Market Data',
         defaultItemCols: 7,
         defaultItemRows: 5,
         loadComponent: jest.fn(),
@@ -584,6 +616,7 @@ describe('GfDashboardCanvasComponent', () => {
     };
 
     identityTransitionSubject = new Subject<void>();
+    conflictSubject = new BehaviorSubject<boolean>(false);
     saveErrorSubject = new BehaviorSubject<boolean>(false);
     shouldReloadContentSubject = new Subject<void>();
 
@@ -597,12 +630,26 @@ describe('GfDashboardCanvasComponent', () => {
     dashboardLayoutServiceMock = {
       adoptIdentity: jest.fn<void, [string]>(),
       beginIdentityTransition: jest.fn<void, []>(),
+      // A delete rather than a write, which is what lets an uninterpretable
+      // arrangement be recovered from without giving the error state a way to store
+      // one. Declared as a subject so a test can make it fail as well as succeed.
+      discard: jest.fn(() => discardResponse),
+      // Abandoning a failed read gives up whatever was being held for retry,
+      // because it belongs to the arrangement just left behind. Like the retry
+      // itself this is a bare delegation and is asserted as one.
+      discardFailedSave: jest.fn<void, []>(),
+      dismissConflict: jest.fn(),
       get: jest.fn(() => layout),
+      // A refused write is a separate channel from a failed one, because the
+      // recoveries are opposites: one is a retry, the other a choice between two
+      // arrangements.
+      getHasConflict: jest.fn(() => conflictSubject.asObservable()),
       // The canvas only mirrors this state; the snapshot whose write failed stays
       // with the service, which is why the retry is a bare delegation and is
       // asserted as one.
       getHasSaveError: jest.fn(() => saveErrorSubject.asObservable()),
       identityTransition$: identityTransitionSubject.asObservable(),
+      overwriteAfterConflict: jest.fn(),
       retryFailedSave: jest.fn(),
       scheduleSave: jest.fn<void, [string, DashboardLayoutItem[]]>()
     };
@@ -647,6 +694,21 @@ describe('GfDashboardCanvasComponent', () => {
       })
     };
 
+    // Only the two members the canvas reaches for. `confirm` records the parameters
+    // it was handed and, unless a test says otherwise, confirms immediately - so a
+    // destructive action's guard is observable AND the action behind it is reachable
+    // without driving a real dialog.
+    notificationServiceMock = {
+      alert: jest.fn<void, [AlertParams]>(),
+      confirm: jest.fn((params: ConfirmParams) => {
+        confirmParams = params;
+
+        if (confirmsAutomatically) {
+          params.confirmFn();
+        }
+      })
+    };
+
     tokenStorageServiceMock = { saveToken: jest.fn() };
 
     userServiceMock = {
@@ -677,6 +739,7 @@ describe('GfDashboardCanvasComponent', () => {
           useValue: dashboardLayoutServiceMock
         },
         { provide: LayoutService, useValue: layoutServiceMock },
+        { provide: NotificationService, useValue: notificationServiceMock },
         // Required rather than tidy-minded, and the catalog drawer is why. Material
         // enables CSS transitions on a drawer container 200ms after it is
         // constructed, and from that point on the drawer only reports `openedChange`
@@ -721,6 +784,27 @@ describe('GfDashboardCanvasComponent', () => {
 
   const paint = () => {
     fixture.detectChanges();
+  };
+
+  /**
+   * Paints, then lets the canvas's hydration settle window close.
+   *
+   * The canvas records but does not WRITE a change the grid engine reports while it
+   * is admitting a freshly applied arrangement, because the engine resolves
+   * collisions as it admits each cell and reports the correction through the same
+   * callback a drag reports through - which used to make merely opening a dashboard
+   * that needed normalizing save a rewritten copy of it. The window closes on the
+   * next macrotask, and at the first thing the viewer does.
+   *
+   * Every test that reports a change by invoking a grid callback DIRECTLY, rather
+   * than through one of the canvas's own intent paths, therefore has to get past
+   * that window first - which is exactly what a viewer does simply by existing for
+   * one task before touching anything.
+   */
+  const paintAndSettle = async () => {
+    fixture.detectChanges();
+
+    await new Promise<void>((resolve) => setTimeout(resolve));
   };
 
   /**
@@ -844,6 +928,10 @@ describe('GfDashboardCanvasComponent', () => {
   beforeEach(() => {
     definitions = createDefinitions();
 
+    confirmsAutomatically = true;
+    confirmParams = undefined;
+    discardResponse = of(undefined);
+
     // jsdom implements no `scrollIntoView`. The canvas already calls it optionally,
     // so its absence cannot fault the reveal path - but it also cannot be observed,
     // and revealing a module that is already placed is behaviour worth asserting.
@@ -960,6 +1048,125 @@ describe('GfDashboardCanvasComponent', () => {
       paint();
 
       expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The interval between the viewer answering and their arrangement answering.
+   *
+   * Two reads stand between opening the application and knowing what is on this
+   * canvas, and they are serialized. Drawing nothing until the second of them
+   * answers left the browser with a background and no content for the whole of
+   * that interval, which on a cold cache is measured in seconds - even though the
+   * viewer is already known and every capability on the control bar is already
+   * available. What is drawn here is exactly what does not depend on the
+   * arrangement, and nothing that does.
+   */
+  describe('an arrangement that has not answered yet', () => {
+    const pendingCanvas = async () => {
+      // A read that never answers, so the canvas is held in the interval under
+      // test rather than passing through it.
+      await createCanvas({ layout: EMPTY });
+      paint();
+    };
+
+    it('should draw the control bar as soon as there is a viewer to draw it for', async () => {
+      await pendingCanvas();
+
+      expect(component.hasResolvedViewer).toBe(true);
+      expect(component.isInitialized).toBe(false);
+      expect(queryElement('gf-dashboard-toolbar')).toBeTruthy();
+    });
+
+    it('should stand the arrangement in with placeholders', async () => {
+      await pendingCanvas();
+
+      // Text-free on purpose, so this state adds no message to translate;
+      // `aria-busy` is what reports that the region is mid-update.
+      expect(queryElement('[aria-busy="true"]')).toBeTruthy();
+      expect(queryElements('ngx-skeleton-loader').length).toBeGreaterThan(0);
+    });
+
+    it('should claim nothing about an arrangement nobody has answered with', async () => {
+      await pendingCanvas();
+
+      // Neither of the two things that WOULD be a claim: the empty notice says the
+      // viewer has nothing arranged, and the failed-read card says the read went
+      // wrong. Neither is known here.
+      expect(queryElement('gf-empty-canvas-state')).toBeNull();
+      expect(component.hasLayoutError).toBe(false);
+      expect(queryElements('gridster-item')).toHaveLength(0);
+      expect(component.modules).toEqual([]);
+    });
+
+    /**
+     * Rule 10 turns on this. An empty arrangement has to find the catalog already
+     * open the first time the canvas is painted, which holds only while the drawer
+     * is created AFTER the open state is known. Creating it in this state -
+     * necessarily closed, because the arrangement has not answered - would turn
+     * that into an animation the viewer watches instead.
+     */
+    it('should create neither the drawer nor its trigger before the arrangement is known', async () => {
+      await pendingCanvas();
+
+      expect(queryElement('mat-sidenav')).toBeNull();
+      expect(queryElement('gf-module-catalog')).toBeNull();
+      expect(queryElement('.gf-dashboard-catalog-trigger')).toBeNull();
+      expect(queryElement('gridster')).toBeNull();
+    });
+
+    it('should write nothing while the arrangement is outstanding', async () => {
+      await pendingCanvas();
+
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
+
+    // Nobody has answered at all, so there is no viewer to draw a control bar for
+    // either. This is the one state with genuinely nothing to draw, and it is what
+    // the branch above must not be confused with.
+    it('should draw nothing at all before the viewer has answered', async () => {
+      await createCanvas({ viewer: undefined, viewerRequest: EMPTY });
+      paint();
+
+      expect(component.hasResolvedViewer).toBe(false);
+      expect(queryElement('gf-dashboard-toolbar')).toBeNull();
+      expect(queryElement('[aria-busy="true"]')).toBeNull();
+      expect(queryElement('gf-sign-in-prompt')).toBeNull();
+    });
+
+    /**
+     * The control bar is created once and outlives the arrangement arriving.
+     *
+     * It is drawn from outside the branch that switches on the arrangement
+     * precisely so that it is not torn down and rebuilt when the answer lands -
+     * a rebuild would make every capability on it resolve a second time, which is
+     * the opposite of the saving this state exists to make.
+     */
+    it('should keep the same control bar when the arrangement arrives', async () => {
+      const layout = new Subject<UserDashboardLayout>();
+
+      await createCanvas({ layout: layout.asObservable() });
+      paint();
+
+      const toolbarBefore = fixture.debugElement
+        .query(By.directive(GfTestDashboardToolbarComponent))
+        .injector.get(GfTestDashboardToolbarComponent);
+
+      layout.next({
+        modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+        version: 1
+      });
+      paint();
+
+      const toolbarAfter = fixture.debugElement
+        .query(By.directive(GfTestDashboardToolbarComponent))
+        .injector.get(GfTestDashboardToolbarComponent);
+
+      expect(component.isInitialized).toBe(true);
+      expect(toolbarAfter).toBe(toolbarBefore);
+      expect(queryElement('[aria-busy="true"]')).toBeNull();
+      expect(queryElement('gridster')).toBeTruthy();
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
     });
   });
 
@@ -1163,6 +1370,94 @@ describe('GfDashboardCanvasComponent', () => {
 
       expect(queryElement('gf-empty-canvas-state')).toBeTruthy();
     });
+
+    describe('reporting what was dropped', () => {
+      let warn: jest.SpyInstance;
+
+      beforeEach(() => {
+        warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        warn.mockRestore();
+      });
+
+      it('should report every discarded entry once, as a count', async () => {
+        await createCanvas({
+          layout: of({
+            modules: [
+              { cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+              { cols: 4, moduleType: 'legacy-net-worth', rows: 4, x: 5, y: 0 },
+              { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 4 },
+              {
+                cols: 4,
+                moduleType: 'markets',
+                rows: Number.NaN,
+                x: 0,
+                y: 8
+              } as never
+            ],
+            version: 1
+          })
+        });
+        paint();
+
+        // Two entries could not be carried over - the repeat, and the one whose
+        // geometry describes no cell - and the next grid change the viewer makes
+        // persists the arrangement without them. Silence was the avoidable part:
+        // one line makes an arrangement that arrived larger than it was drawn
+        // visible, instead of leaving it to be inferred from missing modules.
+        //
+        // The retired discriminator is deliberately NOT among them. This build not
+        // recognising a module type says nothing about whether the type exists, so
+        // the entry is retained in the saved document and merely not drawn - which
+        // is why the count is two while only one module renders.
+        expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          'GF-DASHBOARD-LAYOUT-ITEMS-DROPPED (count 2)'
+        );
+      });
+
+      it('should report nothing at all when the whole arrangement resolved', async () => {
+        await createCanvas({
+          layout: of({
+            modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+            version: 1
+          })
+        });
+        paint();
+
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('should name no discriminator it discarded', async () => {
+        await createCanvas({
+          layout: of({
+            modules: [
+              {
+                cols: 4,
+                moduleType: '<img src=x onerror=alert(1)>',
+                rows: Number.NaN,
+                x: 0,
+                y: 0
+              } as never
+            ],
+            version: 1
+          })
+        });
+        paint();
+
+        // The value comes out of a stored document that the owner's own client
+        // wrote, and the console is readable by every script on the page and
+        // captured verbatim by session tooling. A fixed identifier and a count are
+        // what an operator acts on; the offending value is not.
+        expect(warn).toHaveBeenCalledWith(
+          'GF-DASHBOARD-LAYOUT-ITEMS-DROPPED (count 1)'
+        );
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('onerror');
+      });
+    });
   });
 
   describe('module visibility', () => {
@@ -1310,7 +1605,7 @@ describe('GfDashboardCanvasComponent', () => {
         layout: of(gatedLayout),
         viewer: { id: 'viewer-1', permissions: [] }
       });
-      paint();
+      await paintAndSettle();
 
       // Only one of the four is drawable for this viewer; the other three are
       // known modules they are simply not entitled to. Reporting the canvas as the
@@ -1411,7 +1706,7 @@ describe('GfDashboardCanvasComponent', () => {
         layout: of(gatedLayout),
         viewer: { id: 'viewer-1', permissions: [] }
       });
-      paint();
+      await paintAndSettle();
 
       const [itemComponent] = gridsterItemComponents();
 
@@ -1478,7 +1773,7 @@ describe('GfDashboardCanvasComponent', () => {
           permissions: [permissions.accessAdminControl]
         }
       });
-      paint();
+      await paintAndSettle();
 
       userServiceMock.stateChanged.next({
         user: { id: 'viewer-1', permissions: [] }
@@ -2250,6 +2545,121 @@ describe('GfDashboardCanvasComponent', () => {
     });
   });
 
+  describe('a federated sign-in the provider refused', () => {
+    /** What the canvas passed to the prompt it renders. */
+    const signInPrompt = () => {
+      return fixture.debugElement.query(
+        By.directive(GfTestSignInPromptComponent)
+      )?.componentInstance as GfTestSignInPromptComponent;
+    };
+
+    it('should tell the prompt, so the visitor is not returned to an unchanged screen', async () => {
+      await createCanvas({
+        allowsNavigation: true,
+        queryParams: { signInError: 'provider' },
+        viewer: null
+      });
+      paint();
+
+      // The whole point of the marker: this branch is also what a first visit
+      // renders, so without it a refusal is indistinguishable from never having
+      // tried, and the visitor presses the same button again.
+      expect(component.hasSignInError).toBe(true);
+      expect(signInPrompt().hasSignInError).toBe(true);
+    });
+
+    it('should strip only the marker, merging every other parameter', async () => {
+      await createCanvas({
+        allowsNavigation: true,
+        queryParams: { signInError: 'provider', utm_source: 'newsletter' },
+        viewer: null
+      });
+      paint();
+
+      // `replaceUrl` for a reason that is not security this time but truthfulness:
+      // left as its own history entry, pressing Back would replay a refusal that
+      // already happened as though it had just happened again.
+      expect(routerMock.navigate).toHaveBeenCalledTimes(1);
+      expect(routerMock.navigate).toHaveBeenCalledWith([], {
+        queryParams: { signInError: null },
+        queryParamsHandling: 'merge',
+        relativeTo: activatedRouteMock,
+        replaceUrl: true
+      });
+    });
+
+    it('should keep saying it after the marker has been removed from the address', async () => {
+      await createCanvas({
+        allowsNavigation: true,
+        queryParams: { signInError: 'provider' },
+        viewer: null
+      });
+      paint();
+
+      // Latched rather than derived. The removal happens immediately, so a flag read
+      // from the URL would be true for one frame and the notice would vanish
+      // underneath the visitor.
+      queryParamsSubject.next({});
+      paint();
+
+      expect(component.hasSignInError).toBe(true);
+      expect(signInPrompt().hasSignInError).toBe(true);
+    });
+
+    it.each([
+      { description: 'a value outside the contract', signInError: 'oidc' },
+      { description: 'an empty value', signInError: '' },
+      {
+        description: 'a sentence somebody wrote themselves',
+        signInError: 'Your account was closed. Call 555-0100.'
+      },
+      { description: 'markup', signInError: '<img src=x onerror=alert(1)>' }
+    ])('should ignore $description', async ({ signInError }) => {
+      await createCanvas({
+        allowsNavigation: true,
+        queryParams: { signInError },
+        viewer: null
+      });
+      paint();
+
+      // This parameter arrives in an address anybody can write and send. Compared
+      // against the one value the contract defines - never displayed - so a forged
+      // one puts no sentence on the sign-in card. It is also left in the URL rather
+      // than stripped, because a consumer clears what it handled and this was not
+      // handled.
+      expect(component.hasSignInError).toBe(false);
+      expect(signInPrompt().hasSignInError).toBe(false);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+
+    it('should say nothing on an ordinary visit', async () => {
+      await createCanvas({ allowsNavigation: true, viewer: null });
+      paint();
+
+      expect(component.hasSignInError).toBe(false);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+
+    it('should strip the marker alongside a spent token in a single navigation each', async () => {
+      await createCanvas({
+        allowsNavigation: true,
+        queryParams: { jwt: 'a-signed-token', signInError: 'provider' },
+        viewer: null
+      });
+      paint();
+
+      // Both can be present at once only if a provider redirect were malformed, but
+      // each clean-up nulls its own key and merges, so neither erases the other's
+      // work. Asserted because the alternative - one replacing the whole parameter
+      // set - is what the merge convention exists to prevent.
+      const cleared = routerMock.navigate.mock.calls.map(([, options]) => {
+        return options.queryParams;
+      });
+
+      expect(cleared).toEqual([{ signInError: null }, { jwt: null }]);
+    });
+  });
+
   describe('adding a module from the catalog', () => {
     it('should place the module in the cell the grid engine reports', async () => {
       await createCanvas();
@@ -2350,6 +2760,12 @@ describe('GfDashboardCanvasComponent', () => {
         replacementGridster,
         replacementGridster.api
       );
+
+      // Adopting a grid is itself a reason to ask it what still fits - it is the
+      // first moment there is anybody to ask - so the scan that answers the
+      // catalog is cleared here and the assertion below measures the ADD alone,
+      // which is what this test is about.
+      jest.mocked(replacementGridster.getNextPossiblePosition).mockClear();
 
       moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
 
@@ -2532,6 +2948,81 @@ describe('GfDashboardCanvasComponent', () => {
       expect(component.hasCapacityError).toBe(false);
     });
 
+    /**
+     * Dismissing the notice destroys the button that dismissed it, so these read
+     * `document.activeElement` rather than a spy on `focus()`. A spy would report
+     * success even where the browser did nothing, because `focus()` on a detached
+     * or hidden element is a silent no-op - and the whole point of the handler is
+     * that focus genuinely lands somewhere rather than falling to the body.
+     */
+    describe('dismissing the notice', () => {
+      const dismissButton = () => {
+        return queryElement<HTMLButtonElement>(
+          '.gf-dashboard-canvas-notice button'
+        );
+      };
+
+      const triggerButton = () => {
+        return queryElement<HTMLButtonElement>(
+          '.gf-dashboard-catalog-trigger button'
+        );
+      };
+
+      const raiseNotice = async () => {
+        await createCanvas({
+          layout: of({
+            modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+            version: 1
+          })
+        });
+        paint();
+
+        refuseNextPlacement();
+
+        moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.MARKETS);
+        paint();
+
+        expect(component.hasCapacityError).toBe(true);
+      };
+
+      it('should hand focus to the catalog trigger when the dismissed control held it', async () => {
+        await raiseNotice();
+
+        dismissButton().focus();
+
+        expect(document.activeElement).toBe(dismissButton());
+
+        dismissButton().click();
+        paint();
+
+        expect(component.hasCapacityError).toBe(false);
+
+        // The trigger, and specifically NOT `document.body` - which is where the
+        // browser drops focus when the element holding it is removed and nothing
+        // claims it, costing a keyboard viewer their position in the page.
+        expect(document.activeElement).toBe(triggerButton());
+      });
+
+      it('should leave focus where it was when the dismissed control did not hold it', async () => {
+        await raiseNotice();
+
+        // Captured rather than named, because which element holds focus here is
+        // not the point - the point is that dismissing does not MOVE it. A pointer
+        // dismissal from elsewhere on the canvas must leave the viewer wherever
+        // they actually were.
+        const before = document.activeElement;
+
+        expect(before).not.toBe(dismissButton());
+
+        component.onDismissCapacityNotice();
+        paint();
+
+        expect(component.hasCapacityError).toBe(false);
+        expect(document.activeElement).toBe(before);
+        expect(document.activeElement).not.toBe(triggerButton());
+      });
+    });
+
     it('should tell the catalog which modules it has no room for', async () => {
       await createCanvas();
       paint();
@@ -2589,7 +3080,11 @@ describe('GfDashboardCanvasComponent', () => {
       component.onOpenCatalog();
       paint();
 
-      expect(positionSpy).toHaveBeenCalledTimes(definitions.length);
+      // Twice per module, because every definition in this fixture declares a
+      // minimum smaller than its default: a refusal at the default is followed by
+      // a second offer at the minimum, since the minimum is the size the module
+      // is contracted to work at and the default is only the size it prefers.
+      expect(positionSpy).toHaveBeenCalledTimes(2 * definitions.length);
 
       positionSpy.mockClear().mockReturnValue(true);
 
@@ -2600,6 +3095,618 @@ describe('GfDashboardCanvasComponent', () => {
       expect(component.isCatalogOpen).toBe(true);
       expect(positionSpy).toHaveBeenCalledTimes(definitions.length);
       expect(moduleCatalogComponent().unavailableModuleTypes).toEqual([]);
+    });
+
+    /**
+     * A default footprint is a preference; a minimum is a contract. Judging
+     * capacity on the preference alone told a viewer the dashboard was full while
+     * a hole the module's own minimum fits twice over sat open on the grid - QA
+     * measured exactly that, on a twelve-by-seven module with a six-by-four
+     * minimum against a six-wide hole, and then watched a different module take
+     * that same hole.
+     */
+    describe('a module that fits only at its declared minimum', () => {
+      // Accepts a footprint no wider than three columns, which is the shape of a
+      // grid with one narrow hole left in it. Every default in the fixture is
+      // wider than that; four of the five minimums are not, and `admin-overview`
+      // - four columns at its narrowest - is the one module this grid genuinely
+      // has no room for.
+      const acceptOnlyNarrowFootprints = () => {
+        jest
+          .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+          .mockImplementation((aNewItem) => {
+            return aNewItem.cols <= 3;
+          });
+      };
+
+      it('should add it at that minimum rather than refusing it', async () => {
+        await createCanvas();
+        paint();
+
+        acceptOnlyNarrowFootprints();
+
+        // Declares 4x3 by default and 3x2 as its minimum, so the default is
+        // refused and the minimum is not.
+        moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.MARKETS);
+        paint();
+
+        expect(component.hasCapacityError).toBe(false);
+        expect(
+          component.modules.map(({ cols, moduleType, rows }) => ({
+            cols,
+            moduleType,
+            rows
+          }))
+        ).toEqual([
+          { cols: 3, moduleType: DashboardModuleType.MARKETS, rows: 2 }
+        ]);
+      });
+
+      it('should never place it below the minimum it declares', async () => {
+        await createCanvas();
+        paint();
+
+        // Nothing fits at all, so the fallback has nowhere left to go - and the
+        // one thing it must not do is keep shrinking. Rule 6 makes the minimum a
+        // floor the engine enforces, so a refusal at the minimum is final.
+        jest
+          .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+          .mockReturnValue(false);
+
+        moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.MARKETS);
+        paint();
+
+        expect(component.hasCapacityError).toBe(true);
+        expect(component.modules).toEqual([]);
+      });
+
+      it('should not tell the catalog it has no room for it', async () => {
+        await createCanvas();
+        paint();
+
+        acceptOnlyNarrowFootprints();
+
+        component.onOpenCatalog();
+        paint();
+
+        // What the catalog shows and what a click does have to agree, so both
+        // answers come from one routine. Four of the five modules reach three
+        // columns or fewer at their minimums and are therefore still addable;
+        // only `admin-overview`, which bottoms out at four, is not - and before
+        // this fallback existed all five would have been reported as having no
+        // room, because all five are refused at their defaults.
+        expect(moduleCatalogComponent().unavailableModuleTypes).toEqual([
+          DashboardModuleType.ADMIN_OVERVIEW
+        ]);
+      });
+    });
+  });
+
+  /**
+   * What a screen-reader user can find on this canvas without knowing it is there,
+   * and what it is called when they do.
+   *
+   * The route-per-screen shell used to supply all of this for nothing: a `<header>`
+   * element was a banner landmark, and every screen opened with a page heading.
+   * Collapsing the shell removed both - measured on the finished canvas as five
+   * landmarks with no heading of any level anywhere in the document - which takes
+   * away the two shortcuts a reader reaches for first: jump to a landmark, and walk
+   * the headings to see what is here.
+   */
+  describe('the outline and the landmarks the canvas provides', () => {
+    const twoModuleLayout: UserDashboardLayout = {
+      modules: [
+        { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+        { cols: 3, moduleType: 'markets', rows: 4, x: 5, y: 0 }
+      ],
+      version: 1
+    };
+
+    it('should root the heading hierarchy its modules hang from', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      const heading = queryElement('h1');
+
+      // A document whose shallowest heading is a level two has no root, and a rotor
+      // drawing an outline from it starts halfway down one.
+      expect(heading).toBeTruthy();
+      expect(heading.textContent.trim()).toBe('Dashboard');
+
+      // Announced, never drawn: every square of this canvas belongs to a module, and
+      // a visible title band would take that space from the arrangement.
+      expect(heading.classList.contains('sr-only')).toBe(true);
+    });
+
+    // Outside every state branch, because a reader who arrives while the arrangement
+    // is still being read - or after reading it failed - is exactly the reader who
+    // needs to know where they are.
+    it('should carry that heading before any arrangement has arrived', async () => {
+      await createCanvas({ layout: of(null) });
+      paint();
+
+      expect(component.modules).toEqual([]);
+      expect(queryElement('h1')).toBeTruthy();
+    });
+
+    it('should name the catalog panel and make it a landmark', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      const drawer = queryElement('mat-sidenav');
+
+      // A drawer is a plain `div` as far as assistive technology is concerned. Without
+      // these it could be reached only by walking in from the control that opens it,
+      // and a reader who had arrowed away from that control had no way back.
+      expect(drawer).toBeTruthy();
+      expect(drawer.getAttribute('role')).toBe('region');
+      expect(drawer.getAttribute('aria-label')).toBe('Module catalog');
+    });
+
+    /**
+     * The heading level the module chrome declares is asserted in the chrome's own
+     * spec, where the element that carries it lives. What belongs here is the
+     * relationship: the canvas is the level above whatever its modules are, so the
+     * two levels have to be one apart. Read from the chrome's template rather than
+     * from a rendered module, because this file replaces the chrome with a stand-in.
+     */
+    it('should sit exactly one level above its module headings', () => {
+      const chrome = readFileSync(
+        join(__dirname, 'dashboard-module-host', 'dashboard-module-host.html'),
+        'utf8'
+      );
+
+      expect(chrome).toContain('aria-level="2"');
+      expect(chrome).toContain('role="heading"');
+    });
+  });
+
+  /**
+   * Every message the canvas speaks names the module it is about, and the name it
+   * uses has to be the one on the card the viewer is looking at.
+   *
+   * Two registry entries are titled `Markets` and two are titled `Settings`, because
+   * each name is the route registry's own title reused verbatim to keep all thirteen
+   * locales translated. On one canvas both of a pair can be placed at once, so a
+   * message saying only `Markets` names either of them - and the announcement is
+   * exactly the channel whose audience cannot glance at the card to see which.
+   */
+  describe('naming the module an announcement is about', () => {
+    const collidingNameLayout: UserDashboardLayout = {
+      modules: [
+        { cols: 7, moduleType: 'markets-premium', rows: 5, x: 0, y: 0 },
+        { cols: 3, moduleType: 'markets', rows: 4, x: 8, y: 0 }
+      ],
+      version: 1
+    };
+
+    const announcement = () => {
+      return queryElement('[role="status"].sr-only').textContent.trim();
+    };
+
+    const premiumViewer: CanvasViewer = {
+      id: 'viewer-1',
+      permissions: [permissions.readMarketDataOfMarkets]
+    };
+
+    it('should qualify a name two modules share when removing one', async () => {
+      await createCanvas({
+        layout: of(collidingNameLayout),
+        viewer: premiumViewer
+      });
+      paint();
+
+      moduleHostComponents()[0].remove.emit();
+      paint();
+
+      // The card is headed `Markets · Market Data`, so this is what the reader has to
+      // hear. `Markets removed from the dashboard` was true of either module.
+      expect(announcement()).toBe(
+        'Markets · Market Data removed from the dashboard'
+      );
+    });
+
+    it('should qualify it when reporting where a module went', async () => {
+      await createCanvas({
+        layout: of(collidingNameLayout),
+        viewer: premiumViewer
+      });
+      paint();
+
+      moduleHostComponents()[0].move.emit({ deltaCols: 0, deltaRows: 1 });
+      fixture.detectChanges();
+
+      expect(announcement()).toBe(
+        'Markets · Market Data moved to column 1, row 2'
+      );
+    });
+
+    it('should qualify it when refusing a step', async () => {
+      await createCanvas({
+        layout: of(collidingNameLayout),
+        viewer: premiumViewer
+      });
+      paint();
+
+      moduleHostComponents()[0].move.emit({ deltaCols: -1, deltaRows: 0 });
+      fixture.detectChanges();
+
+      expect(announcement()).toBe(
+        'Markets · Market Data cannot be moved left: there is no room'
+      );
+    });
+
+    it('should qualify it when adding one', async () => {
+      await createCanvas({ layout: of(null), viewer: premiumViewer });
+      paint();
+
+      moduleCatalogComponent().moduleAdded.emit(
+        DashboardModuleType.MARKETS_PREMIUM
+      );
+      paint();
+
+      expect(announcement()).toContain('Markets · Market Data');
+      expect(announcement()).toContain('added to the dashboard');
+    });
+
+    // The one name a module type this build does not recognise has. Nothing can be
+    // said about it beyond the discriminator, and saying `undefined` would be worse
+    // than saying that.
+    /**
+     * The stored discriminator is the only name a module has once the registry no
+     * longer describes it, and it is a better thing to say than `undefined`.
+     *
+     * Reached by taking the definition away from a module that is already placed,
+     * because that is the only way to reach it: an arrangement naming a module type
+     * this build never knew is retained in the saved document but is never made into
+     * a grid item, so it cannot be removed through the chrome at all - which is why
+     * the failed-read state offers a discard instead.
+     */
+    it('should fall back to the stored discriminator when a name is gone', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+
+      definitions.splice(
+        definitions.findIndex(({ moduleType }) => {
+          return moduleType === DashboardModuleType.HOLDINGS;
+        }),
+        1
+      );
+
+      component.onRemoveModule(component.modules[0]);
+      paint();
+
+      expect(component.modules).toEqual([]);
+      expect(announcement()).toBe('holdings removed from the dashboard');
+    });
+  });
+
+  /**
+   * A live region is announced when its contents CHANGE, which makes a repeated
+   * message inaudible: writing the same sentence twice changes nothing the second
+   * time, so the second press that produced it is indistinguishable from a press
+   * that never registered.
+   *
+   * That is not a corner case. It is what holding an arrow key against the edge of
+   * the grid does on every press after the first, and it was measured at eleven
+   * announcements across nineteen presses - nine of them silent.
+   */
+  describe('a message the canvas has just given', () => {
+    const cornerLayout: UserDashboardLayout = {
+      modules: [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+      version: 1
+    };
+
+    const announcement = () => {
+      return queryElement('[role="status"].sr-only').textContent.trim();
+    };
+
+    const refuseLeftwardStep = () => {
+      moduleHostComponents()[0].move.emit({ deltaCols: -1, deltaRows: 0 });
+
+      fixture.detectChanges();
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should be emptied and given again when it repeats', async () => {
+      await createCanvas({ layout: of(cornerLayout) });
+      paint();
+
+      refuseLeftwardStep();
+
+      const refusal = 'Holdings cannot be moved left: there is no room';
+
+      // First press: nothing was standing, so it is written straight through.
+      expect(announcement()).toBe(refusal);
+
+      refuseLeftwardStep();
+
+      // Second press: the region is emptied FIRST. This is the whole mechanism - the
+      // clear is a change, and it is what lets the identical sentence be a change too
+      // when it lands.
+      expect(announcement()).toBe('');
+
+      jest.runOnlyPendingTimers();
+      fixture.detectChanges();
+
+      expect(announcement()).toBe(refusal);
+    });
+
+    /**
+     * The refill has to be a separate task. Emptying and refilling inside one task
+     * is coalesced into whatever the DOM holds when it next paints, so the
+     * accessibility tree only ever sees the final value - the clear would be
+     * invisible and nothing would have changed after all.
+     */
+    it('should defer that repeat rather than rewrite it at once', async () => {
+      await createCanvas({ layout: of(cornerLayout) });
+      paint();
+
+      refuseLeftwardStep();
+      refuseLeftwardStep();
+
+      // Still empty after everything synchronous has run, which is the assertion: a
+      // second assignment in the same task would have put the sentence back here and
+      // the reader would have been told nothing.
+      expect(announcement()).toBe('');
+      expect(component.canvasAnnouncement).toBe('');
+    });
+
+    // A different sentence needs no help: it is a change already, and deferring it
+    // would flicker the region through empty for no reason and delay every message.
+    it('should write a different message straight through', async () => {
+      await createCanvas({ layout: of(cornerLayout) });
+      paint();
+
+      refuseLeftwardStep();
+
+      moduleHostComponents()[0].move.emit({ deltaCols: 1, deltaRows: 0 });
+      fixture.detectChanges();
+
+      expect(announcement()).toBe('Holdings moved to column 2, row 1');
+
+      // Nothing was deferred, so nothing can arrive afterwards to undo it.
+      jest.runOnlyPendingTimers();
+      fixture.detectChanges();
+
+      expect(announcement()).toBe('Holdings moved to column 2, row 1');
+    });
+
+    // The last message wins, and two of them can never arrive out of order.
+    it('should abandon a pending repeat when something newer is said', async () => {
+      await createCanvas({ layout: of(cornerLayout) });
+      paint();
+
+      refuseLeftwardStep();
+      refuseLeftwardStep();
+
+      expect(announcement()).toBe('');
+
+      moduleHostComponents()[0].move.emit({ deltaCols: 1, deltaRows: 0 });
+      fixture.detectChanges();
+
+      expect(announcement()).toBe('Holdings moved to column 2, row 1');
+
+      jest.runOnlyPendingTimers();
+      fixture.detectChanges();
+
+      // The refusal did not arrive after the move it preceded.
+      expect(announcement()).toBe('Holdings moved to column 2, row 1');
+    });
+
+    it('should leave no pending message behind when it is destroyed', async () => {
+      await createCanvas({ layout: of(cornerLayout) });
+      paint();
+
+      refuseLeftwardStep();
+      refuseLeftwardStep();
+
+      expect(component.canvasAnnouncement).toBe('');
+
+      fixture.destroy();
+
+      jest.runOnlyPendingTimers();
+
+      // The refill was cancelled with the component rather than firing against a
+      // destroyed view and marking it for a check that will never come.
+      expect(component.canvasAnnouncement).toBe('');
+    });
+  });
+
+  /**
+   * The two gestures that changed something and said nothing.
+   *
+   * A reveal of a module that is already placed does not add anything, so unless it
+   * speaks it reads as a control that did nothing at all - and when the module was
+   * already fully in view, nothing visible happens either. A pointer drag or resize
+   * was announced by nobody: the keyboard path spoke for itself, so the live region
+   * went on holding whatever the last keyboard step had put there while the viewer
+   * moved cards around with a mouse.
+   */
+  describe('gestures the canvas used to make silently', () => {
+    const twoModuleLayout: UserDashboardLayout = {
+      modules: [
+        { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+        { cols: 3, moduleType: 'markets', rows: 4, x: 5, y: 0 }
+      ],
+      version: 1
+    };
+
+    const announcement = () => {
+      return queryElement('[role="status"].sr-only').textContent.trim();
+    };
+
+    /**
+     * The engine reporting a settled geometry, exactly as a released pointer drag
+     * does.
+     *
+     * Driven through the configuration the canvas hands the engine rather than through
+     * a handler, so the wiring is part of what is covered - and through
+     * `itemChangeCallback` specifically, because that is the one the engine raises
+     * once per settled change.
+     */
+    const reportSettledGeometry = (aItem: DashboardLayoutItem) => {
+      component.options.itemChangeCallback(aItem, undefined);
+
+      fixture.detectChanges();
+    };
+
+    // The first paint of every module, which is what the engine does before anything
+    // can be dragged, and what gives the canvas a geometry to compare against.
+    const reportFirstPaint = () => {
+      for (const item of component.modules) {
+        component.options.itemInitCallback(item, undefined);
+      }
+    };
+
+    it('should say that a revealed module is already placed', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      revealModuleSubject.next(DashboardModuleType.MARKETS);
+      fixture.detectChanges();
+
+      // Nothing was added, nothing was moved and the module may well have been on
+      // screen the whole time, so this sentence is the only evidence the request was
+      // received at all.
+      expect(component.modules).toHaveLength(2);
+      expect(announcement()).toBe('Markets is already on the dashboard');
+    });
+
+    it('should say so even when it cannot put focus on the module', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      // No chrome to take focus, which is what a module still resolving its component
+      // looks like. The announcement is the half that must not depend on the other:
+      // whether focus landed is not something the viewer asked about.
+      component.moduleHosts = {
+        forEach: () => undefined,
+        toArray: () => []
+      } as unknown as typeof component.moduleHosts;
+
+      revealModuleSubject.next(DashboardModuleType.HOLDINGS);
+      fixture.detectChanges();
+
+      expect(announcement()).toBe('Holdings is already on the dashboard');
+    });
+
+    it('should report where a module dragged with a pointer landed', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      await paintAndSettle();
+      reportFirstPaint();
+
+      const holdings = component.modules[0];
+
+      holdings.x = 2;
+      holdings.y = 3;
+
+      reportSettledGeometry(holdings);
+
+      // The same sentence the keyboard path gives for the same outcome, because it is
+      // the same outcome: the viewer moved a module and it landed somewhere.
+      expect(announcement()).toBe('Holdings moved to column 3, row 4');
+    });
+
+    it('should report a resize done with a pointer as a resize', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      await paintAndSettle();
+      reportFirstPaint();
+
+      const markets = component.modules[1];
+
+      markets.cols = 5;
+
+      reportSettledGeometry(markets);
+
+      // Told apart from a move by what changed rather than by which hook reported it -
+      // the engine raises one hook for both and carries no before-state, so the kind
+      // is derived from the geometry this module was last seen holding.
+      expect(announcement()).toBe('Markets resized to 5 columns by 4 rows');
+    });
+
+    it('should stay quiet about a module the engine merely re-reports', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      await paintAndSettle();
+      reportFirstPaint();
+
+      reportSettledGeometry(component.modules[0]);
+
+      // Nothing changed, so there is nothing to say. The engine re-reports items while
+      // it settles an arrangement, and each of those would otherwise be an
+      // announcement about a module that had not moved.
+      expect(announcement()).toBe('');
+    });
+
+    /**
+     * One gesture can settle two modules: dropping a card on an occupied cell swaps
+     * the pair. The engine commits the dragged one first and the displaced one second,
+     * so the LAST report of the task is about a module the viewer never touched -
+     * which is why the first one is the one that is kept.
+     */
+    it('should report the module the viewer had hold of, not the one it displaced', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      await paintAndSettle();
+      reportFirstPaint();
+
+      const [holdings, markets] = component.modules;
+
+      holdings.x = 5;
+      markets.x = 0;
+
+      reportSettledGeometry(holdings);
+      reportSettledGeometry(markets);
+
+      expect(announcement()).toBe('Holdings moved to column 6, row 1');
+    });
+
+    it('should say nothing about a module arriving that it has already announced', async () => {
+      await createCanvas({ layout: of(null) });
+      await paintAndSettle();
+
+      jest
+        .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+        .mockReturnValue(true);
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
+      paint();
+
+      const added = announcement();
+
+      expect(added).toContain('added to the dashboard');
+
+      // The engine reports an auto-positioned arrival as a CHANGE before it reports the
+      // module's first paint, so without the arrival being recognised as one the add
+      // would be announced twice - the second time as a move.
+      reportSettledGeometry(component.modules[0]);
+
+      expect(announcement()).toBe(added);
+    });
+
+    it('should say that a refresh is under way', async () => {
+      await createCanvas({ layout: of(twoModuleLayout) });
+      paint();
+
+      shouldReloadContentSubject.next();
+      fixture.detectChanges();
+
+      // Every module discards its content and fetches it again, which for a viewer is
+      // the whole screen blinking through skeletons and for a reader was nothing: the
+      // control reports only its own name, and the arrangement it acts on is
+      // elsewhere. Said once for the canvas, because one gesture happened.
+      expect(announcement()).toBe('Refreshing the dashboard');
     });
   });
 
@@ -2790,7 +3897,13 @@ describe('GfDashboardCanvasComponent', () => {
       // key that did nothing is indistinguishable from one that never registered.
       expect(placedGeometry()[0].x).toBe(0);
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
-      expect(announcement()).toBe('Holdings cannot be moved any further');
+
+      // The direction is named. `cannot be moved any further` was the same sentence
+      // for all four arrow keys, which told a reader who could not see the module
+      // nothing about which of their presses had been refused.
+      expect(announcement()).toBe(
+        'Holdings cannot be moved left: there is no room'
+      );
     });
 
     it('should refuse a move that would overlap a sibling', async () => {
@@ -2807,7 +3920,13 @@ describe('GfDashboardCanvasComponent', () => {
       // The first step was legal, so exactly one write was scheduled; the second was
       // refused and added none.
       expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(1);
-      expect(announcement()).toBe('Holdings cannot be moved any further');
+
+      // A neighbour rather than the boundary of the grid, and the wording covers
+      // both deliberately: `there is no room` is true either way, whereas naming an
+      // edge would be wrong here - this module is nowhere near one.
+      expect(announcement()).toBe(
+        'Holdings cannot be moved right: there is no room'
+      );
     });
 
     it('should resize a module by one cell and announce its new size', async () => {
@@ -2849,7 +3968,7 @@ describe('GfDashboardCanvasComponent', () => {
       // floor would still allow two.
       expect(placedGeometry()[1].cols).toBe(3);
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
-      expect(announcement()).toBe('Markets cannot be resized any further');
+      expect(announcement()).toBe('Markets is already as narrow as it goes');
     });
 
     it('should refuse a resize that would run past the grid edge', async () => {
@@ -2867,7 +3986,14 @@ describe('GfDashboardCanvasComponent', () => {
 
       expect(placedGeometry()[0].cols).toBe(4);
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
-      expect(announcement()).toBe('Holdings cannot be resized any further');
+      // A growth refused by the width of the grid, which reads the same as a growth
+      // refused by a neighbour and deliberately so: `there is no room` is true of
+      // both, and the viewer's next move is the same either way. A shrink is the case
+      // that names its limit instead, because only the module's own minimum can stop
+      // one - see the test above.
+      expect(announcement()).toBe(
+        'Holdings cannot be made wider: there is no room'
+      );
     });
 
     it('should let the grid engine be the only judge of a geometry request', async () => {
@@ -2884,7 +4010,12 @@ describe('GfDashboardCanvasComponent', () => {
 
       expect(placedGeometry()[0].y).toBe(1);
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
-      expect(announcement()).toBe('Holdings cannot be moved any further');
+
+      // Named after the step that was asked for rather than after the reason it was
+      // refused, which is the only thing the viewer knows they did.
+      expect(announcement()).toBe(
+        'Holdings cannot be moved down: there is no room'
+      );
     });
 
     it('should ignore a geometry request for a module the grid is not holding', async () => {
@@ -3253,7 +4384,7 @@ describe('GfDashboardCanvasComponent', () => {
 
     it('should report a layout change from each of the grid four change triggers', async () => {
       await createCanvas({ layout: of(singleModuleLayout) });
-      paint();
+      await paintAndSettle();
 
       const [itemComponent] = gridsterItemComponents();
       const callbacks = gridChangeCallbacks();
@@ -3328,7 +4459,7 @@ describe('GfDashboardCanvasComponent', () => {
 
     it('should not report a layout change that changes nothing', async () => {
       await createCanvas({ layout: of(singleModuleLayout) });
-      paint();
+      await paintAndSettle();
 
       const [itemComponent] = gridsterItemComponents();
 
@@ -3354,7 +4485,7 @@ describe('GfDashboardCanvasComponent', () => {
 
     it('should keep owning one array while reporting the arrangement as its own projection', async () => {
       await createCanvas({ layout: of(singleModuleLayout) });
-      paint();
+      await paintAndSettle();
 
       const ownedArray = component.modules;
       const [itemComponent] = gridsterItemComponents();
@@ -3791,6 +4922,37 @@ describe('GfDashboardCanvasComponent', () => {
   });
 
   describe('the reveal-module intent bus', () => {
+    /**
+     * Replaces the canvas's view query with hosts that record the focus request.
+     *
+     * Hand-built rather than read from the rendered stand-ins, and deliberately so:
+     * this environment lays nothing out, so a real handle reports that focus did not
+     * land and the canvas would be judged on a no-op it never made. Recording that
+     * the request was made, and for which module, is the half of the contract that
+     * belongs to the canvas.
+     */
+    const recordFocusRequests = () => {
+      const requests: DashboardModuleType[] = [];
+      const hosts = component.modules.map(({ moduleType }) => ({
+        definition: component.getModuleDefinition(moduleType),
+        focusDragHandle: jest.fn<boolean, []>(() => {
+          requests.push(moduleType);
+
+          return true;
+        }),
+        reload: jest.fn<void, []>()
+      }));
+
+      component.moduleHosts = {
+        forEach: (aCallback: (host: (typeof hosts)[number]) => void) => {
+          hosts.forEach(aCallback);
+        },
+        toArray: () => hosts
+      } as unknown as typeof component.moduleHosts;
+
+      return requests;
+    };
+
     it('should place a module published on the bus', async () => {
       await createCanvas();
       paint();
@@ -3821,6 +4983,62 @@ describe('GfDashboardCanvasComponent', () => {
         behavior: 'smooth',
         block: 'nearest'
       });
+    });
+
+    /**
+     * Where focus goes when a module the viewer asked for is already placed.
+     *
+     * Scrolling alone is not an answer, for two reasons that compound. The module
+     * is often already fully in view, and `scrollIntoView` with `nearest` is by
+     * definition a no-op when it is - so the request produces no observable effect
+     * whatsoever. And the assistant that published it closes its own panel without
+     * restoring focus, which was harmless while the same selection was a
+     * navigation, because the router placed focus; on one canvas nothing navigates,
+     * so focus is dropped to the document body and the only way back is to Tab from
+     * the top of the application.
+     */
+    it('should hand focus to a module that was already placed', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [
+            { cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+            { cols: 5, moduleType: 'markets', rows: 4, x: 5, y: 0 }
+          ],
+          version: 1
+        })
+      });
+      paint();
+
+      const requests = recordFocusRequests();
+
+      revealModuleSubject.next(DashboardModuleType.MARKETS);
+
+      // The module asked for, not the first one on the canvas: the hosts are matched
+      // by module type rather than by position, because the grid owns the order of
+      // its own children.
+      expect(requests).toEqual([DashboardModuleType.MARKETS]);
+      expect(component.modules).toHaveLength(2);
+    });
+
+    it('should not hand focus to a module it has just added', async () => {
+      await createCanvas();
+      paint();
+
+      jest
+        .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+        .mockReturnValue(true);
+
+      const requests = recordFocusRequests();
+
+      revealModuleSubject.next(DashboardModuleType.MARKETS);
+      paint();
+
+      // A fresh add is a different act from a reveal. The viewer is usually adding
+      // from the catalog and often adding more than one, so taking focus out of the
+      // panel and onto the canvas would cost them their place in the list after
+      // every single row.
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.MARKETS]);
+      expect(requests).toEqual([]);
     });
 
     it('should ignore an unknown discriminator published on the bus', async () => {
@@ -4052,7 +5270,7 @@ describe('GfDashboardCanvasComponent', () => {
       expect(queryElement('[role="alert"]')).toBeTruthy();
     });
 
-    it('should offer the retry and nothing else', async () => {
+    it('should offer a retry and a way out, and nothing else', async () => {
       await createCanvas({
         layout: throwError(() => new Error('service unavailable'))
       });
@@ -4060,14 +5278,109 @@ describe('GfDashboardCanvasComponent', () => {
 
       const actions = queryElements('[role="alert"] button');
 
-      // Exactly one action, and it is the harmless one. A control that emptied the
+      // Two actions, and neither writes anything. A control that emptied the
       // arrangement and wrote the emptied one back would be a fifth persistence
       // trigger - a layout write may originate only from a grid state change, so
       // drag, resize, add and remove are the whole set - and it would be the only
-      // affordance in the application able to overwrite an arrangement the canvas
-      // has never successfully read.
-      expect(actions).toHaveLength(1);
+      // affordance in the application able to destroy an arrangement the canvas has
+      // never successfully read. Asking again is first because it is what recovers a
+      // transient failure; abandoning the saved arrangement is offered beside it
+      // because a document the server refuses outright fails the same way every
+      // time, and without it the only remedies were signing out or waiting for an
+      // operator.
+      expect(actions).toHaveLength(2);
       expect(actions[0].textContent.trim()).toBe('Try again');
+      expect(actions[1].textContent.trim()).toBe(
+        'Start with a blank dashboard'
+      );
+    });
+
+    it('should hand back an empty canvas when the saved arrangement is abandoned', async () => {
+      await createCanvas({
+        layout: throwError(() => new Error('service unavailable'))
+      });
+      paint();
+
+      queryElements('[role="alert"] button')[1].click();
+      paint();
+
+      // The whole point of the affordance: the arrangement, the catalog and its
+      // trigger are all reachable again, and the catalog is open for the same reason
+      // a first visit opens it - an empty canvas with the panel shut offers nothing
+      // to do.
+      expect(component.hasLayoutError).toBe(false);
+      expect(component.isInitialized).toBe(true);
+      expect(component.isCatalogOpen).toBe(true);
+      expect(component.modules).toHaveLength(0);
+      expect(queryElement('[role="alert"]')).toBeNull();
+      expect(queryElement('gridster')).toBeTruthy();
+      expect(queryElement('gf-empty-canvas-state')).toBeTruthy();
+      expect(queryElement('.gf-dashboard-catalog-trigger')).toBeTruthy();
+      expect(queryElement('mat-sidenav.mat-drawer-opened')).toBeTruthy();
+    });
+
+    it('should write nothing when the saved arrangement is abandoned', async () => {
+      await createCanvas({
+        layout: throwError(() => new Error('service unavailable'))
+      });
+      paint();
+
+      queryElements('[role="alert"] button')[1].click();
+      paint();
+
+      // Abandoning is not a write. The stored document - the one that could not be
+      // read - survives untouched until the viewer places something, so nothing is
+      // destroyed by pressing a control, and the read is not reissued either: the
+      // viewer has said they are done asking.
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+      expect(dashboardLayoutServiceMock.get).toHaveBeenCalledTimes(1);
+
+      // Whatever was being held for retry belongs to the arrangement just left
+      // behind, so it is given up rather than offered against the blank one.
+      expect(
+        dashboardLayoutServiceMock.discardFailedSave
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('should persist the first module placed on the abandoned canvas', async () => {
+      await createCanvas({
+        layout: throwError(() => new Error('service unavailable'))
+      });
+      paint();
+
+      queryElements('[role="alert"] button')[1].click();
+      paint();
+
+      jest
+        .spyOn(gridsterComponent(), 'getNextPossiblePosition')
+        .mockReturnValue(true);
+
+      component.onAddModule(DashboardModuleType.HOLDINGS);
+      paint();
+
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+
+      // Announced through the engine's own init callback, as everywhere else in
+      // this suite: gridster raises none of its callbacks in this environment, so
+      // the cell's initialization is delivered through the very configuration the
+      // canvas handed it.
+      component.options.itemInitCallback(
+        component.modules[0],
+        gridsterItemComponents()[0]
+      );
+
+      // This is what replaces the unreadable document, and it is an ordinary grid
+      // state change reaching the one write path rather than anything the recovery
+      // control did - which is precisely why the destruction is the viewer's own
+      // deliberate act.
+      expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(1);
+
+      const [, reported] =
+        dashboardLayoutServiceMock.scheduleSave.mock.calls.at(-1);
+
+      expect(reported.map(({ moduleType }) => moduleType)).toEqual([
+        DashboardModuleType.HOLDINGS
+      ]);
     });
 
     it('should refuse to place a module over an arrangement it could not read', async () => {
@@ -4145,6 +5458,438 @@ describe('GfDashboardCanvasComponent', () => {
       expect(dashboardLayoutServiceMock.get).toHaveBeenLastCalledWith(true);
       expect(component.hasLayoutError).toBe(false);
       expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+  });
+
+  describe('a stored arrangement this build cannot interpret', () => {
+    // The one status that says the document itself is the problem, as opposed to the
+    // request having failed to land. A real `HttpErrorResponse` rather than a plain
+    // object carrying a status, because that is exactly the distinction the canvas
+    // narrows on.
+    const unreadableLayout = () =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: StatusCodes.CONFLICT,
+            statusText: 'Conflict',
+            url: '/api/v1/user/layout'
+          })
+      );
+
+    it('should tell an uninterpretable document apart from a request that did not land', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+
+      // Both are read failures and both refuse writes, but their recoveries are
+      // opposites: one is worth asking about again, the other will answer the same
+      // way every time. Without the distinction the viewer is left pressing a
+      // control that provably cannot succeed.
+      expect(component.hasLayoutError).toBe(true);
+      expect(component.isLayoutUnreadable).toBe(true);
+      expect(component.isInitialized).toBe(true);
+      expect(component.isCatalogOpen).toBe(false);
+    });
+
+    it('should treat a request that did not land as retryable rather than as an unreadable document', async () => {
+      await createCanvas({
+        layout: throwError(() => new Error('service unavailable'))
+      });
+
+      expect(component.hasLayoutError).toBe(true);
+      expect(component.isLayoutUnreadable).toBe(false);
+    });
+
+    it('should not mistake a status carried on a plain object for an uninterpretable document', async () => {
+      await createCanvas({
+        layout: throwError(() => ({ status: StatusCodes.CONFLICT }))
+      });
+
+      expect(component.hasLayoutError).toBe(true);
+      expect(component.isLayoutUnreadable).toBe(false);
+    });
+
+    it('should say what is wrong rather than asking the viewer to try later', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+      paint();
+
+      const notice = queryElement('[role="alert"]');
+
+      expect(notice.textContent).toContain(
+        'Your saved dashboard cannot be read by this version of Ghostfolio.'
+      );
+      expect(notice.textContent).not.toContain('Please try again later.');
+    });
+
+    it('should offer a way out beside the retry', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+      paint();
+
+      const actions = queryElements('[role="alert"] button');
+
+      // Asking again stays first, because it costs nothing. The discard beside it is
+      // what makes the account recoverable at all: while an uninterpretable document
+      // is stored the canvas refuses every write, so without this the dashboard
+      // cannot be reached again from the UI.
+      expect(actions).toHaveLength(2);
+      expect(actions.map((action) => action.textContent.trim())).toEqual([
+        'Try again',
+        'Start over with a blank dashboard'
+      ]);
+    });
+
+    it('should label the way out for what it does', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+      paint();
+
+      const actions = queryElements('[role="alert"] button');
+
+      // Named for its outcome rather than its mechanism. "Reset", "Clear" or "Fix"
+      // would each leave the viewer guessing which of their two dashboards - the
+      // stored one and the empty one in front of them - survives.
+      expect(actions[1].textContent.trim()).toBe(
+        'Start over with a blank dashboard'
+      );
+    });
+
+    it('should ask before destroying the stored arrangement', async () => {
+      confirmsAutomatically = false;
+
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+
+      // The document being destroyed may be perfectly good and merely newer than
+      // this build, and the viewer is the only one who can weigh that - so the
+      // confirmation states the consequence and that it is permanent, rather than
+      // asking whether they are sure.
+      expect(notificationServiceMock.confirm).toHaveBeenCalledTimes(1);
+      expect(confirmParams.title).toBe('Start over with a blank dashboard?');
+      expect(confirmParams.message).toContain('permanently deleted');
+      expect(confirmParams.message).toContain('cannot be undone');
+      expect(confirmParams.confirmLabel).toBe('Discard');
+      expect(confirmParams.confirmType).toBe('warn');
+      expect(dashboardLayoutServiceMock.discard).not.toHaveBeenCalled();
+    });
+
+    it('should leave the stored arrangement alone when the viewer declines', async () => {
+      confirmsAutomatically = false;
+
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+      paint();
+
+      expect(dashboardLayoutServiceMock.discard).not.toHaveBeenCalled();
+      expect(component.hasLayoutError).toBe(true);
+      expect(component.isLayoutUnreadable).toBe(true);
+      expect(queryElement('[role="alert"]')).toBeTruthy();
+    });
+
+    it('should discard exactly once when the viewer confirms', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+
+      expect(dashboardLayoutServiceMock.discard).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not write an arrangement while recovering from one it never read', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+      await paintAndSettle();
+
+      // The whole reason the recovery is a delete: a control that emptied the
+      // arrangement and saved the emptied one back would be a fifth persistence
+      // trigger, and it would be the only affordance in the application able to
+      // overwrite a document the canvas has never successfully read.
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('should hand the viewer a blank canvas with the catalog open once the discard lands', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+      paint();
+
+      // Exactly the first-visit state, because that is what the account is now in.
+      expect(component.hasLayoutError).toBe(false);
+      expect(component.isLayoutUnreadable).toBe(false);
+      expect(component.isDiscardingLayout).toBe(false);
+      expect(component.isInitialized).toBe(true);
+      expect(component.isCatalogOpen).toBe(true);
+      expect(component.modules).toHaveLength(0);
+      expect(queryElement('[role="alert"]')).toBeNull();
+      expect(queryElement('gridster')).toBeTruthy();
+      expect(queryElement('gf-empty-canvas-state')).toBeTruthy();
+    });
+
+    it('should keep owning the same array across a discard', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+
+      const owned = component.modules;
+
+      component.onDiscardLayout();
+
+      // Emptied in place rather than replaced. The array the grid engine holds is the
+      // array the canvas owns, and handing it a new one would leave the engine
+      // mutating an array nothing reads.
+      expect(component.modules).toBe(owned);
+      expect(component.modules).toHaveLength(0);
+    });
+
+    it('should leave the viewer where they were when the discard fails', async () => {
+      discardResponse = throwError(() => new Error('service unavailable'));
+
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+      paint();
+
+      // Nothing was destroyed, so nothing may look as though it was: the notice and
+      // its two actions stay, and the control is usable again rather than left
+      // spinning.
+      expect(component.hasLayoutError).toBe(true);
+      expect(component.isLayoutUnreadable).toBe(true);
+      expect(component.isDiscardingLayout).toBe(false);
+      expect(component.isCatalogOpen).toBe(false);
+      expect(queryElement('[role="alert"]')).toBeTruthy();
+      expect(queryElements('[role="alert"] button')).toHaveLength(2);
+      expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not ask a second time while a discard is still running', async () => {
+      discardResponse = EMPTY;
+
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+      component.onDiscardLayout();
+
+      // `EMPTY` never completes the subscription's `next`, so the canvas is left
+      // mid-discard - which is precisely the state a second press must not restart.
+      expect(component.isDiscardingLayout).toBe(true);
+      expect(notificationServiceMock.confirm).toHaveBeenCalledTimes(1);
+      expect(dashboardLayoutServiceMock.discard).toHaveBeenCalledTimes(1);
+    });
+
+    it('should mark the running discard as busy rather than only disabling it', async () => {
+      discardResponse = EMPTY;
+
+      await createCanvas({ layout: unreadableLayout() });
+
+      component.onDiscardLayout();
+      paint();
+
+      const discardAction = queryElements('[role="alert"] button')[1];
+
+      // Disabled alone would drop the control out of the tab order and take its name
+      // with it, leaving a viewer who cannot see the spinner with nothing at all - so
+      // it is announced as busy AND as disabled, while the native attribute stays off
+      // so focus can still reach it and read it.
+      expect(discardAction.getAttribute('aria-busy')).toBe('true');
+      expect(discardAction.getAttribute('aria-disabled')).toBe('true');
+      expect(discardAction.hasAttribute('disabled')).toBe(false);
+    });
+
+    it('should clear the unreadable state when the viewer asks again instead', async () => {
+      await createCanvas({ layout: unreadableLayout() });
+
+      dashboardLayoutServiceMock.get.mockReturnValue(
+        of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      component.onRetryLayout();
+      paint();
+
+      expect(component.hasLayoutError).toBe(false);
+      expect(component.isLayoutUnreadable).toBe(false);
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+
+    it('should offer the way out on a canvas that hydrated but cannot draw everything it holds', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [
+            {
+              cols: 4,
+              moduleType: 'a-module-a-newer-build-named',
+              rows: 4,
+              x: 0,
+              y: 0
+            }
+          ],
+          version: 1
+        })
+      });
+      paint();
+
+      // Read perfectly well, so there is no error notice - but nothing can be drawn
+      // and the entries are retained rather than dropped, so the viewer would be
+      // looking at an empty canvas that silently refuses to forget a dashboard they
+      // cannot see. The discard is the only thing that resolves that.
+      expect(component.hasLayoutError).toBe(false);
+      expect(component.hasUnrenderableModules).toBe(true);
+      expect(component.modules).toHaveLength(0);
+      expect(queryElement('gf-empty-canvas-state')).toBeTruthy();
+    });
+
+    it('should not offer the way out on a genuinely empty canvas', async () => {
+      await createCanvas({ layout: of(null) });
+      paint();
+
+      expect(component.hasUnrenderableModules).toBe(false);
+    });
+
+    it('should not offer the way out for an arrangement it can draw', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+
+      expect(component.hasUnrenderableModules).toBe(false);
+    });
+  });
+
+  describe('an arrangement changed by another client of the same account', () => {
+    const placedLayout: UserDashboardLayout = {
+      modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+      version: 1
+    };
+
+    it('should say so, and offer the only two answers there are', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+
+      conflictSubject.next(true);
+      paint();
+
+      const notice = queryElement('[role="status"]');
+
+      // Politely rather than as an alert: nothing is broken and what the viewer is
+      // looking at is still theirs, it is only no longer the newest. Taking the newer
+      // document and keeping this one are genuinely the whole set - a merge would
+      // need to adjudicate differences only the viewer can.
+      expect(component.hasConflict).toBe(true);
+      expect(notice.textContent).toContain(
+        'Your dashboard was changed in another tab.'
+      );
+      expect(
+        queryElements('[role="status"] button').map((action) =>
+          action.textContent.trim()
+        )
+      ).toEqual(['Load the newer dashboard', 'Keep this arrangement']);
+    });
+
+    it('should keep drawing the arrangement the viewer is looking at', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+
+      conflictSubject.next(true);
+      paint();
+
+      // The refused write changed nothing on screen, and hiding the canvas behind the
+      // notice would discard the arrangement before the viewer has chosen to.
+      expect(queryElement('gridster')).toBeTruthy();
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+
+    it('should re-read the newer arrangement when the viewer takes it', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+
+      conflictSubject.next(true);
+
+      dashboardLayoutServiceMock.get.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'markets', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      component.onReloadLayoutAfterConflict();
+      paint();
+
+      // The retained snapshot is dropped first, so nothing later flushes the
+      // arrangement just abandoned - and the read forces past the cache, so it is
+      // genuinely the newer document rather than the one already held.
+      expect(dashboardLayoutServiceMock.dismissConflict).toHaveBeenCalledTimes(
+        1
+      );
+      expect(dashboardLayoutServiceMock.get).toHaveBeenLastCalledWith(true);
+      expect(component.hasConflict).toBe(false);
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.MARKETS]);
+    });
+
+    it('should not report a layout change while taking the newer arrangement', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+
+      conflictSubject.next(true);
+
+      dashboardLayoutServiceMock.get.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'markets', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      component.onReloadLayoutAfterConflict();
+      await paintAndSettle();
+
+      // Hydration is not a viewer intent. Reporting one here would write the newer
+      // document straight back and make taking it indistinguishable from overwriting
+      // it.
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
+
+    it('should hand the arrangement on screen back to the service when the viewer keeps it', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+
+      conflictSubject.next(true);
+
+      component.onOverwriteLayoutAfterConflict();
+
+      // Neither rebuilt nor re-projected: the snapshot the service is already holding
+      // is the one the viewer is looking at, and building a second one here would
+      // give two answers to what a single array is.
+      expect(
+        dashboardLayoutServiceMock.overwriteAfterConflict
+      ).toHaveBeenCalledTimes(1);
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+      expect(dashboardLayoutServiceMock.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('should drop the notice once the service reports the conflict resolved', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+
+      conflictSubject.next(true);
+      paint();
+
+      expect(queryElement('[role="status"]')).toBeTruthy();
+
+      conflictSubject.next(false);
+      paint();
+
+      expect(component.hasConflict).toBe(false);
+      expect(
+        queryElements('[role="status"]').filter((notice) =>
+          notice.textContent.includes('changed in another tab')
+        )
+      ).toHaveLength(0);
+    });
+
+    it('should draw no notice while there is no conflict', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      expect(component.hasConflict).toBe(false);
+      expect(
+        queryElements('[role="status"]').filter((notice) =>
+          notice.textContent.includes('changed in another tab')
+        )
+      ).toHaveLength(0);
     });
   });
 
@@ -4414,7 +6159,7 @@ describe('GfDashboardCanvasComponent', () => {
 
     it('should stamp every reported arrangement with the viewer it belongs to', async () => {
       await createCanvas({ layout: of(singleModuleLayout) });
-      paint();
+      await paintAndSettle();
 
       const [itemComponent] = gridsterItemComponents();
 
@@ -4626,19 +6371,33 @@ describe('GfDashboardCanvasComponent', () => {
       expect(gridsterObserver(gridster)).toBeDefined();
     });
 
-    it('should recalculate the layout when the host box no longer matches what the engine measured', async () => {
+    /**
+     * jsdom performs no layout and reports every `clientWidth` as 0, so a host box
+     * that changes size has to be stated rather than produced.
+     */
+    const setHostBox = (
+      aGridster: Gridster,
+      aBox: { height: number; width: number }
+    ) => {
+      Object.defineProperty(aGridster.el, 'clientHeight', {
+        configurable: true,
+        value: aBox.height
+      });
+
+      Object.defineProperty(aGridster.el, 'clientWidth', {
+        configurable: true,
+        value: aBox.width
+      });
+    };
+
+    it('should recalculate the layout when the host box no longer matches what it last laid out at', async () => {
       await createCanvas({ layout: of(placedLayout) });
       paint();
 
       const gridster = gridsterComponent();
       const onResizeSpy = jest.spyOn(gridster, 'onResize');
 
-      // What opening the drawer does, expressed in the only terms available in an
-      // environment with no layout: the size the engine last accounted for is no
-      // longer the size of its host. jsdom reports every `clientWidth` as 0, so
-      // moving `curWidth` off 0 is what makes the two disagree.
-      gridster.curHeight = 0;
-      gridster.curWidth = 1240;
+      setHostBox(gridster, { height: 698, width: 1440 });
 
       gridsterObserver(gridster).trigger();
 
@@ -4646,26 +6405,96 @@ describe('GfDashboardCanvasComponent', () => {
       // listener calls - so this supplies the missing trigger rather than
       // introducing a second layout authority.
       expect(onResizeSpy).toHaveBeenCalledTimes(1);
+
+      // What opening the drawer does: the pane's margin takes the host from the
+      // full window width down to the width left beside the panel.
+      setHostBox(gridster, { height: 698, width: 1088 });
+
+      gridsterObserver(gridster).trigger();
+
+      expect(onResizeSpy).toHaveBeenCalledTimes(2);
     });
 
-    // The guard that makes the observer safe. `onResize` re-measures the host and
-    // writes the result back to `curWidth`/`curHeight`, and laying the items out can
-    // itself change the host's box - so an unconditional call would be observed as
-    // another change and recur without end. Recognising a reflow the engine has
-    // already accounted for is what stops the loop.
-    it('should do nothing when the host box is the size the engine already accounted for', async () => {
+    /**
+     * The brake that makes the observer safe: laying the items out can itself change
+     * the host's box, so an unconditional call could be observed as another change
+     * and recur without end.
+     */
+    it('should do nothing when the host box is the size it last laid out at', async () => {
       await createCanvas({ layout: of(placedLayout) });
       paint();
 
       const gridster = gridsterComponent();
       const onResizeSpy = jest.spyOn(gridster, 'onResize');
 
-      gridster.curHeight = gridster.el.clientHeight;
-      gridster.curWidth = gridster.el.clientWidth;
+      setHostBox(gridster, { height: 698, width: 1440 });
+
+      gridsterObserver(gridster).trigger();
+      gridsterObserver(gridster).trigger();
+      gridsterObserver(gridster).trigger();
+
+      expect(onResizeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * The regression this guard used to have, and the reason it is stated against a
+     * size this canvas records rather than against the engine's own.
+     *
+     * `curWidth`/`curHeight` are not a record of the size the current layout was
+     * computed at - they are a measurement cache that any caller of
+     * `setGridDimensions()` refreshes while laying nothing out, and
+     * `getNextPossiblePosition()` is such a caller. The canvas calls it once per
+     * unplaced module whenever it recomputes catalog availability, which happens as
+     * the panel opens - so the cache was routinely brought up to date a few
+     * milliseconds before the notification arrived, the old guard found the two
+     * equal, and the grid was left laid out for the wider box with its right-hand
+     * modules underneath the panel and no way to reach them.
+     */
+    it('should recalculate even when the engine has already measured the new box without laying it out', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const gridster = gridsterComponent();
+      const onResizeSpy = jest.spyOn(gridster, 'onResize');
+
+      setHostBox(gridster, { height: 698, width: 1440 });
 
       gridsterObserver(gridster).trigger();
 
-      expect(onResizeSpy).not.toHaveBeenCalled();
+      expect(onResizeSpy).toHaveBeenCalledTimes(1);
+
+      setHostBox(gridster, { height: 698, width: 1088 });
+
+      // The availability probe, expressed as its only observable effect: the
+      // engine's cache now agrees with the host box, while nothing has been laid
+      // out at that box.
+      gridster.curHeight = 698;
+      gridster.curWidth = 1088;
+
+      gridsterObserver(gridster).trigger();
+
+      expect(onResizeSpy).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * On a window too narrow to pay for both the panel and the canvas, the grid's
+     * own box does not change when the panel opens - its width floor holds it and
+     * the pane clips onto it instead - so the grid alone reports nothing.
+     *
+     * The pane is therefore observed too, and it has to be added after the view
+     * queries resolve: the engine invokes its init callback from its own `ngOnInit`,
+     * which runs before the parent's queries, so the element did not yet exist at
+     * the point this used to be attempted and was never observed at all.
+     */
+    it('should watch the drawer content pane as well as the grid', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const observer = gridsterObserver(gridsterComponent());
+      const pane = fixture.debugElement.query(By.css('mat-sidenav-content'));
+
+      expect(pane).toBeTruthy();
+      expect(observer.observed).toContain(pane.nativeElement);
     });
 
     it('should stop watching when the canvas goes away', async () => {
@@ -4751,6 +6580,238 @@ describe('GfDashboardCanvasComponent', () => {
       expect(secondObserver).not.toBe(firstObserver);
       expect(firstObserver.disconnectCount).toBe(1);
       expect(component['gridster']).toBe(gridsterComponent());
+    });
+  });
+
+  /**
+   * A module's content held still while its cell is being resized.
+   *
+   * The engine writes the cell's `width` and `height` on every pointer move of a
+   * resize, and the module inside fills that cell - so without this the whole
+   * module subtree is laid out again on every move, the resize observers a
+   * charting library installs on its own container wake tens of times per gesture,
+   * and the module is painted at sizes it was never meant to be seen at. Pinning
+   * the content region's own box for the length of the gesture breaks that chain
+   * at its source and reflows the module exactly once, on release.
+   *
+   * Asserted through the engine's own `resizable.start` / `resizable.stop` hooks,
+   * which is where the canvas subscribes to it, and against real `GridsterItem`
+   * components. The module chrome is stubbed in this harness, so the region the
+   * real host renders is put in place by the test - which is also what makes the
+   * declining path below a genuine case rather than a contrived one.
+   */
+  describe('a module resized by its handle', () => {
+    const placedLayout: UserDashboardLayout = {
+      modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+      version: 1
+    };
+
+    // jsdom performs no layout and reports every offset as zero, so the box the
+    // canvas is meant to preserve has to be stated. Both are read before anything
+    // is written, which is the ordering the canvas depends on.
+    const contentRegion = (aItemComponent: GridsterItem): HTMLElement => {
+      const content = document.createElement('div');
+
+      content.classList.add('gridster-item-content');
+
+      Object.defineProperty(content, 'offsetHeight', { value: 240 });
+      Object.defineProperty(content, 'offsetWidth', { value: 420 });
+
+      aItemComponent.el.appendChild(content);
+
+      return content;
+    };
+
+    it('should hold the resized module content box still for the gesture', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+      const content = contentRegion(itemComponent);
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      // All four, and none of them redundant: the region is a flex item that
+      // grows and shrinks with its line, so the two measurements alone would be
+      // overruled by the flex algorithm in one axis and by the default cross-axis
+      // stretch in the other.
+      expect(content.style.flexGrow).toBe('0');
+      expect(content.style.flexShrink).toBe('0');
+      expect(content.style.height).toBe('240px');
+      expect(content.style.width).toBe('420px');
+    });
+
+    it('should hand sizing back to the stylesheet when the gesture ends', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+      const content = contentRegion(itemComponent);
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+      component.options.resizable.stop(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mouseup')
+      );
+
+      // Cleared rather than restored to a snapshot: all four are stylesheet
+      // declarations on that region, so leaving inline copies behind would pin the
+      // module at the size it happened to have when it was last resized. Asserted
+      // on the same longhand names they are written with, which is also why they
+      // are written as longhands - removing a shorthand is specified to remove
+      // every longhand it set, and implementations disagree about honouring it.
+      expect(content.style.flexGrow).toBe('');
+      expect(content.style.flexShrink).toBe('');
+      expect(content.style.height).toBe('');
+      expect(content.style.width).toBe('');
+      expect(component['resizingContentElement']).toBeNull();
+    });
+
+    // Every way a gesture can end - mouseup, the pointer leaving the document, a
+    // touch cancelled, the window losing focus - reaches the engine's one `stop`
+    // hook, so the release is asserted on the hook rather than on any one of them.
+    // What matters here is that a release with no hold outstanding is harmless,
+    // because the engine calls `stop` for an abandoned gesture too.
+    it('should tolerate a gesture ending with nothing held', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      expect(() =>
+        component.options.resizable.stop(
+          itemComponent.item(),
+          itemComponent,
+          new MouseEvent('mouseup')
+        )
+      ).not.toThrow();
+
+      expect(component['resizingContentElement']).toBeNull();
+    });
+
+    it('should release the previous hold when a gesture starts on another module', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [
+            { cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+            { cols: 5, moduleType: 'markets', rows: 4, x: 5, y: 0 }
+          ],
+          version: 1
+        })
+      });
+      paint();
+
+      const [firstItem, secondItem] = gridsterItemComponents();
+      const firstContent = contentRegion(firstItem);
+      const secondContent = contentRegion(secondItem);
+
+      component.options.resizable.start(
+        firstItem.item(),
+        firstItem,
+        new MouseEvent('mousedown')
+      );
+      component.options.resizable.start(
+        secondItem.item(),
+        secondItem,
+        new MouseEvent('mousedown')
+      );
+
+      // A second gesture cannot begin before the first has ended, so this never
+      // happens - and that is exactly why it is asserted: were it ever to happen,
+      // the first module would be left pinned at a stale size for good, with no
+      // gesture left to release it.
+      expect(firstContent.style.width).toBe('');
+      expect(secondContent.style.width).toBe('420px');
+    });
+
+    it('should decline a module with no measurable content region', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      // No region at all in one case and an unmeasurable one in the other. Both
+      // decline for the same reason: a region that is not laid out has no reflow to
+      // avoid, so there is nothing for a hold to buy.
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      expect(component['resizingContentElement']).toBeNull();
+
+      const content = document.createElement('div');
+
+      content.classList.add('gridster-item-content');
+      itemComponent.el.appendChild(content);
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      expect(component['resizingContentElement']).toBeNull();
+      expect(content.style.width).toBe('');
+    });
+
+    it('should let go of a hold outstanding when the canvas is torn down', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      contentRegion(itemComponent);
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      expect(component['resizingContentElement']).not.toBeNull();
+
+      fixture.destroy();
+
+      // The element goes with the canvas, so there is nothing to hand sizing back
+      // to and only the reference to let go of.
+      expect(component['resizingContentElement']).toBeNull();
+    });
+
+    // The hooks exist to keep a module still, not to record anything: a resize that
+    // actually changed the arrangement is reported by `itemResizeCallback`, which is
+    // one of the four persistence triggers, and neither of these may become a fifth.
+    it('should write nothing when a gesture starts or ends', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      contentRegion(itemComponent);
+      dashboardLayoutServiceMock.scheduleSave.mockClear();
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+      component.options.resizable.stop(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mouseup')
+      );
+
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
     });
   });
 
@@ -5357,6 +7418,169 @@ describe('GfDashboardCanvasComponent', () => {
    * `100vw`, so the declaration itself is asserted against its own source and the
    * resolved geometry is measured in a browser instead.
    */
+  /**
+   * Why the grid gives up a strip of width to a button that is not part of it.
+   *
+   * The catalog trigger is `position: fixed` in the trailing corner while the grid
+   * scrolls its content past that corner. So it is not one module that ends up
+   * underneath the button - every interactive control any module draws passes
+   * through those coordinates at SOME scroll offset, and a control that is
+   * reachable at one offset is buried at another. Clearing the corner only for the
+   * modules' own floating buttons left every table row menu, toggle and link in the
+   * band unreachable, and a focused control down there had its indicator hidden
+   * outright, which SC 2.4.11 fails no matter how the indicator is styled.
+   *
+   * Asserted against the stylesheet rather than by measurement because this
+   * environment applies no component stylesheet, performs no layout and resolves
+   * neither `calc()` nor `var()`. The geometry itself is measured in a browser.
+   */
+  describe("reserving the catalog trigger's corner", () => {
+    const readCanvasStylesheet = () => {
+      return readFileSync(join(__dirname, 'dashboard-canvas.scss'), 'utf8');
+    };
+
+    /**
+     * The declarations of the first rule whose selector is exactly `aSelector`.
+     *
+     * Comments are stripped first, and that is not tidiness: the commentary in this
+     * stylesheet quotes CSS, braces and all, so a naive slice to the next `}` ends
+     * inside a sentence rather than at the end of the rule.
+     */
+    const readRuleBody = (aStylesheet: string, aSelector: string) => {
+      const declarations = aStylesheet.replace(/^\s*\/\/.*$/gm, '');
+      const start = declarations.indexOf(`${aSelector} {`);
+
+      expect(start).toBeGreaterThan(-1);
+
+      return declarations.slice(start, declarations.indexOf('}', start));
+    };
+
+    it('should narrow the grid itself by the trigger footprint', () => {
+      const grid = readRuleBody(readCanvasStylesheet(), 'gridster');
+
+      // On the grid, so the engine's own column pitch is derived from the narrowed
+      // box and every cell is laid out inside the reservation. Reserving it on the
+      // cells instead would leave the engine believing it had the full width.
+      expect(grid).toContain(
+        'inline-size: calc(100% - var(--gf-dashboard-catalog-trigger-footprint));'
+      );
+    });
+
+    it('should take the reservation off the box rather than around it', () => {
+      const grid = readRuleBody(readCanvasStylesheet(), 'gridster');
+
+      // Neither of the two usual ways of clearing a floating control works on this
+      // element, and both failures are silent.
+      //
+      // A padding is overwritten: with `outerMargin` on, the engine writes all four
+      // `padding-*` values onto its own host inline on every layout pass, so a
+      // padding declared here survives exactly until the first drag, resize or add.
+      //
+      // A margin does nothing at all: the library ships an unencapsulated
+      // `gridster { width: 100% }`, and a margin cannot shrink a box whose width is
+      // already resolved against its container. Measured in a browser it produced
+      // 88px of horizontal overflow on the drawer's content pane and no gutter
+      // whatsoever, leaving the module overflow menu still buried.
+      expect(grid).not.toContain('padding-right');
+      expect(grid).not.toContain('padding-inline-end');
+      expect(grid).not.toContain('margin-inline-end');
+      expect(grid).not.toContain('margin-right');
+    });
+
+    it('should reserve the corner once rather than twice', () => {
+      const stylesheet = readCanvasStylesheet().replace(/^\s*\/\/.*$/gm, '');
+      const reservations = stylesheet.match(
+        /(?:inline-size|margin[\w-]*|padding[\w-]*):[^;]*var\(--gf-dashboard-catalog-trigger-footprint\)/g
+      );
+
+      // The modules' own floating buttons used to carry a second copy of this
+      // gutter. Now that the whole grid is inset, that gutter would inset them a
+      // second time and leave every one of them 88px short of its own module's edge.
+      // The footprint is still read a second time elsewhere - as the floor under
+      // the drawer's width - which is a different use of the same quantity, so this
+      // counts insets rather than mentions.
+      expect(reservations).toHaveLength(1);
+      expect(reservations[0]).toContain('inline-size');
+    });
+
+    it('should move the trigger on the same schedule as the drawer it makes way for', () => {
+      const stylesheet = readCanvasStylesheet();
+
+      // Material's own drawer transition. The wrapper is declared with
+      // `transition-duration: 0s` globally, so without this the button crossed the
+      // drawer's full width in a single frame - roughly a third of a second before
+      // the panel arrived - and for that interval it sat over module content that
+      // was still there, taking presses aimed at it.
+      expect(stylesheet).toContain(
+        'transition: right 400ms cubic-bezier(0.25, 0.8, 0.25, 1);'
+      );
+    });
+
+    it('should drop the travel for a viewer who asked for less motion', () => {
+      const stylesheet = readCanvasStylesheet();
+      const reducedMotion = stylesheet.slice(
+        stylesheet.indexOf('@media (prefers-reduced-motion: reduce)')
+      );
+
+      // The button still has to end up beside the panel; what was asked for is the
+      // absence of the journey.
+      expect(reducedMotion).toContain('.gf-dashboard-catalog-trigger');
+      expect(reducedMotion).toContain('transition: none;');
+    });
+  });
+
+  /**
+   * Overlays opened from inside a module - a table's row menu, a tooltip, an
+   * autocomplete - are positioned once and then repositioned on the scroll events
+   * the CDK's dispatcher reports. The dispatcher only knows about ancestors that
+   * registered themselves, and on this screen the document no longer scrolls at
+   * all: the grid does. Without the registration the dispatcher had nothing to
+   * report, so an overlay stayed at the coordinate its trigger occupied when it
+   * opened while the trigger itself scrolled away - and every row menu in every
+   * table-bearing module was affected.
+   */
+  describe('registering the grid as a scrolling ancestor', () => {
+    const registeredElements = () => {
+      const scrollDispatcher = TestBed.inject(ScrollDispatcher);
+
+      return Array.from(scrollDispatcher.scrollContainers.keys()).map(
+        (scrollable) => scrollable.getElementRef().nativeElement
+      );
+    };
+
+    it('should register the grid host with the scroll dispatcher', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+
+      // The engine's own element, because that is the box that scrolls - the drawer
+      // content pane above it does not.
+      expect(registeredElements()).toContain(queryElement('gridster'));
+    });
+
+    it('should not leave the grid registered once it is gone', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+
+      const gridsterElement = queryElement('gridster');
+
+      fixture.destroy();
+
+      // A stale registration would have the dispatcher reporting scroll events for
+      // a detached element to every overlay that opens afterwards.
+      expect(registeredElements()).not.toContain(gridsterElement);
+    });
+  });
+
   describe('keeping the catalog dismissible', () => {
     const readCanvasStylesheet = () => {
       return readFileSync(join(__dirname, 'dashboard-canvas.scss'), 'utf8');
@@ -5372,14 +7596,60 @@ describe('GfDashboardCanvasComponent', () => {
 
       const value = declaration[1].replace(/\s+/g, ' ').trim();
 
-      // The design width, and a floor under the trigger's reachability. Both terms
-      // are required: the first is what applies on every supported viewport, the
-      // second is what stops the drawer from consuming the corner the trigger
-      // occupies once the viewport is narrower than the two together.
-      expect(value).toContain('min(');
+      // Three terms, and each one is load-bearing.
+      //
+      // `22rem` is the design width and the preferred term, so it is what applies
+      // on every supported viewport. The middle term yields the drawer's width
+      // rather than the canvas's once the window cannot pay for both, which is
+      // what stops an open panel from starving the canvas to a width its own
+      // module chrome cannot lay out in. The `14rem` minimum is the floor under
+      // the trigger's reachability: past it the drawer would consume the corner
+      // the trigger occupies and the panel's only dismissal would go off-screen.
+      expect(value).toContain('clamp(');
+      expect(value).toContain('14rem');
       expect(value).toContain('22rem');
-      expect(value).toContain('100vw');
-      expect(value).toContain('--gf-dashboard-catalog-trigger-footprint');
+      expect(value).toContain('--gf-dashboard-canvas-min-width');
+    });
+
+    it('should floor the canvas at a width its own module chrome can exist at', () => {
+      const stylesheet = readCanvasStylesheet();
+
+      // Declared once and read by everything that has to agree on it - the
+      // drawer's own width above, the grid, and the empty-canvas state - because
+      // the three drifting apart is precisely how the corruption arose: the drawer
+      // took its width with no reference to what the canvas needed to keep.
+      const declarations = stylesheet.match(
+        /--gf-dashboard-canvas-min-width:\s*[^;]+;/g
+      );
+
+      expect(declarations).toHaveLength(1);
+      expect(declarations[0]).toContain('26rem');
+
+      // Capped at the window, which is what makes the floor inert with the panel
+      // CLOSED: it can restore width the drawer took, never invent width the
+      // window never had, so a narrow viewport with nothing hidden from it gains
+      // no scrollbar.
+      //
+      // Three readers, and every one of them has to take the floor or it reports
+      // on something other than the canvas: the grid, which divides the columns;
+      // the empty-canvas state, which IS the canvas on the branch that has no
+      // grid; and the block-axis edge marks, which span the canvas and would
+      // otherwise stop short of it and travel with the inline scroll.
+      const readers = stylesheet.match(
+        /min-inline-size:\s*min\(\s*var\(--gf-dashboard-canvas-min-width\),\s*100vw\s*\);/g
+      );
+
+      expect(readers).toHaveLength(3);
+    });
+
+    it('should absorb the floor as inline scroll rather than as a crushed canvas', () => {
+      const stylesheet = readCanvasStylesheet();
+
+      // Only the inline axis, and stated explicitly rather than inherited from
+      // Material's own `overflow: auto`: the reachability of a floored canvas
+      // depends on it, and the block axis must stay the grid engine's alone.
+      expect(stylesheet).toContain('overflow-x: auto;');
+      expect(stylesheet).not.toContain('overflow-y: auto;');
     });
 
     it('should offset the trigger by the same width the drawer is given', () => {
@@ -5476,6 +7746,58 @@ describe('GfDashboardCanvasComponent', () => {
       );
     };
 
+    /**
+     * The discard offered by the failed-read card is pressed from inside that card,
+     * and the assignment that succeeds it takes the card off the screen - so leaving
+     * focus where it was leaves it on a detached element and hands the document body
+     * back to the viewer.
+     *
+     * Same treatment as the auto-open that follows removing the last module, and for
+     * the same reason: the panel this opens is the only thing there is to do next, and
+     * the control the viewer pressed no longer exists to return to.
+     */
+    it('should hand focus to the catalog it opens after a discard', async () => {
+      await createCanvas({
+        layout: throwError(
+          () => new HttpErrorResponse({ status: StatusCodes.CONFLICT })
+        )
+      });
+      paint();
+      await settleDrawer();
+
+      expect(component.isLayoutUnreadable).toBe(true);
+
+      component.onDiscardLayout();
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(true);
+      expect(document.activeElement).toBe(catalogSearchField());
+    });
+
+    // Nothing to return focus TO once that panel closes, because the card that opened
+    // it is gone: the floating trigger is the one control nothing the viewer does can
+    // take away.
+    it('should fall back to the trigger when the post-discard catalog closes', async () => {
+      await createCanvas({
+        layout: throwError(
+          () => new HttpErrorResponse({ status: StatusCodes.CONFLICT })
+        )
+      });
+      paint();
+      await settleDrawer();
+
+      component.onDiscardLayout();
+      paint();
+      await settleDrawer();
+
+      component.onCatalogOpenedChange(false);
+      paint();
+      await settleDrawer();
+
+      expect(document.activeElement).toBe(catalogTriggerButton());
+    });
+
     it('should hand focus to the catalog when the viewer asks for it', async () => {
       await createCanvas({ layout: of(placedLayout) });
       paint();
@@ -5526,25 +7848,25 @@ describe('GfDashboardCanvasComponent', () => {
       expect(document.activeElement).toBe(trigger);
     });
 
-    it('should not take focus when it opens the catalog by itself', async () => {
-      // No saved arrangement, so the canvas opens the panel unprompted - the one
-      // open a viewer did not ask for.
+    it('should take focus the same way however the catalog came to be open', async () => {
+      // No saved arrangement, so the canvas opens the panel unprompted - the open
+      // that used to behave differently from every other one.
       await createCanvas();
       paint();
       await settleDrawer();
 
       expect(component.isCatalogOpen).toBe(true);
 
-      // Never even asked. A viewer meeting an empty canvas is reading it, and
-      // moving the caret into a search field they did not reach for would interrupt
-      // them and lose their place.
-      expect(moduleCatalogComponent().focusRequestCount).toBe(0);
-      expect(document.activeElement).toBe(document.body);
+      // The panel used to decline focus here, which left the same control giving
+      // two different accounts of itself: auto-opened it appeared with its search
+      // field unfocused and unringed, opened from the trigger it appeared focused
+      // and ringed. Nothing is interrupted by taking focus in this case - the
+      // canvas is empty, so the search field is the only thing there is to do -
+      // and the control bar stays one Shift+Tab behind.
+      expect(moduleCatalogComponent().focusRequestCount).toBe(1);
+      expect(document.activeElement).toBe(catalogSearchField());
 
-      // That count has to be a decision rather than a dead wire, so the same fixture
-      // is now driven through a dismissal and a deliberate reopen. Focus arrives on
-      // the second open, which proves the hand-off was live all along and simply
-      // declined for the open the viewer had not asked for.
+      // And the second, deliberate open is indistinguishable from the first.
       const trigger = catalogTriggerButton();
 
       trigger.click();
@@ -5558,27 +7880,89 @@ describe('GfDashboardCanvasComponent', () => {
       paint();
       await settleDrawer();
 
-      expect(moduleCatalogComponent().focusRequestCount).toBe(1);
+      expect(moduleCatalogComponent().focusRequestCount).toBe(2);
       expect(document.activeElement).toBe(catalogSearchField());
     });
 
-    it('should owe nothing back after an open the viewer did not ask for', async () => {
+    it('should hand focus to the trigger when an unprompted open closes', async () => {
       await createCanvas();
       paint();
       await settleDrawer();
 
       expect(component.isCatalogOpen).toBe(true);
-      expect(document.activeElement).toBe(document.body);
+      expect(document.activeElement).toBe(catalogSearchField());
 
-      // The drawer closing itself after an unprompted open. Focus was never taken,
-      // so there is nothing to give back and the trigger must not be focused - a
-      // viewer who never touched it would find the caret on a control they did not
-      // choose.
+      // The drawer closing itself after an unprompted open. There is no origin to
+      // return to - nothing was focused when the canvas opened the panel - so the
+      // fallback is what answers, and it has to answer something: focus is inside
+      // the panel that is closing, and left there it would be orphaned to the
+      // document body, which ejects a keyboard-only viewer from the application.
+      // The floating trigger is the destination because it is the one control
+      // nothing the viewer does to the arrangement can remove.
       component.onCatalogOpenedChange(false);
       paint();
 
       expect(component.isCatalogOpen).toBe(false);
-      expect(document.activeElement).toBe(document.body);
+      expect(document.activeElement).toBe(catalogTriggerButton());
+    });
+
+    /**
+     * The one auto-open that DOES move focus, and why it is not the same case as the
+     * unprompted one above.
+     *
+     * A viewer who removes their last module acted, and the control they acted with
+     * went with the module - so focus has nowhere of its own to return to, and the
+     * panel that opens is the only thing left on the screen to do anything with.
+     * Leaving the caret on the floating trigger makes them find their own way into
+     * it, which is exactly the inconsistency this closes: the explicit-open path has
+     * always moved focus into the search field.
+     */
+    it('should hand focus to the catalog it opens after the last module goes', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+      await settleDrawer();
+
+      expect(component.isCatalogOpen).toBe(false);
+
+      component.onRemoveModule(component.modules[0]);
+      paint();
+      await settleDrawer();
+
+      expect(component.modules).toEqual([]);
+      expect(component.isCatalogOpen).toBe(true);
+      expect(moduleCatalogComponent().focusRequestCount).toBe(1);
+      expect(document.activeElement).toBe(catalogSearchField());
+    });
+
+    it('should fall back to the trigger when that catalog closes again', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      });
+      paint();
+      await settleDrawer();
+
+      component.onRemoveModule(component.modules[0]);
+      paint();
+      await settleDrawer();
+
+      expect(document.activeElement).toBe(catalogSearchField());
+
+      component.onCatalogOpenedChange(false);
+      paint();
+
+      // Not the control focus came from - that was the removed module's own menu,
+      // which no longer exists. The floating trigger is the only thing nothing the
+      // viewer does can take away, which is why it is the fallback rather than a
+      // captured origin.
+      expect(document.activeElement).toBe(catalogTriggerButton());
     });
 
     it('should return focus to the empty canvas affordance the viewer opened it from', async () => {
@@ -5586,8 +7970,9 @@ describe('GfDashboardCanvasComponent', () => {
       paint();
       await settleDrawer();
 
-      // Dismissed first, so the open below is a deliberate one rather than the
-      // unprompted open the canvas has just performed.
+      // Dismissed first, so the open below comes from the affordance rather than
+      // from the canvas itself - it is the ORIGIN that differs between the two,
+      // not whether focus is taken.
       component.onCatalogOpenedChange(false);
       paint();
       await settleDrawer();
@@ -5667,6 +8052,87 @@ describe('GfDashboardCanvasComponent', () => {
     });
   });
 
+  /**
+   * A keyboard focus indicator on every control this canvas and its two state
+   * cards declare.
+   *
+   * Two things remove it by default, and both are properties of the project rather
+   * than of these components: the global stylesheet resets `button:focus`, and this
+   * theme builds with `mat.define-theme()` rather than opting into Material's strong
+   * focus indicators. What is left is a flat state layer, measured in a browser at
+   * 1.066:1 against its own rest state on the filled control, against a 3:1 floor
+   * for a non-text indicator. Six of the eight stylesheets in this tree already
+   * answered that; these are the two that did not - and the failed-read card's
+   * controls are the ONLY interactive things on the screen in the state that draws
+   * them.
+   *
+   * Asserted against the stylesheet sources because this environment applies no
+   * component stylesheet, lays nothing out and resolves neither `var()` nor a
+   * contrast. The rendered ring and its contrast are measured in a browser.
+   */
+  describe('a visible focus indicator on the new chrome', () => {
+    const readStylesheet = (aPath: string) => {
+      return readFileSync(join(__dirname, aPath), 'utf8');
+    };
+
+    // Comments are stripped first: the commentary in these stylesheets quotes CSS,
+    // braces and all, so a naive slice to the next `}` can end mid-sentence.
+    const readRule = (aStylesheet: string, aSelector: string) => {
+      const declarations = aStylesheet.replace(/^\s*\/\/.*$/gm, '');
+      const start = declarations.indexOf(`${aSelector} {`);
+
+      expect(start).toBeGreaterThan(-1);
+
+      return declarations.slice(start, declarations.indexOf('}', start));
+    };
+
+    it.each([
+      {
+        description: 'the canvas, for its error and notice cards',
+        stylesheet: 'dashboard-canvas.scss'
+      },
+      {
+        description: 'the sign-in prompt',
+        stylesheet: 'sign-in-prompt/sign-in-prompt.scss'
+      },
+      {
+        description: 'the empty-canvas notice',
+        stylesheet: 'empty-canvas-state/empty-canvas-state.scss'
+      }
+    ])('should draw a ring for $description', ({ stylesheet }) => {
+      const ring = readRule(readStylesheet(stylesheet), 'button:focus-visible');
+
+      expect(ring).toContain(
+        'outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));'
+      );
+
+      // Offset outward, so the ring sits on the surface behind the control rather
+      // than on the control's own fill - which is the surface its contrast is
+      // properly measured against, and matters most for the filled sign-in button,
+      // whose fill is the brand teal.
+      expect(ring).toContain('outline-offset: 2px;');
+    });
+
+    it.each([
+      { stylesheet: 'dashboard-canvas.scss' },
+      { stylesheet: 'sign-in-prompt/sign-in-prompt.scss' },
+      { stylesheet: 'empty-canvas-state/empty-canvas-state.scss' }
+    ])(
+      'should flip the ring for the dark theme in $stylesheet',
+      ({ stylesheet }) => {
+        const source = readStylesheet(stylesheet);
+        const darkTheme = source.slice(
+          source.indexOf(':host-context(.theme-dark)')
+        );
+
+        expect(darkTheme).toContain('button:focus-visible');
+        expect(readRule(darkTheme, 'button:focus-visible')).toContain(
+          'outline-color: var(--mat-sys-on-surface, #ffffff);'
+        );
+      }
+    );
+  });
+
   describe('architectural invariants', () => {
     it('should take nothing in and report nothing out', async () => {
       await createCanvas();
@@ -5726,8 +8192,11 @@ describe('GfDashboardCanvasComponent', () => {
           onEmptyCellDrop: () => undefined,
           onGridsterDestroy: () => undefined,
           onGridsterInit: () => undefined,
+          onItemGeometryChange: () => undefined,
           onItemInit: () => undefined,
-          onLayoutChange: () => undefined
+          onLayoutChange: () => undefined,
+          onResizeGestureEnd: () => undefined,
+          onResizeGestureStart: () => undefined
         }).scrollToNewItems
       ).toBe(true);
     });

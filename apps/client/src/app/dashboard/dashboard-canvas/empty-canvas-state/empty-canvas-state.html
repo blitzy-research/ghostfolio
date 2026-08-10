@@ -24,5 +24,36 @@
         <span i18n>Browse modules</span>
       </button>
     </div>
+    <!--
+      Drawn only where something is actually saved that this canvas is not showing:
+      a module the viewer is no longer permitted to see, or a module type this build
+      does not recognise. Both are retained on purpose - it is what stops a lapsed
+      subscription or a renamed module from deleting a saved module - but a stored
+      document nobody can see or reach is not one the viewer owns, and this is the
+      one place it can be cleared.
+
+      A text button below the primary action rather than beside it, because it is
+      the destructive option and must not compete with the one that builds a
+      dashboard. The explanation is stated too: an empty canvas with a delete
+      control on it makes no sense until the viewer is told there is something left
+      to delete.
+    -->
+    @if (canDiscardLayout()) {
+      <div class="mt-3 pt-3 secondary-text text-center discard-section">
+        <div class="mb-1" i18n>
+          Some modules in your saved dashboard cannot be shown here.
+        </div>
+        <button
+          mat-button
+          type="button"
+          [attr.aria-busy]="isDiscardingLayout() ? 'true' : null"
+          [disabled]="isDiscardingLayout()"
+          [disabledInteractive]="true"
+          (click)="discardLayout.emit()"
+        >
+          <span i18n>Start over with a blank dashboard</span>
+        </button>
+      </div>
+    }
   </div>
 </mat-card>

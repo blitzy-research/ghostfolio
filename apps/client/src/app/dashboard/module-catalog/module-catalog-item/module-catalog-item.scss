@@ -180,14 +180,50 @@
   // One rule for both trailing markers: they are the same kind of thing said
   // about the row - a short, secondary, uppercase state label - so they take the
   // same type role and the same foreground.
+  //
+  // `flex: 0 0 auto` is the i18n half. These sit as flex items inside the label
+  // span alongside the name and the qualifier, and a flex item shrinks by default:
+  // a longer translation of the name would take the marker's width away from it
+  // and the state label would be squeezed to nothing or clipped mid-word, in a
+  // row whose height is fixed. Refusing to shrink means the NAME is what
+  // ellipsises when the row runs out of width, which is the correct order - the
+  // name is truncatable and signposted by its ellipsis, the state is not.
   .placed-marker,
   .unavailable-marker {
     color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  // The badge itself: a pill that reads as a state about the row rather than as
+  // more of the row's text. Small-label type, so it stays subordinate to the
+  // name, and a full-radius outline, so it is recognisable as a status marker at
+  // a glance and in forced-colors, where a border survives and a fill does not.
+  //
+  // `line-height` is fixed rather than inherited: the row's own line box comes
+  // from body-medium type, and leaving the pill to that leading gave it several
+  // pixels of dead space inside its border.
+  .marker-badge {
+    border: 1px solid var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
+    border-radius: var(--mat-sys-corner-full, 999px);
+    display: inline-block;
     font-size: var(--mat-sys-label-small-size, 0.6875rem);
     font-weight: var(--mat-sys-label-small-weight, 500);
     letter-spacing: var(--mat-sys-label-small-tracking, 0.03125rem);
+    line-height: 1rem;
+    padding-inline: 0.375rem;
     text-transform: uppercase;
-    white-space: nowrap;
+  }
+
+  // Placed takes the FILLED form and the primary ink; unavailable keeps the
+  // outlined form above. Filled against outlined is a difference of substance
+  // rather than of hue, so the two states remain distinguishable with colour
+  // removed entirely - which, with the solid against dotted leading edge and the
+  // two different words, is three independent cues for the same distinction.
+  .placed-marker .marker-badge {
+    background: var(--mat-sys-surface-container-highest, #e0e0e0);
+    border-color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
   }
 }
 
@@ -241,6 +277,18 @@
   .placed-marker,
   .unavailable-marker {
     color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+
+  // Restated because the fallbacks are what paint: an outline and a fill taken
+  // from the light theme's near-white would draw a bright pill on a dark row.
+  .marker-badge {
+    border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
+  }
+
+  .placed-marker .marker-badge {
+    background: var(--mat-sys-surface-container-highest, #404040);
+    border-color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+    color: var(--mat-sys-on-surface, #ffffff);
   }
 }
 

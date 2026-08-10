@@ -173,22 +173,32 @@ export const dashboardModules = {
     moduleType: DashboardModuleType.PORTFOLIO_OVERVIEW,
     name: $localize`Overview`
   },
-  // Eight columns rather than six, because this module's table has a horizontal
-  // requirement that is deterministic even though its vertical one is not. Its
-  // header row is `min-width: max-content` per column - the rule that stops a
-  // label being squeezed to "Sta" - so the columns it shows have a hard combined
-  // floor of 720px at every viewport. Six columns leave the body 591px at a 1280px
-  // viewport, which renders the trailing performance column as a lone "P" and cuts
-  // off the ± figure beside it entirely. Eight leave it 803px: the whole table,
-  // with nothing clipped and no scrolling required, from 1280px upward.
+  // The full twelve columns, because the horizontal requirement of this module's
+  // table is larger than the column set alone suggests.
   //
-  // The ROW count is deliberately left where it is, for the reason set out above:
-  // how tall a holdings table needs to be depends on how many holdings the viewer
-  // owns, so the honest answer there stays the scroll hint on the module chrome.
-  // Width is the opposite case - the column set is fixed - which is why only one
-  // of the two is being tuned.
+  // Its header row is `min-width: max-content` per column - the rule that stops a
+  // label being squeezed to "Sta" - which gives the columns a combined floor of
+  // 720px. Eight columns leave the body 803px, and on that arithmetic alone eight
+  // looked sufficient. It is not, because the NAME column is content-sized rather
+  // than fixed: with a realistic portfolio the longest holding name widens that
+  // column past what the floor accounts for, and the trailing performance header
+  // truncates to "Performa…" at 1280px. Measured both ways - a four-holding
+  // portfolio clips nothing at eight columns at 1280, 1440 or 1920, a
+  // thirty-one-holding one clips at all three, and twelve columns clip neither.
+  //
+  // Twelve is also what the other table-bearing modules already default to -
+  // activities, allocations and analysis - so a table that needs the width is
+  // given the width rather than being given a horizontal scrollbar on arrival.
+  // The scroll hints on the module chrome remain the answer for a portfolio large
+  // enough to exceed even that, and for the vertical extent below.
+  //
+  // The ROW count is deliberately left where it is: how tall a holdings table
+  // needs to be depends on how many holdings the viewer owns, so there is no
+  // honest default, and the scroll hint is the answer instead. Width is the
+  // opposite case - the column set is fixed - which is why only one of the two is
+  // tuned.
   [DashboardModuleType.HOLDINGS]: {
-    defaultItemCols: 8,
+    defaultItemCols: 12,
     defaultItemRows: 6,
     minItemCols: 4,
     minItemRows: 4,
@@ -204,6 +214,14 @@ export const dashboardModules = {
     name: $localize`Summary`
   },
   [DashboardModuleType.MARKETS]: {
+    // Qualified even though nothing forces it to be, because its sibling below
+    // shares its name and BOTH members of a colliding pair have to be qualified
+    // for either qualifier to mean anything. Left bare, this row read as a plain
+    // `Markets` beside a qualified `Markets · …`, so the one row a viewer could
+    // not identify from its own label was this one - the absence of a qualifier
+    // is not itself a distinguishing mark. `Highlights` is what this module is:
+    // the compact market selection, against the full screen its sibling hosts.
+    context: $localize`Highlights`,
     defaultItemCols: 6,
     defaultItemRows: 4,
     minItemCols: 6,
@@ -214,11 +232,18 @@ export const dashboardModules = {
   [DashboardModuleType.MARKETS_PREMIUM]: {
     // Qualified because the ungated markets module above carries the same name,
     // and it has to: the shared route registry gives both market screens the
-    // title `Markets`, and the name is that title verbatim. The qualifier names
-    // what the permission below actually grants, and it is a separate field so
-    // the authoritative name stays exactly the message every locale already
-    // translates.
-    context: $localize`Market Data`,
+    // title `Markets`, and the name is that title verbatim. It is a separate
+    // field so the authoritative name stays exactly the message every locale
+    // already translates.
+    //
+    // `Details` rather than the route title `Market Data`, and the change is a
+    // correctness fix. A qualifier must not be another module's primary name:
+    // `Market Data` IS the name of the admin market-data module, so within one
+    // scroll of the catalog the same words appeared once as a 12px grey qualifier
+    // and once as a 16px primary name, and a viewer had no way to know that the
+    // two were unrelated. A qualifier's whole job is to disambiguate, so a
+    // qualifier that is itself ambiguous is worse than none.
+    context: $localize`Details`,
     defaultItemCols: 8,
     defaultItemRows: 6,
     minItemCols: 4,
@@ -292,6 +317,12 @@ export const dashboardModules = {
     // route registry gives each of those screens. An administrator sees both rows
     // in one list, so the qualifier names the family this one belongs to - the
     // same word its sibling access and membership modules sit under.
+    //
+    // Singular deliberately, and it is not the `Accounts` module's name: this
+    // qualifies the viewer's OWN account, while that module lists the accounts
+    // their holdings are held in. No qualifier in this map may be another
+    // module's primary name - see the markets and admin-settings entries, where
+    // that rule was being broken - and this one is not.
     context: $localize`Account`,
     defaultItemCols: 6,
     defaultItemRows: 8,
@@ -373,9 +404,16 @@ export const dashboardModules = {
   [DashboardModuleType.ADMIN_SETTINGS]: {
     // Qualified for the same reason as the account settings module above: an
     // administrator holds both, and the route registry titles both screens
-    // `Settings`. The qualifier is the title of the route these admin screens sit
-    // under, which is also the name of this family's own overview module.
-    context: $localize`Admin Control`,
+    // `Settings`.
+    //
+    // `System` rather than the route title `Admin Control`, for the same reason
+    // the markets qualifier changed: `Admin Control` IS the primary name of this
+    // family's own overview module, so an administrator saw those words as a
+    // qualifier on this row and as a name two rows away. `System` says what these
+    // settings govern - the instance rather than the viewer's own account - which
+    // is exactly the distinction from `Settings · Account` that the qualifier
+    // exists to draw, and it is not the name of anything.
+    context: $localize`System`,
     defaultItemCols: 8,
     defaultItemRows: 7,
     minItemCols: 4,
@@ -442,6 +480,40 @@ export function getDashboardModule(
   return Object.prototype.hasOwnProperty.call(dashboardModules, aModuleType)
     ? (dashboardModules as Record<string, DashboardModule>)[aModuleType]
     : undefined;
+}
+
+/**
+ * The display name qualified by its {@link DashboardModule.context} - the ONE
+ * spelling of that composition anywhere in the workspace.
+ *
+ * It lives here, beside the two fields it joins, because four separate surfaces
+ * have to agree on it down to the character: the module chrome's title and region
+ * name, the catalog row's accessible name, and every live-region announcement the
+ * canvas writes. They had each spelled the join for themselves, and the moment one
+ * of them did not - the canvas, which announced the bare name - a reader was told
+ * `Settings removed from the dashboard` about one of the two modules that could
+ * have been. Anything that names a module to a person now reads it from here.
+ *
+ * The separator is a middle dot with a space either side. It is a separator rather
+ * than punctuation belonging to either field, which is why neither field carries
+ * it, and it is deliberately not localized: it is the same mark in every locale
+ * this application ships.
+ *
+ * Returns `undefined` rather than an empty string for a module it cannot name, so
+ * that a caller binding this to an accessible name removes the attribute instead
+ * of setting an empty one - a control named by the empty string is a control with
+ * no name at all, and that is worse than one named by its content.
+ */
+export function getQualifiedDashboardModuleName(
+  aModule?: Pick<DashboardModule, 'context' | 'name'> | null
+): string | undefined {
+  if (!aModule?.name) {
+    return undefined;
+  }
+
+  return aModule.context
+    ? `${aModule.name} · ${aModule.context}`
+    : aModule.name;
 }
 
 export function isDashboardModulePermitted(

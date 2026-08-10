@@ -171,10 +171,9 @@
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         @if (hasPermissionToDeleteItem()) {
           <button
-            aria-label="Actions for this benchmark"
             class="mx-1 no-min-width px-2"
-            i18n-aria-label
             mat-button
+            [attr.aria-label]="getItemActionsLabel(element)"
             [matMenuTriggerFor]="benchmarkMenu"
             (click)="$event.stopPropagation()"
           >

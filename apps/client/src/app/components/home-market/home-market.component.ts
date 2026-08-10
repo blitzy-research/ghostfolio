@@ -2,7 +2,7 @@ import { GfFearAndGreedIndexComponent } from '@ghostfolio/client/components/fear
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { ghostfolioFearAndGreedIndexSymbol } from '@ghostfolio/common/config';
 import { DashboardModuleType } from '@ghostfolio/common/dashboard';
-import { resetHours } from '@ghostfolio/common/helper';
+import { reportSanitizedError, resetHours } from '@ghostfolio/common/helper';
 import {
   Benchmark,
   HistoricalDataItem,
@@ -55,6 +55,17 @@ export class GfHomeMarketComponent implements OnInit {
   public hasPermissionToAccessFearAndGreedIndex: boolean;
   public historicalDataItems: HistoricalDataItem[];
   public info: InfoItem;
+
+  /**
+   * Whether the index read is still outstanding.
+   *
+   * Passed to the Fear & Greed tile, which cannot distinguish an unanswered request
+   * from an answer that carried no figure. It starts `true` and is cleared on
+   * whichever of the three outcomes occurs: an answer, a failure, or the read never
+   * being issued at all because the viewer lacks the permission for it.
+   */
+  public isLoadingFearAndGreedIndex = true;
+
   public readonly numberOfDays = 365;
   public user: User;
 
@@ -93,18 +104,36 @@ export class GfHomeMarketComponent implements OnInit {
           symbol: ghostfolioFearAndGreedIndexSymbol
         })
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(({ historicalData, marketPrice }) => {
-          this.fearAndGreedIndex = marketPrice;
-          this.historicalDataItems = [
-            ...historicalData,
-            {
-              date: resetHours(new Date()).toISOString(),
-              value: marketPrice
-            }
-          ];
+        .subscribe({
+          // Cleared on failure too: the tile's loading state answers whether a
+          // request is outstanding, and one that failed is not. The failure is
+          // reported through the shared sanitized channel rather than swallowed.
+          error: (error: unknown) => {
+            this.isLoadingFearAndGreedIndex = false;
 
-          this.changeDetectorRef.markForCheck();
+            reportSanitizedError('GF-FEAR-AND-GREED-INDEX-FETCH-FAILED', error);
+
+            this.changeDetectorRef.markForCheck();
+          },
+          next: ({ historicalData, marketPrice }) => {
+            this.fearAndGreedIndex = marketPrice;
+            this.historicalDataItems = [
+              ...historicalData,
+              {
+                date: resetHours(new Date()).toISOString(),
+                value: marketPrice
+              }
+            ];
+            this.isLoadingFearAndGreedIndex = false;
+
+            this.changeDetectorRef.markForCheck();
+          }
         });
+    } else {
+      // No read will be issued, so nothing is being waited for. The tile is not
+      // drawn in this branch today, but leaving the flag set would make it claim
+      // to be loading the moment it were.
+      this.isLoadingFearAndGreedIndex = false;
     }
 
     this.dataService

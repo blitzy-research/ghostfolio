@@ -22,15 +22,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the script `certificates:generate` to create a per-workstation certificate and key for the development server
 - Added the script `typecheck:tests` to type-check the test projects, and a corresponding step to the continuous integration workflow
 - Added the `stripeCheckoutSessionId` column to the `Subscription` database model to record the payment session a subscription was provisioned from
-- Added the support of the reduced motion and the forced colors preferences to the chrome of the dashboard canvas
+- Added the support of the reduced motion and the forced colors preferences to the chrome of the dashboard canvas, covering the brand glyph and the gain and loss encoding, both of which a forced palette would otherwise flatten
 - Added the `UserDashboardLayout` database model to persist the dashboard layout per user
 
 ### Changed
 
+- Changed the buttons inside a module of the dashboard canvas to grow when their own label wraps, keeping the themed height as a floor, so that a wrapped label is no longer painted outside the button
+- Changed the generated prompt of the _AI_ chat module to be rendered as preformatted text, so that the holdings table it contains is aligned, and retired the nested scroll regions around it in favour of the single hinted scroll region of the module body
+- Changed the headings inside a module of the dashboard canvas to be subordinate to the module title, and dropped the page title which four of the hosted leaves repeated
+- Changed the label of the unclassified slice of the proportion charts from _No data available_ to _Unknown_, since that slice holds a real value and the previous label was also used for a chart with nothing to show
 - Changed the label color of the filled and floating action buttons from white to the contrast color of the palette, for the primary palette and for the controls which name no palette at all, since the theme fills all of them with a light teal in both themes and the white label missed the minimum contrast ratio for text. The accent and the warn palettes keep their light label, since their container is not the teal one
+- Changed the leaves hosted in a module of the dashboard canvas to use the full width of their cell, by releasing the page-scale width clamp which the shared container primitive applies
 - Changed the muted text of the dark theme and of the membership card to the secondary foreground color of the respective palette, since the theme-invariant utility class missed the minimum contrast ratio on the dark surfaces
+- Changed the placeholder of the search field of the assistant to name modules instead of pages
+- Changed the premium markets module to state that the _Fear & Greed_ index is unavailable instead of drawing an empty chart around it
 - Changed the scripts which load an environment file to use the `--env-file` option of _Node.js_ instead of the undeclared `dotenv-cli` package
+- Changed the share address in the access table to wrap instead of being truncated, since the address is what that table exists to show
+- Changed the shared portfolio to show a placeholder for as long as it is loading, and gave it the top spacing which every module card has
+- Changed the total row of the accounts table to be set in bold with a visible separator, matching how the portfolio summary marks its own total
 - Changed the viewport of the client to permit zooming, and added a referrer policy to the document and to the development server
+- Changed the warning threshold of the component stylesheet size budget of the client from 6 kB to 8 kB, so that it measures the chrome of the dashboard canvas as it now stands. That stylesheet carries the themed surfaces, the canvas edge marks, the overlaid capacity notice, the collar of the floating catalog trigger, the scrollbars and the dark counterpart of each of them, and it compiles to 7.71 kB. The error threshold of 10 kB is unchanged, so the rule that the unencapsulated grid chrome belongs in the global partial rather than in a component stylesheet is still enforced by the build
+- Changed the warning threshold of the initial bundle size budget of the client from 2 MB to 2.4 MB, so that it measures this architecture instead of the one it replaced. The same production build of the route-per-screen client emitted an initial bundle of 2.83 MB against that threshold, whereas the single-canvas client emits 2.30 MB raw and 526 kB transferred, so the new threshold sits below what the previous architecture shipped and above what this one does. The error threshold of 5 MB is unchanged, every one of the 21 modules is still fetched on demand, and the total shipped JavaScript of a locale is down from 12.06 MB to 3.72 MB
 - Changed the wrapper of the floating action buttons to stay in the normal flow, since multiple modules of the dashboard canvas can contribute one at the same time, and introduced a dedicated class for the trigger of the module catalog
 - Encoded the interpolated values of the endpoint urls of the data service, so that a symbol containing a reserved character resolves to the intended endpoint. A symbol containing a slash now travels as `%2F`, which requires a reverse proxy in front of the server to forward the request line unparsed
 - Reduced the routes of the client to a single root route rendering the dashboard canvas, keeping `RouterModule.forRoot`, the service worker navigation handling, `PageTitleStrategy` and `ModulePreloadService` in place
@@ -42,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed the deep links to the individual screens, since every unmatched url now resolves to the dashboard canvas
 - Removed the public pages: about, blog, demo, features, Frequently Asked Questions (FAQ), landing, markets, _Open Startup_, pricing and resources, where the markets page is superseded by the markets module of the dashboard canvas
-- Removed _Zen Mode_ as a separate navigation mode, while keeping its setting persisted and readable
+- Removed _Zen Mode_ as a separate navigation mode, together with its toggle in the account settings, since the toggle no longer changed anything which is visible. Its setting stays persisted, readable and writable through the API
 
 ### Security
 

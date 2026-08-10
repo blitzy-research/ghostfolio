@@ -26,7 +26,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import '@angular/localize/init';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router } from '@angular/router';
+import { readFileSync } from 'fs';
 import { DeviceDetectorService } from 'ngx-device-detector';
+import { join } from 'path';
 import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 
 import { DashboardModuleType } from '../../enums/dashboard-module-type';
@@ -72,8 +74,10 @@ jest.mock('@ionic/angular/standalone', () => {
  * 'reload')` throws `Cannot assign to read only property 'reload'`. The two behaviours
  * that leave the page are therefore observed through the signal jsdom does emit: an
  * attempted navigation is reported on the virtual console, arriving here as a
- * `console.error`. {@link navigationAttempts} collects those and forwards everything
- * else to the real `console.error`, so a genuine framework error is never swallowed.
+ * `console.error`. {@link navigationAttempts} collects those, and
+ * {@link errorReports} collects every other report so it can be asserted empty
+ * after each test - which is how a genuine framework error fails the test that
+ * provoked it instead of being printed beside a pass.
  *
  * jsdom performs no navigation at all when the target resolves to the URL the document
  * is already on, so an *empty* attempt list is itself an exact assertion about the
@@ -114,32 +118,43 @@ describe('GfDashboardToolbarComponent', () => {
    */
   const JSDOM_NAVIGATION_REPORT = 'Not implemented: navigation';
 
+  /**
+   * The sanitized marker the bar reports when the arrangement could not be stored
+   * on the way out. Named once, because two tests provoke it deliberately and both
+   * have to declare it as expected.
+   */
+  const SIGN_OUT_FLUSH_FAILED_REPORT =
+    'GF-DASHBOARD-LAYOUT-SIGN-OUT-FLUSH-FAILED';
+
   let component: GfDashboardToolbarComponent;
   let fixture: ComponentFixture<GfDashboardToolbarComponent>;
 
   /**
-   * The data facade, deliberately exposing two methods and no more.
+   * The data facade, deliberately exposing four methods and no more.
    *
    * This is load-bearing rather than economical. Saving an arrangement is the
    * canvas's responsibility and is triggered only by grid state changing; this
    * bar has no part in it. Exchanging an access token belongs to the signed-out
    * component the canvas renders instead of its body, and this bar renders only
-   * for a resolved viewer. Because the facade offered here answers nothing but
-   * deployment info and a settings write, any attempt from this component to
-   * reach either capability would raise a `TypeError` and fail the suite
-   * outright, which turns both separations from a claim into a structural
-   * property of the harness.
+   * for a resolved viewer. Because the facade offered here answers neither
+   * question, any attempt from this component to reach either capability raises a
+   * `TypeError` - and, since every report reaching `console.error` is now
+   * collected and asserted empty after each test, that `TypeError` fails the
+   * provoking test by name instead of being logged and passed over. That is what
+   * turns both separations from a claim into a structural property of the harness.
    *
-   * The two optional search accessors are supplied by - and only by - the group
-   * that mounts the *real* assistant, which issues those reads itself. They are
-   * declared optional rather than required precisely so that the guarantee above
-   * survives: neither names a layout write nor a token exchange, and every other
-   * test in this suite still receives a facade without them.
+   * The two search accessors are part of that harness rather than an exception to
+   * it. A menu builds the nodes handed to it with the view that declares them, so
+   * the *real* assistant is instantiated whenever there is a viewer entitled to
+   * it, and opening the assistant - which any test sweeping the bar's controls
+   * does - makes the assistant issue those two reads itself. Answering them here
+   * costs the guarantee nothing: neither names a layout write nor a token
+   * exchange, which are the two capabilities this facade exists to withhold.
    */
   let dataServiceMock: {
-    fetchAccounts?: jest.Mock;
+    fetchAccounts: jest.Mock;
     fetchInfo: jest.Mock;
-    fetchPortfolioHoldings?: jest.Mock;
+    fetchPortfolioHoldings: jest.Mock;
     putUserSetting: jest.Mock;
   };
 
@@ -198,6 +213,26 @@ describe('GfDashboardToolbarComponent', () => {
 
   let consoleErrorSpy: jest.SpyInstance;
   let consoleWarnSpy: jest.SpyInstance;
+
+  /**
+   * Every report that reached `console.error` and was not jsdom refusing to
+   * navigate.
+   *
+   * Asserted empty after each test, minus whatever that test declared in
+   * {@link expectedErrorReports}, so an error raised anywhere inside an Angular
+   * event listener fails the test that provoked it rather than merely appearing in
+   * the output.
+   */
+  let errorReports: string[];
+
+  /**
+   * Sanitized markers a test provokes on purpose, declared by that test.
+   *
+   * Only two behaviours belong here - the sign-out flush failing, and the viewer
+   * being told about it - and both are what those tests are about. Anything not
+   * named is a failure.
+   */
+  let expectedErrorReports: string[];
 
   let navigationAttempts: string[];
 
@@ -282,6 +317,8 @@ describe('GfDashboardToolbarComponent', () => {
 
   beforeEach(async () => {
     callOrder = [];
+    errorReports = [];
+    expectedErrorReports = [];
     fixture = undefined;
     navigationAttempts = [];
     temporaryElements = [];
@@ -294,29 +331,30 @@ describe('GfDashboardToolbarComponent', () => {
     // exact statement about the address that was assigned.
     document.documentElement.lang = 'en';
 
-    // Asserted rather than inferred: `Function.prototype.bind` widens its result
-    // to `any`, which would make every forwarded report an unchecked call. The
-    // assertion is on the expression rather than the binding so that the value
-    // being stored is typed too, not merely the name it is stored under.
-    const reportError = console.error.bind(console) as (
-      ...args: unknown[]
-    ) => void;
-
     consoleErrorSpy = jest
       .spyOn(console, 'error')
       .mockImplementation((...args: unknown[]) => {
-        const [detail] = args;
-
-        // Recognised by its shape rather than with `instanceof`. jsdom raises
-        // this from its own realm, so `detail instanceof Error` is false for the
-        // very object that arrives even though an error is precisely what it is -
-        // measured, not assumed, and narrowing that way silently stops matching.
-        const report =
-          Object.prototype.toString.call(detail) === '[object Error]'
-            ? (detail as Error).message
-            : typeof detail === 'string'
-              ? detail
-              : '';
+        // Every argument is folded into the report, not just the first, and that
+        // matters for exactly one caller: Angular's own `ErrorHandler` logs
+        // `'ERROR'` followed by the error object, so reading the first argument
+        // alone would record the word `ERROR` and lose the message that says which
+        // member was missing - the whole diagnostic value of collecting these.
+        //
+        // Errors are recognised by their shape rather than with `instanceof`. jsdom
+        // raises its report from its own realm, so `detail instanceof Error` is
+        // false for the very object that arrives even though an error is precisely
+        // what it is - measured, not assumed, and narrowing that way silently stops
+        // matching.
+        const report = args
+          .map((detail) => {
+            return Object.prototype.toString.call(detail) === '[object Error]'
+              ? `${(detail as Error).name}: ${(detail as Error).message}`
+              : typeof detail === 'string'
+                ? detail
+                : `[${typeof detail}]`;
+          })
+          .join(' ')
+          .trim();
 
         if (report.includes(JSDOM_NAVIGATION_REPORT)) {
           callOrder.push('navigate');
@@ -325,7 +363,16 @@ describe('GfDashboardToolbarComponent', () => {
           return;
         }
 
-        reportError(...args);
+        // Collected rather than forwarded, and then asserted empty after every
+        // test. Forwarding printed the report and let the test pass, which is
+        // exactly what defeated this harness's own guarantee: Angular catches
+        // anything thrown inside an event listener and hands it to its
+        // `ErrorHandler`, which reports it here - so a `TypeError` raised by this
+        // bar reaching a capability the facade withholds was logged and survived.
+        // A sweep over the bar's controls did raise one. Collecting instead makes
+        // every unexpected report fail the provoking test by name, which is the
+        // difference between a documented separation and an enforced one.
+        errorReports.push(report);
       });
 
     impersonationSubject = new BehaviorSubject<string>(null);
@@ -356,7 +403,14 @@ describe('GfDashboardToolbarComponent', () => {
     };
 
     dataServiceMock = {
+      // Answered for every test rather than only for the group that searches,
+      // because the assistant is built with the view that declares it and issues
+      // both reads the moment its panel opens. A sweep over this bar's controls
+      // opens it, so a facade without these two turned that sweep into an
+      // unhandled `TypeError` inside an Angular event listener.
+      fetchAccounts: jest.fn().mockReturnValue(of({ accounts: [] })),
       fetchInfo: jest.fn().mockReturnValue(createInfo()),
+      fetchPortfolioHoldings: jest.fn().mockReturnValue(of({ holdings: [] })),
       putUserSetting: jest.fn().mockReturnValue(of({} as User))
     };
 
@@ -434,6 +488,14 @@ describe('GfDashboardToolbarComponent', () => {
   });
 
   afterEach(() => {
+    // Asserted before the spy is handed back, so the message a failure produces
+    // names the report rather than a restored spy. A failing expectation in a hook
+    // fails the test it ran for, which is what makes "any error this bar provokes
+    // fails the suite" true of listener-raised errors as well.
+    const unexpectedReports = errorReports.filter((report) => {
+      return !expectedErrorReports.some((marker) => report.includes(marker));
+    });
+
     consoleErrorSpy.mockRestore();
 
     document.documentElement.lang = originalDocumentLanguage;
@@ -441,6 +503,8 @@ describe('GfDashboardToolbarComponent', () => {
     for (const element of temporaryElements) {
       element.remove();
     }
+
+    expect(unexpectedReports).toEqual([]);
   });
 
   describe('creation', () => {
@@ -690,18 +754,16 @@ describe('GfDashboardToolbarComponent', () => {
     };
 
     beforeEach(() => {
-      // Only the searches the real assistant issues need answering; the bar itself
-      // reaches neither accessor. Added to the existing doubles rather than to new
-      // ones so that every other test in this suite keeps the collaborators it had.
+      // The market-data search is the one collaborator only this group needs: the
+      // assistant reaches for it once a search is under way, which no other test
+      // starts. Added to the existing double rather than to a new one so that every
+      // other test in this suite keeps the collaborators it had. The two portfolio
+      // searches are answered by the base facade instead, because the assistant
+      // issues those the moment its panel opens - which any test sweeping this
+      // bar's controls does.
       adminServiceMock.fetchAdminMarketData = jest
         .fn()
         .mockReturnValue(of({ count: 0, marketData: [] }));
-      dataServiceMock.fetchAccounts = jest
-        .fn()
-        .mockReturnValue(of({ accounts: [] }));
-      dataServiceMock.fetchPortfolioHoldings = jest
-        .fn()
-        .mockReturnValue(of({ holdings: [] }));
 
       received = [];
       revealModuleSubject.subscribe((intent) => received.push(intent));
@@ -895,6 +957,64 @@ describe('GfDashboardToolbarComponent', () => {
    * tests assert against the DOM the template actually produces, which is the only
    * place that is visible.
    */
+  /**
+   * The bar is a landmark, and it is the one this application lost.
+   *
+   * The deleted shell wrapped its chrome in a `<header>` element, which is a banner
+   * landmark for nothing more than being one. A `mat-toolbar` renders a plain `div`,
+   * so collapsing the shell left the finished page exposing only `main` and the module
+   * regions - measured as five landmarks with no banner among them - and took away the
+   * shortcut that gets a reader from anywhere on the canvas back to the controls.
+   */
+  describe('the bar as a landmark', () => {
+    it('should expose itself as the page banner', () => {
+      createComponent();
+      renderWithUser();
+
+      const toolbar = host().querySelector('mat-toolbar');
+
+      expect(toolbar).toBeTruthy();
+      expect(toolbar.getAttribute('role')).toBe('banner');
+    });
+
+    /**
+     * Declared as a role rather than by wrapping the bar in a `<header>`, because a
+     * `<header>` here would NOT be a banner: the element maps to that role only when
+     * it has no sectioning ancestor, and this bar renders inside the shell's `<main>`.
+     * The explicit role applies wherever it is written.
+     */
+    it('should declare that role rather than rely on an element', () => {
+      createComponent();
+      renderWithUser();
+
+      expect(host().querySelector('header')).toBeNull();
+      expect(host().querySelector('mat-toolbar[role="banner"]')).toBeTruthy();
+    });
+
+    // A landmark with no name is announced as its type alone, and this page carries
+    // several regions: the name is what makes the bar addressable by what it does.
+    it('should name that landmark', () => {
+      createComponent();
+      renderWithUser();
+
+      expect(
+        host().querySelector('mat-toolbar').getAttribute('aria-label')
+      ).toBe('Dashboard controls');
+    });
+
+    // The bar renders as empty chrome until the viewer resolves, and the landmark has
+    // to be there for that whole time: a reader jumping to it before the arrangement
+    // arrives must not find nothing at all.
+    it('should be a landmark before the viewer has arrived', () => {
+      createComponent();
+
+      const toolbar = host().querySelector('mat-toolbar');
+
+      expect(toolbar.getAttribute('role')).toBe('banner');
+      expect(toolbar.getAttribute('aria-label')).toBe('Dashboard controls');
+    });
+  });
+
   describe('the operable surface of the bar', () => {
     /**
      * Every control in the bar, in document order.
@@ -1216,6 +1336,107 @@ describe('GfDashboardToolbarComponent', () => {
 
       expect(userServiceMock.get).toHaveBeenCalledTimes(1);
       expect(userServiceMock.get).toHaveBeenCalledWith(true);
+    });
+  });
+
+  /**
+   * The appearance choice the control bar is specified to carry.
+   *
+   * It is the one capability of that specification the bar did not have: the setting
+   * existed, but the only control for it lived inside the account-settings screen, so
+   * a viewer switching the canvas between light and dark had to navigate away from
+   * the canvas to do it - and on one canvas there is nowhere to navigate to.
+   *
+   * The rows render inside a `MatMenu`, which portals its content into an overlay
+   * outside this component's host, so these tests drive the handler and read the
+   * menu's own template through the component rather than through `host()`. The rows'
+   * markup is asserted from the template source for the same reason.
+   */
+  describe('the appearance choice', () => {
+    const templateSource = () => {
+      return readFileSync(join(__dirname, 'dashboard-toolbar.html'), 'utf8');
+    };
+
+    it('offers exactly the three values the setting has', () => {
+      expect(component.colorSchemeOptions).toEqual([
+        { label: 'Auto', value: null },
+        { label: 'Light', value: 'LIGHT' },
+        { label: 'Dark', value: 'DARK' }
+      ]);
+    });
+
+    it('stores a chosen scheme through the setting the rest of the bar writes', () => {
+      renderWithUser();
+
+      component.onChangeColorScheme('DARK');
+
+      expect(dataServiceMock.putUserSetting).toHaveBeenCalledTimes(1);
+      expect(dataServiceMock.putUserSetting).toHaveBeenCalledWith({
+        colorScheme: 'DARK'
+      });
+    });
+
+    /**
+     * `null` is a VALUE, not a missing argument: it is how the absence of a preference
+     * is stored, and storing it is what puts the canvas back under the operating
+     * system's control. Sending nothing at all would leave the previous choice in
+     * place, so `Auto` would be the one option that did nothing.
+     */
+    it('clears the stored scheme for Auto rather than sending nothing', () => {
+      renderWithUser();
+
+      component.onChangeColorScheme(null);
+
+      expect(dataServiceMock.putUserSetting).toHaveBeenCalledWith({
+        colorScheme: null
+      });
+    });
+
+    // Re-reading the viewer is what makes the choice visible: the shell paints from
+    // the viewer's `colorScheme` whenever the viewer changes. Nothing here touches a
+    // document class, so there is one mechanism rather than two.
+    it('re-reads the viewer so the shell repaints from the stored value', () => {
+      renderWithUser();
+
+      userServiceMock.get.mockClear();
+
+      component.onChangeColorScheme('LIGHT');
+
+      expect(userServiceMock.get).toHaveBeenCalledTimes(1);
+      expect(userServiceMock.get).toHaveBeenCalledWith(true);
+    });
+
+    it('applies no theme of its own', () => {
+      renderWithUser();
+
+      const classesBefore = document.body.className;
+
+      component.onChangeColorScheme('DARK');
+
+      expect(document.body.className).toBe(classesBefore);
+    });
+
+    // Three radios rather than a two-state switch, because the third value is not a
+    // state of the other two - and announced as radios, so the current choice is
+    // spoken rather than left to the shape of a glyph.
+    it('announces the rows as a named radio group', () => {
+      const source = templateSource();
+
+      expect(source).toContain('role="group"');
+      expect(source).toContain('aria-label="Appearance"');
+      expect(source).toContain('role="menuitemradio"');
+      expect(source).toContain('[attr.aria-checked]');
+    });
+
+    it('marks exactly the stored value as the checked row', () => {
+      const source = templateSource();
+
+      // Coalesced, because the stored absence of a preference is `undefined` on a
+      // viewer that has never chosen and `null` in the option list; without this the
+      // Auto row would be checked for nobody.
+      expect(source).toContain(
+        'option.value === (user?.settings?.colorScheme ?? null)'
+      );
     });
   });
 
@@ -1617,6 +1838,11 @@ describe('GfDashboardToolbarComponent', () => {
     });
 
     it('tells the viewer when the arrangement could not be stored', () => {
+      // Declared, because this test provokes the failure it is about: the
+      // sanitized marker below is expected output rather than an escaped error,
+      // and naming it here is what keeps every *other* report a failure.
+      expectedErrorReports.push(SIGN_OUT_FLUSH_FAILED_REPORT);
+
       dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
         throwError(() => new Error('flush failed'))
       );
@@ -1627,11 +1853,14 @@ describe('GfDashboardToolbarComponent', () => {
 
       // Told, not left to guess. Leaving in silence would let the viewer believe
       // an arrangement they can still see had been saved, and the failure is
-      // reported through the sanitized channel as well so it is diagnosable.
+      // reported through the sanitized channel as well so it is diagnosable - and
+      // that report carries the marker and nothing else, no stored value and no
+      // identity.
       expect(notificationServiceMock.alert).toHaveBeenCalledTimes(1);
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'GF-DASHBOARD-LAYOUT-SIGN-OUT-FLUSH-FAILED'
+        SIGN_OUT_FLUSH_FAILED_REPORT
       );
+      expect(errorReports).toEqual([SIGN_OUT_FLUSH_FAILED_REPORT]);
 
       // Nothing has happened yet: the departure waits on the acknowledgement.
       expect(userServiceMock.signOut).not.toHaveBeenCalled();
@@ -1639,6 +1868,9 @@ describe('GfDashboardToolbarComponent', () => {
     });
 
     it('still lets the viewer leave once they acknowledge the failure', () => {
+      // Same deliberate failure as above, so the same marker is declared here.
+      expectedErrorReports.push(SIGN_OUT_FLUSH_FAILED_REPORT);
+
       dashboardLayoutServiceMock.releasePendingSave.mockReturnValue(
         throwError(() => new Error('flush failed'))
       );
@@ -1758,16 +1990,29 @@ describe('GfDashboardToolbarComponent', () => {
     });
 
     it('offers no way to reach an arrangement store, or a token exchange', () => {
-      // The facade this component is given answers two questions and no others.
-      // Any attempt to reach a persistence method - or to exchange an access
-      // token, which belongs to the signed-out component the canvas renders
-      // instead of its body - would raise a TypeError and fail this suite, so
-      // both separations are properties of the harness rather than assertions
-      // about intent.
-      expect(Object.keys(dataServiceMock)).toEqual([
+      // The facade this component is given answers exactly these four questions.
+      // Two are the bar's own - deployment info and a settings write - and two
+      // belong to the assistant the bar projects, which issues them itself.
+      //
+      // What is absent is the point. Reaching a persistence method, or exchanging
+      // an access token - which belongs to the signed-out component the canvas
+      // renders instead of its body - raises a `TypeError`, and because every
+      // report reaching `console.error` is collected and asserted empty after each
+      // test, that `TypeError` fails the provoking test by name. Both separations
+      // are therefore properties of the harness rather than assertions about
+      // intent. The two forbidden capabilities are named as well as omitted, so a
+      // future addition to the facade cannot quietly enable one of them while this
+      // list is updated to match.
+      expect(Object.keys(dataServiceMock).sort()).toEqual([
+        'fetchAccounts',
         'fetchInfo',
+        'fetchPortfolioHoldings',
         'putUserSetting'
       ]);
+      expect(Object.keys(dataServiceMock)).not.toContain(
+        'patchUserDashboardLayout'
+      );
+      expect(Object.keys(dataServiceMock)).not.toContain('loginAnonymous');
     });
 
     it('offers no sign-in flow of its own', () => {

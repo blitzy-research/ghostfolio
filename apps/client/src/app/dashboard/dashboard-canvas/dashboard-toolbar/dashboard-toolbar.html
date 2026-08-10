@@ -1,4 +1,24 @@
-<mat-toolbar class="px-0">
+<!--
+  `role="banner"` restores the landmark the deleted shell used to provide: the
+  chrome was wrapped in a `<header>` element there, and a `mat-toolbar` renders a
+  plain `<div>`, so collapsing the shell left the page with `main` and the module
+  regions as its only landmarks and no way to jump to the controls. The role is
+  declared explicitly rather than by wrapping this in a `<header>`, because a
+  `<header>` inside the router outlet is NOT a banner - the element maps to that
+  role only while it has no sectioning ancestor, and this bar has `<main>` above
+  it - whereas the explicit role applies wherever it is written.
+
+  Named, because a landmark without a name is announced only as its type, and
+  this page carries several regions: the name is what makes the bar addressable
+  by what it does. The wording says `controls` rather than naming the product,
+  because the bar acts on the arrangement rather than identifying the site.
+-->
+<mat-toolbar
+  aria-label="Dashboard controls"
+  class="px-0"
+  i18n-aria-label
+  role="banner"
+>
   <!--
     Only the signed-in half of the control surface lives here: the signed-out
     state is a sibling component the canvas renders in place of the canvas body,
@@ -283,6 +303,60 @@
             }
             <hr class="m-0" />
           }
+          <!--
+            The appearance choice, which the control bar is specified to carry and
+            which the deleted shell never had: the setting existed and was reachable
+            only from inside the account-settings screen, so switching the canvas
+            between light and dark meant navigating away from it. On one canvas there
+            is nowhere to navigate to, which is what makes this belong on the bar.
+
+            Three radio rows rather than a two-state switch, because the setting has
+            three values and the third is not a state of the other two: `Auto` is the
+            absence of a stored preference, under which the canvas follows the
+            operating system and keeps following it as that changes. A toggle would
+            have to either hide that value or misrepresent it as one of the others.
+
+            `menuitemradio` with `aria-checked`, exactly as the identity rows above
+            do, so the current choice is announced rather than left to the shape of a
+            glyph; and wrapped in a named `group`, which is the structure ARIA
+            prescribes for a set of radios inside a menu and is what gives the three
+            rows a heading a reader can hear. The wrapper does not disturb the menu's
+            own keyboard order: Material resolves its items by their parent menu, not
+            by their DOM depth.
+
+            It writes through the same `PUT /api/v1/user/setting` call the rest of
+            this bar uses and then re-reads the viewer, which is what re-applies the
+            theme - the shell already watches the viewer's `colorScheme` and paints
+            from it. Nothing here touches the document classes itself, so there is one
+            mechanism rather than two.
+          -->
+          <hr class="m-0" />
+          <div aria-label="Appearance" i18n-aria-label role="group">
+            @for (option of colorSchemeOptions; track option.value) {
+              <button
+                mat-menu-item
+                role="menuitemradio"
+                [attr.aria-checked]="
+                  option.value === (user?.settings?.colorScheme ?? null)
+                "
+                (click)="onChangeColorScheme(option.value)"
+              >
+                <span class="align-items-center d-flex">
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    [name]="
+                      option.value === (user?.settings?.colorScheme ?? null)
+                        ? 'radio-button-on-outline'
+                        : 'radio-button-off-outline'
+                    "
+                  />
+                  <span>{{ option.label }}</span>
+                </span>
+              </button>
+            }
+          </div>
+          <hr class="m-0" />
           <button i18n mat-menu-item (click)="onSignOut()">Log out</button>
         </mat-menu>
       </li>

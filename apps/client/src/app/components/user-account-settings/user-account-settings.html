@@ -215,23 +215,25 @@
           />
         </div>
       </div>
-      <div class="d-flex mt-4 py-1">
-        <div class="pr-1 w-50">
-          <div i18n>Zen Mode</div>
-          <div class="hint-text text-muted" i18n>
-            Distraction-free experience for turbulent times
-          </div>
-        </div>
-        <div class="pl-1 w-50">
-          <mat-slide-toggle
-            color="primary"
-            hideIcon="true"
-            [checked]="user.settings.viewMode === 'ZEN'"
-            [disabled]="!hasPermissionToUpdateViewMode"
-            (change)="onViewModeChange($event)"
-          />
-        </div>
-      </div>
+      <!--
+        The Zen Mode toggle was removed here rather than left disabled.
+
+        Zen Mode was a NAVIGATION mode: the setting existed so that a guard could
+        send a viewer to a stripped-down screen instead of the full one. With one
+        canvas there is no second screen to be sent to, so the toggle had become a
+        switch that saved a value and changed nothing a viewer could see - which is
+        worse than an absent control, because it promises a distraction-free
+        experience and silently fails to deliver one.
+
+        What replaces it is the canvas itself: a viewer who wants less on screen
+        removes modules, and that arrangement is what is now persisted per user.
+
+        Only the CONTROL is gone. `Settings.viewMode` is still stored, still
+        returned by the API and still writable through `PATCH /api/v1/user/setting`,
+        and the `updateViewMode` permission is untouched - so nothing is migrated,
+        nothing is dropped from anyone's account, and the value is still there for a
+        future surface that wants it.
+      -->
       <div class="align-items-center d-flex mt-4 py-1">
         <div class="pr-1 w-50">
           <div i18n>Biometric Authentication</div>

@@ -84,8 +84,24 @@ export class AdminService {
     );
   }
 
+  /**
+   * Coalesced through the sibling facade's register, because the callers are
+   * structurally simultaneous rather than occasionally unlucky: the admin
+   * overview and the admin settings both read this document on init, and on a
+   * canvas that mounts whatever the viewer has arranged the two are routinely on
+   * screen together - so each pairing was previously one duplicate request. The
+   * asset-profile dialogs read it too, and can be opened over either of them.
+   *
+   * Safe to share by construction: the response is handed back exactly as it
+   * arrived, with no mapping to re-run and nothing rewritten in place, and every
+   * caller reads it without modifying it.
+   *
+   * The read is joined only while it is OUTSTANDING - the register drops the entry
+   * as soon as it settles - so `initialize()` re-reading after a setting is written
+   * still reaches the server, which is exactly what that caller needs.
+   */
   public fetchAdminData() {
-    return this.http.get<AdminData>('/api/v1/admin');
+    return this.dataService.coalesceGet<AdminData>('/api/v1/admin');
   }
 
   public fetchAdminMarketData({

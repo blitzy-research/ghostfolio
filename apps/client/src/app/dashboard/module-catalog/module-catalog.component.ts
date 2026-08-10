@@ -96,6 +96,10 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
 
   public modules: DashboardModuleDefinition[] = [];
 
+  // What the live region at the foot of the template holds. Empty until a term has
+  // been typed - see the comment on that region.
+  public searchAnnouncement = '';
+
   public searchFormControl = new FormControl<string>('');
 
   // The one row in the tab order. The list is a roving-tabindex composite, so
@@ -125,34 +129,35 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
   // through them with the arrow keys without leaving the field.
   @HostListener('keydown', ['$event'])
   public onKeydown(event: KeyboardEvent) {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      if (!this.keyManager) {
-        return;
-      }
-
-      this.removeFocusFromModuleCatalogItems();
-
-      this.keyManager.onKeydown(event);
-
-      const currentItem = this.getCurrentModuleCatalogItem();
-
-      this.tabbableIndex = Math.max(this.keyManager.activeItemIndex ?? 0, 0);
-
-      if (currentItem?.rowElement) {
-        currentItem.rowElement.nativeElement?.scrollIntoView({
-          block: 'nearest'
-        });
-      }
-
+    if (!this.isListNavigationKey(event) || !this.keyManager) {
       return;
+    }
+
+    this.removeFocusFromModuleCatalogItems();
+
+    this.keyManager.onKeydown(event);
+
+    const currentItem = this.getCurrentModuleCatalogItem();
+
+    this.tabbableIndex = Math.max(this.keyManager.activeItemIndex ?? 0, 0);
+
+    if (currentItem?.rowElement) {
+      currentItem.rowElement.nativeElement?.scrollIntoView({
+        block: 'nearest'
+      });
     }
   }
 
   // Deferred to `AfterViewInit` because `FocusKeyManager` needs a populated
   // `QueryList`; `withWrap` makes the list circular so arrowing past either end
-  // continues rather than stopping dead.
+  // continues rather than stopping dead, and `withHomeAndEnd` adds the two jumps
+  // the WAI-ARIA listbox and menu patterns both expect. Without the latter,
+  // reaching the last row of this catalog took fifteen ArrowDown presses and Home
+  // and End did nothing at all.
   public ngAfterViewInit() {
-    this.keyManager = new FocusKeyManager(this.moduleCatalogItems).withWrap();
+    this.keyManager = new FocusKeyManager(this.moduleCatalogItems)
+      .withHomeAndEnd()
+      .withWrap();
   }
 
   public ngOnInit() {
@@ -267,6 +272,33 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
       });
   }
 
+  /**
+   * Whether a key press belongs to the ROW LIST rather than to the search field.
+   *
+   * The arrow keys always do. In a single-line text field they move nothing - a
+   * caret has nowhere vertical to go - so taking them for the list costs the field
+   * nothing and is what lets a viewer step through the rows while still typing.
+   *
+   * Home and End are the opposite case, and this is the whole reason this predicate
+   * exists rather than one more key in the condition above: in a text field they move
+   * the caret to the start and the end of what has been typed, so claiming them
+   * unconditionally would take that away - and `ListKeyManager` calls
+   * `preventDefault()` on the keys it handles, so the caret would not move even by
+   * the browser's own default. They are therefore the list's only when the press did
+   * not come from the field.
+   */
+  private isListNavigationKey(event: KeyboardEvent): boolean {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      return true;
+    }
+
+    if (event.key !== 'End' && event.key !== 'Home') {
+      return false;
+    }
+
+    return event.target !== this.searchField?.nativeElement;
+  }
+
   private getCurrentModuleCatalogItem() {
     return this.moduleCatalogItems?.find(({ getHasFocus }) => {
       return getHasFocus;
@@ -313,6 +345,38 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
 
     this.tabbableIndex = 0;
 
+    this.searchAnnouncement = this.describeResultCount(
+      modules.length,
+      this.getSearchTerm()
+    );
+
     this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * How many rows a search left, said once per settled result set.
+   *
+   * Three forms rather than one with a number in it, because a count of one is a
+   * different sentence in most languages and interpolating a numeral into a plural
+   * gives translators no way to write either correctly.
+   *
+   * The empty string for an empty term is the whole of the guard: this is the only
+   * caller-visible difference between the list being narrowed and the list simply
+   * being the catalog.
+   */
+  private describeResultCount(aCount: number, aSearchTerm: string): string {
+    if (!aSearchTerm) {
+      return '';
+    }
+
+    if (aCount === 0) {
+      return $localize`No modules match ${aSearchTerm}:searchTerm:`;
+    }
+
+    if (aCount === 1) {
+      return $localize`1 module matches ${aSearchTerm}:searchTerm:`;
+    }
+
+    return $localize`${aCount}:count: modules match ${aSearchTerm}:searchTerm:`;
   }
 }

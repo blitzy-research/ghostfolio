@@ -3,21 +3,29 @@ import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { getQualifiedDashboardModuleName } from '@ghostfolio/common/dashboard';
+import { ConfirmationDialogType } from '@ghostfolio/common/enums';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import {
   DashboardModuleLayoutItem,
   User,
   UserDashboardLayout
 } from '@ghostfolio/common/interfaces';
 import { hasPermission } from '@ghostfolio/common/permissions';
+import { GfLogoComponent } from '@ghostfolio/ui/logo';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 
+import { CdkScrollable } from '@angular/cdk/scrolling';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
+  AfterViewInit,
   ChangeDetectionStrategy,
   ChangeDetectorRef,
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
   ElementRef,
+  NgZone,
   OnDestroy,
   OnInit,
   QueryList,
@@ -34,7 +42,7 @@ import { Gridster, GridsterItem } from 'angular-gridster2';
 import type { GridsterConfig, GridsterItemConfig } from 'angular-gridster2';
 import { StatusCodes } from 'http-status-codes';
 import { addIcons } from 'ionicons';
-import { closeOutline, gridOutline } from 'ionicons/icons';
+import { alertCircleOutline, closeOutline, gridOutline } from 'ionicons/icons';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { Subject } from 'rxjs';
 
@@ -42,6 +50,7 @@ import { DashboardModuleType } from '../enums/dashboard-module-type';
 import type {
   DashboardLayoutItem,
   DashboardModuleDefinition,
+  DashboardModuleGeometry,
   DashboardModuleGeometryStep
 } from '../interfaces/interfaces';
 import { GfModuleCatalogComponent } from '../module-catalog/module-catalog.component';
@@ -52,7 +61,8 @@ import {
   DEFAULT_DROP_PREVIEW_COLS,
   DEFAULT_DROP_PREVIEW_ROWS,
   GRID_COLUMNS,
-  GRID_ROWS
+  GRID_ROWS,
+  MODULE_CONTENT_CLASS
 } from './dashboard-canvas.config';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host/dashboard-module-host.component';
 import { GfDashboardToolbarComponent } from './dashboard-toolbar/dashboard-toolbar.component';
@@ -61,11 +71,32 @@ import { GfSignInPromptComponent } from './sign-in-prompt/sign-in-prompt.compone
 
 // Widened at declaration because `HttpErrorResponse.status` is a plain number,
 // which keeps the comparison free of an enum-comparison lint report and a cast.
+const CONFLICT_STATUS: number = StatusCodes.CONFLICT;
 const UNAUTHORIZED_STATUS: number = StatusCodes.UNAUTHORIZED;
 
 // The only document shape this build can interpret. Anything else is refused
 // rather than rewritten in an older shape.
 const SUPPORTED_LAYOUT_VERSION = 1;
+
+// A one-pixel slack for the canvas edge marks, because `scrollHeight`,
+// `clientHeight` and `scrollTop` are rounded independently and a fractional
+// layout otherwise reports a permanent overflow of well under a pixel. The same
+// value the module chrome uses for the same measurement.
+const CANVAS_OVERFLOW_TOLERANCE = 1;
+
+// The floor every module shares, and the bound a stored entry is brought inside
+// when this build has no definition to measure it against - see
+// {@link GfDashboardCanvasComponent.createCanonicalModules}. Stated as a
+// definition-shaped value so the one normalizer serves both cases.
+const GLOBAL_MODULE_MINIMUM = {
+  minItemCols: 2,
+  minItemRows: 2
+} as Pick<DashboardModuleDefinition, 'minItemCols' | 'minItemRows'>;
+
+// Reported when a stored arrangement names more modules than the canvas could
+// resolve. Spelled to match the server's own event for the same situation on the
+// read path, so one search finds both halves of the round trip.
+const LAYOUT_ITEMS_DROPPED_EVENT = 'GF-DASHBOARD-LAYOUT-ITEMS-DROPPED';
 
 /**
  * The single canvas the root route resolves to.
@@ -88,9 +119,19 @@ const SUPPORTED_LAYOUT_VERSION = 1;
   // the overrides need this extra class to outweigh them.
   host: { class: 'gf-gridster' },
   imports: [
+    // Registers the grid's own scrolling element with the CDK's `ScrollDispatcher`.
+    // Nothing here scrolls differently as a result; what changes is that overlays
+    // are told about it. Material positions a menu, tooltip or autocomplete once
+    // and then repositions it on scroll events the dispatcher reports - and the
+    // dispatcher only knows about ancestors that opted in. The document itself no
+    // longer scrolls on this screen, so without this the dispatcher had nothing to
+    // report and every overlay stayed pinned to the coordinate its trigger
+    // occupied at the moment it opened, while the trigger itself travelled away.
+    CdkScrollable,
     GfDashboardModuleHostComponent,
     GfDashboardToolbarComponent,
     GfEmptyCanvasStateComponent,
+    GfLogoComponent,
     GfModuleCatalogComponent,
 
     // Referenced ONLY inside the template's `@defer` block, which is what lets
@@ -111,7 +152,9 @@ const SUPPORTED_LAYOUT_VERSION = 1;
   styleUrls: ['./dashboard-canvas.scss'],
   templateUrl: './dashboard-canvas.html'
 })
-export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
+export class GfDashboardCanvasComponent
+  implements AfterViewInit, OnDestroy, OnInit
+{
   @ViewChildren(GfDashboardModuleHostComponent)
   public moduleHosts: QueryList<GfDashboardModuleHostComponent>;
 
@@ -123,10 +166,37 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   @ViewChild('catalogDrawer', { read: ElementRef })
   private catalogDrawer: ElementRef<HTMLElement>;
 
+  // Present only while the capacity notice is, so every read of it is guarded.
+  // Referenced solely to answer whether it is holding focus at the moment it is
+  // dismissed, which decides whether focus has to be handed on.
+  @ViewChild('capacityNoticeDismiss', { read: ElementRef })
+  private capacityNoticeDismiss: ElementRef<HTMLElement>;
+
+  // The drawer container's content pane, which is the canvas's INLINE-axis
+  // scrollport - a different element from the engine's host, which is the
+  // block-axis one.
+  @ViewChild('canvasPane', { read: ElementRef })
+  private canvasPane: ElementRef<HTMLElement>;
+
   @ViewChild(GfModuleCatalogComponent)
   private moduleCatalog: GfModuleCatalogComponent;
 
+  // Whether the canvas is scrolled away from, or continues past, its own top and
+  // bottom edge. User placement is never auto-compacted, so an arrangement whose
+  // upper modules have been removed leaves a tall empty band with the remainder
+  // below the fold - and this platform paints overlay scrollbars, so nothing else
+  // says so.
+  public hasCanvasOverflowAbove = false;
+
+  public hasCanvasOverflowBelow = false;
+
   public hasCapacityError = false;
+
+  // Set when a write was REFUSED rather than failed: another client of the same
+  // account saved while this one was editing. Distinct from a save error because
+  // the recovery is a choice rather than a retry - see the notice this drives in
+  // `dashboard-canvas.html`.
+  public hasConflict = false;
 
   // An unreadable arrangement is not an empty one. Reporting it as empty would
   // open the catalog as though this were a first visit and let the next module
@@ -135,6 +205,27 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   public hasLayoutError = false;
 
   public hasSaveError = false;
+
+  // Whether the failed read was a document this build cannot interpret, as
+  // opposed to a request that did not land. Only the former is worth offering a
+  // discard for, and only the latter is worth offering a retry for - so the two
+  // are tracked apart even though they draw the same card.
+  public isLayoutUnreadable = false;
+
+  // Raised while a discard is in flight, so the control cannot be pressed twice
+  // and reports that it is working.
+  public isDiscardingLayout = false;
+
+  /**
+   * Whether the visitor arrived back from a federated sign-in that produced no
+   * identity.
+   *
+   * Latched from the address once on initialization rather than derived from it,
+   * because the parameter is removed immediately afterwards - a value read from the
+   * URL would disappear along with it. It survives until the visitor navigates
+   * away or signs in, which is exactly as long as the sentence is true.
+   */
+  public hasSignInError = false;
 
   public hasViewerError = false;
 
@@ -176,14 +267,89 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   // outlives its grid.
   private gridsterResizeObserver: ResizeObserver | null = null;
 
+  // The engine's own host, which is the canvas scrollport. Held so the scroll
+  // listener can be removed from the exact element it was added to, since this
+  // canvas outlives its grid.
+  private gridsterScrollElement: HTMLElement | null = null;
+
+  // The host box the grid observer last asked the engine to lay out at.
+  //
+  // Held here rather than read back off the engine because the engine's own
+  // `curWidth`/`curHeight` are a measurement cache that any caller of
+  // `setGridDimensions()` refreshes without laying anything out - see the long
+  // note in {@link observeGridsterViewport}. `null` means this observer has not
+  // acted yet, so its first notification always does.
+  private lastObservedGridsterHeight: number | null = null;
+
+  private lastObservedGridsterWidth: number | null = null;
+
+  private isCanvasOverflowCheckScheduled = false;
+
   private focusRestorationHandle: number | undefined;
 
-  // Whether the current open was asked for by the viewer, which cannot be read
-  // off the open flag. A requested open should pull focus into the panel; an
-  // open the canvas offers unprompted must not, because it would take the caret
-  // off a viewer who is reading. The unprompted sites set the open flag
-  // directly.
-  private hasCatalogFocusOrigin = false;
+  // Where focus was when the panel opened, so it can be handed back when the
+  // panel closes. `null` is a real answer and not an absence: it is what an open
+  // the canvas offered unprompted records, because nothing was focused, and the
+  // close path answers it with the floating trigger.
+  //
+  // There used to be a companion flag distinguishing a viewer-requested open
+  // from an unprompted one, and only the requested one moved focus into the
+  // panel. That made the panel behave differently depending on how it had opened
+  // - auto-opened, it appeared with its search field unfocused and unringed;
+  // opened from the trigger, focused and ringed - which is the same control
+  // giving two different accounts of itself. Every open now moves focus the same
+  // way. It is not a theft in the unprompted case either: that case is a canvas
+  // with nothing on it, so the search field is the only thing there is to do, and
+  // the control bar remains one Shift+Tab behind.
+
+  // A refill of the live region that has not landed yet - see {@link announce}.
+  private announcementHandle: number | undefined;
+
+  /**
+   * The geometry each module was last known to hold, keyed by module type.
+   *
+   * It exists to answer two questions the grid engine's change callback cannot: what
+   * KIND of change just happened, since the engine reports a move and a resize
+   * through the same hook and carries no before-state; and whether this is a change
+   * at all rather than a module's first arrival, since an item being placed reports
+   * a change before it reports its first paint.
+   *
+   * Announcement bookkeeping only. Nothing reads it to decide what to draw, what to
+   * persist or where anything sits - grid state remains the sole authority on
+   * geometry - and it is written in exactly two places: a module's first paint, and
+   * the change that follows one.
+   */
+  private readonly announcedGeometry = new Map<string, string>();
+
+  /**
+   * Set for the remainder of the current task once a pointer-driven geometry change
+   * has been announced.
+   *
+   * One gesture can settle more than one module: dragging a card onto an occupied
+   * cell swaps the two, and the engine reports both. It reports the module the
+   * viewer was dragging FIRST and the one it displaced second - `makeDrag` commits
+   * its own item before it commits the swapped one - so keeping the first
+   * announcement of each task keeps the one about the module the viewer actually
+   * had hold of, rather than replacing it with news about a module they never
+   * touched.
+   *
+   * Cleared on a microtask, which is enough: the engine's follow-up reports are
+   * raised synchronously from the same commit, and the next gesture cannot begin
+   * before the current task ends.
+   */
+  private hasAnnouncedGeometryChange = false;
+
+  // Set only while a keyboard step is being pushed through the engine, so the
+  // engine's own report of that step is not announced ahead of - and then again
+  // by - the step itself. See {@link applyGeometryStep}.
+  private isApplyingGeometryStep = false;
+
+  // The one module region currently held still for a resize gesture, kept so the
+  // hold can be undone on exactly the element it was taken on - the engine
+  // reports the end of a gesture with the same component it reported the start
+  // with, but the element is what the hold was written to. Null whenever no
+  // resize is in flight, which is the normal state.
+  private resizingContentElement: HTMLElement | null = null;
 
   private catalogFocusOrigin: HTMLElement | null = null;
 
@@ -193,6 +359,15 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   // correction travels through the engine and is reported back through the
   // handler that requested it. See {@link clampRunawayPlacement}.
   private isClampingPlacement = false;
+
+  /**
+   * Raised while the engine settles a freshly applied arrangement, during which a
+   * reported change is recorded but never written. See
+   * {@link beginHydrationSettle} for why that window has to exist.
+   */
+  private isHydrationSettling = false;
+
+  private hydrationSettleHandle: number | undefined;
 
   // The arrangement in full, including modules with no cell because they are
   // not currently permitted. `applyLayout` places only what the viewer may see,
@@ -240,11 +415,13 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     private layoutService: LayoutService,
     private moduleRegistryService: GfModuleRegistryService,
+    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
-    private userService: UserService
+    private userService: UserService,
+    private zone: NgZone
   ) {
-    addIcons({ closeOutline, gridOutline });
+    addIcons({ alertCircleOutline, closeOutline, gridOutline });
 
     this.options = createDashboardCanvasConfig({
       onEmptyCellDrop: (event, item) => this.handleEmptyCellDrop(event, item),
@@ -253,9 +430,22 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
         this.gridster = gridster;
 
         this.observeGridsterViewport(gridster);
+
+        // The first moment the question can be answered at all. Availability is a
+        // question for the ENGINE - which footprints still fit - so before this
+        // there is nobody to ask, and the arrangement it is being asked about has
+        // not changed since it was read, so the change path does not ask either.
+        // Without this the flags stayed empty from hydration until the panel
+        // happened to open, which meant a saturated canvas described itself as
+        // having room for everything for as long as nobody looked.
+        this.refreshCatalogAvailability();
       },
+      onItemGeometryChange: (item) => this.handleItemGeometryChange(item),
       onItemInit: (item) => this.handleItemInit(item),
-      onLayoutChange: () => this.notifyLayoutChange()
+      onLayoutChange: () => this.notifyLayoutChange(),
+      onResizeGestureEnd: () => this.handleResizeGestureEnd(),
+      onResizeGestureStart: (itemComponent) =>
+        this.handleResizeGestureStart(itemComponent)
     });
 
     this.isPublicPortfolio = this.isSharedPortfolioRequest(
@@ -278,6 +468,14 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.reloadPlacedModules();
+
+        // Every module on the canvas discards its content and fetches it again,
+        // which for a viewer is the whole screen blinking through skeletons and
+        // for a reader was nothing at all: the control that started it reports
+        // only its own name, and the arrangement it acts on is elsewhere. Said
+        // once for the canvas rather than once per module, because one gesture
+        // happened.
+        this.announce($localize`Refreshing the dashboard`);
       });
 
     this.dashboardLayoutService.identityTransition$
@@ -291,6 +489,15 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((hasSaveError) => {
         this.hasSaveError = hasSaveError;
+
+        this.changeDetectorRef.markForCheck();
+      });
+
+    this.dashboardLayoutService
+      .getHasConflict()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((hasConflict) => {
+        this.hasConflict = hasConflict;
 
         this.changeDetectorRef.markForCheck();
       });
@@ -320,20 +527,85 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       });
   }
 
+  /**
+   * Whether there is a viewer to draw the authenticated surface for.
+   *
+   * Derived rather than stored, so it cannot fall out of step with the viewer it
+   * describes. The distinction it draws is between the two things the canvas
+   * waits for: `undefined` is "nobody has answered yet", which is the only state
+   * with nothing at all to draw, while a viewer in hand means the control bar and
+   * everything else independent of the arrangement can be drawn immediately -
+   * whether or not the arrangement itself has arrived, which {@link
+   * isInitialized} is what reports.
+   *
+   * A signed-out answer nulls the viewer and a shared portfolio never asks for
+   * one, so both of those states are excluded by this alone; a failed viewer read
+   * leaves the previous viewer in place and is excluded by its own branch, which
+   * the template puts first.
+   */
+  public get hasResolvedViewer(): boolean {
+    return !!this.user;
+  }
+
   public get placedModuleTypes(): DashboardModuleType[] {
     return this.modules.map(({ moduleType }) => moduleType);
+  }
+
+  public ngAfterViewInit() {
+    // The first point at which the pane's element exists to be observed; the grid
+    // initializes before this. See {@link observeCanvasPane}.
+    this.observeCanvasPane();
+  }
+
+  /**
+   * Whether the stored arrangement holds entries this canvas is not drawing.
+   *
+   * Two things put an entry in that position and both are retained on purpose: a
+   * module the viewer is not currently permitted to see, and a module type this
+   * build does not recognise. Retaining them is what stops a lapsed subscription or
+   * a renamed module from deleting a saved module - but it also means the stored
+   * document can hold entries the viewer can neither see nor reach, and an
+   * arrangement nobody can act on is not one they own.
+   *
+   * This is what the discard control keys on, so that "start over" is offered
+   * exactly where there is something invisible to start over from and nowhere else.
+   */
+  public get hasUnrenderableModules(): boolean {
+    const definitions = this.getDefinitionsByModuleType();
+
+    return this.canonicalModules.some(({ moduleType }) => {
+      const definition = definitions.get(moduleType);
+
+      return !definition || !this.isModulePermitted(definition);
+    });
   }
 
   public ngOnDestroy() {
     this.gridsterResizeObserver?.disconnect();
     this.gridsterResizeObserver = null;
+
+    this.lastObservedGridsterHeight = null;
+    this.lastObservedGridsterWidth = null;
+
     this.gridster = null;
+
+    this.releaseGridsterScroll();
+
+    // Dropped rather than released: a canvas torn down mid-gesture takes the
+    // element with it, so there is nothing left to hand sizing back to and only
+    // the reference to let go of.
+    this.resizingContentElement = null;
 
     window.clearTimeout(this.focusRestorationHandle);
     this.focusRestorationHandle = undefined;
+
+    window.clearTimeout(this.announcementHandle);
+    this.announcementHandle = undefined;
   }
 
   public ngOnInit() {
+    this.adoptSignInError();
+
     this.clearJwtQueryParam();
 
     this.resolveViewer();
@@ -405,14 +677,102 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     }
   }
 
-  public onOpenCatalog() {
-    this.captureCatalogFocusOrigin();
+  // Clears the notice and nothing else. It writes no layout, touches no module
+  // and does not close the catalog: the refusal it reported has already happened,
+  // and dismissing a message about it is not an instruction to do anything about
+  // it. The live-region sentence is cleared with it so a screen reader is not
+  // left able to re-read an answer the viewer has retired.
+  /**
+   * Dismissing the notice removes the button that dismissed it, so the focus it
+   * was holding has to be handed somewhere before the element carrying it goes
+   * away. Left alone the browser drops focus to the document body, and the next
+   * Tab then restarts from the top of the page - not a trap, since focus can
+   * still be moved, but it costs a keyboard viewer their position for no reason,
+   * and this is the one control here that can only be reached deliberately.
+   *
+   * Read BEFORE the flag is cleared, because that is the only moment the button
+   * is still connected and still the active element; afterwards the `@if`
+   * removes it and the answer is always no. Moved synchronously rather than
+   * deferred for the same reason - the destination is already in the document,
+   * so it can take focus while the notice is still standing, which is what stops
+   * the drop happening at all rather than repairing it afterwards.
+   *
+   * The floating trigger is the destination on the same grounds it is the
+   * fallback everywhere else in this component: it is the one control nothing the
+   * viewer does to the arrangement can remove, and it is what raised the
+   * add-a-module intent this notice is answering, so focus lands back where the
+   * interaction began.
+   */
+  public onDismissCapacityNotice() {
+    const dismiss = this.capacityNoticeDismiss?.nativeElement;
 
+    const hadFocus =
+      !!dismiss && dismiss.ownerDocument?.activeElement === dismiss;
+
+    this.hasCapacityError = false;
+
+    this.canvasAnnouncement = '';
+
+    this.changeDetectorRef.markForCheck();
+
+    if (hadFocus) {
+      this.catalogTrigger?.nativeElement.focus();
+    }
+  }
+
+  public onOpenCatalog() {
     this.setCatalogOpen(true);
+  }
+
+  /**
+   * Discards the stored arrangement and starts again from an empty canvas.
+   *
+   * The escape from a document this build cannot interpret, and the only way to
+   * clear entries the canvas is holding but cannot draw. It is deliberately NOT a
+   * layout write: nothing is stored, so this cannot invent an arrangement, and the
+   * single-write-origin rule - a layout is written only as the result of a grid
+   * state change - is untouched. That distinction is the whole reason the endpoint
+   * behind it is a DELETE.
+   *
+   * Behind a confirmation because it is irreversible and destructive, and the
+   * viewer is the only one who can weigh that: the stored document may be perfectly
+   * good and merely newer than this build.
+   */
+  public onDiscardLayout() {
+    if (this.isDiscardingLayout) {
+      return;
+    }
+
+    this.notificationService.confirm({
+      confirmFn: () => {
+        this.discardLayout();
+      },
+      confirmLabel: $localize`Discard`,
+      confirmType: ConfirmationDialogType.Warn,
+      message: $localize`Your saved dashboard will be permanently deleted and you will start with a blank one. This cannot be undone.`,
+      title: $localize`Start over with a blank dashboard?`
+    });
+  }
+
+  /**
+   * Takes the arrangement another client of this account saved, discarding the one
+   * this canvas is holding.
+   *
+   * A re-read rather than a merge: a layout is a whole document, and the two
+   * candidates differ in ways only the viewer can adjudicate. The retained snapshot
+   * is dropped first, so nothing later flushes the arrangement just abandoned.
+   */
+  public onReloadLayoutAfterConflict() {
+    this.dashboardLayoutService.dismissConflict();
+
+    this.hasConflict = false;
+
+    this.onRetryLayout();
   }
 
   public onRetryLayout() {
     this.hasLayoutError = false;
+    this.isLayoutUnreadable = false;
     this.isInitialized = false;
 
     this.modules.length = 0;
@@ -424,8 +784,67 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.hydrateLayout();
   }
 
+  // Keeps what is on screen and writes it over the newer document, which the
+  // layout service expresses by dropping the revision this arrangement was built
+  // on. The canvas neither rebuilds nor re-projects the arrangement: the snapshot
+  // the service is already holding is the one the viewer is looking at.
+  public onOverwriteLayoutAfterConflict() {
+    this.dashboardLayoutService.overwriteAfterConflict();
+  }
+
   public onRetrySave() {
     this.dashboardLayoutService.retryFailedSave();
+  }
+
+  /**
+   * Leaves a failed read behind and gives the viewer an empty canvas to arrange.
+   *
+   * The state this recovers from is reachable and is not always transient. A
+   * stored document the server refuses - an envelope it cannot read, or a version
+   * discriminator from a build ahead of this one, which is precisely what the
+   * version field exists to allow - fails identically on every attempt, so a
+   * retry is not a way out of it. Without this the arrangement, the catalog and
+   * the catalog trigger are all withheld, and the only remedies left are signing
+   * out or having somebody repair the row: the write that would fix it succeeds
+   * at the endpoint and was simply unreachable from the screen.
+   *
+   * **It performs no write, and that is the whole design.** A layout may be
+   * persisted only as the consequence of a grid state change, so an action here
+   * that emptied the arrangement and sent it would be a second write origin - and
+   * the one origin able to destroy a document this component never managed to
+   * read. Instead it resets what this component holds and hands the canvas back:
+   * the stored document survives untouched until the viewer places their first
+   * module, and it is that placement - an ordinary engine callback - that reports
+   * the new arrangement through the one write path. So the destruction is the
+   * viewer's own act, taken after being told what happened, rather than a
+   * side-effect of pressing a button labelled recovery.
+   *
+   * `lastReportedLayout` is seeded with the fingerprint of the empty arrangement
+   * for the same reason: leaving it stale would let the next incidental engine
+   * notification - a viewport measurement, say - read as a change and write an
+   * empty document before the viewer had placed anything.
+   *
+   * The catalog is opened because an empty canvas with the panel shut offers
+   * nothing to do, which is the same reason a first visit opens it. `hasSaveError`
+   * is cleared as well: a failure surface belonging to a previous arrangement has
+   * nothing to say about this one, and its retry would offer a snapshot for an
+   * arrangement that is no longer on screen.
+   */
+  public onStartBlankDashboard() {
+    this.hasLayoutError = false;
+    this.hasCapacityError = false;
+
+    this.canonicalModules = [];
+    this.modules.length = 0;
+
+    this.lastReportedLayout = this.createLayoutFingerprint();
+
+    this.dashboardLayoutService.discardFailedSave();
+
+    this.isCatalogOpen = true;
+    this.isInitialized = true;
+
+    this.changeDetectorRef.markForCheck();
   }
 
   public onRetryViewer() {
@@ -460,8 +879,10 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       return;
     }
 
+    this.endHydrationSettle();
+
     const definition = this.getModuleDefinition(aItem.moduleType);
-    const name = definition?.name ?? aItem.moduleType;
+    const name = this.getQualifiedModuleName(aItem.moduleType);
 
     // Resolved BEFORE the array is touched, while the removed module's chrome
     // is still in the query and its neighbours are still either side of it.
@@ -471,10 +892,22 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     this.hasCapacityError = false;
 
-    this.canvasAnnouncement = $localize`${name}:moduleName: removed from the dashboard`;
+    this.announce($localize`${name}:moduleName: removed from the dashboard`);
+
+    // The module is gone, so what the grid last reported about it describes
+    // nothing. Left behind, it would make the same module - added again later at a
+    // different size - look like a module that had been resized.
+    this.announcedGeometry.delete(aItem.moduleType);
 
     if (this.modules.length === 0) {
-      this.isCatalogOpen = true;
+      // Through the funnel rather than by assignment, so an arrangement that went
+      // empty opens the panel by exactly the same route the trigger does - which
+      // is what makes the panel record a focus origin, move focus into the panel
+      // and answer which rows can be added, in this case as well. The origin the
+      // funnel records here is the removed module's own menu, which is about to be
+      // detached; the close path checks connectivity and falls back to the
+      // floating trigger, so nothing is stranded.
+      this.setCatalogOpen(true);
     }
 
     this.changeDetectorRef.markForCheck();
@@ -495,13 +928,7 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   public onToggleCatalog() {
-    const isOpening = !this.isCatalogOpen;
-
-    if (isOpening) {
-      this.captureCatalogFocusOrigin();
-    }
-
-    this.setCatalogOpen(isOpening);
+    this.setCatalogOpen(!this.isCatalogOpen);
   }
 
   // A switch of account is handled in this order: the canvas is suspended
@@ -590,6 +1017,10 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     aItem: DashboardLayoutItem,
     aGeometry: Pick<DashboardLayoutItem, 'cols' | 'rows' | 'x' | 'y'>
   ) {
+    // Viewer intent, so any settle window still open belongs to an arrangement
+    // that has already been drawn and must not swallow this.
+    this.endHydrationSettle();
+
     const itemComponent = this.gridster?.getItemComponent(aItem);
 
     if (!itemComponent) {
@@ -609,50 +1040,212 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     workingItem.x = aGeometry.x;
     workingItem.y = aGeometry.y;
 
-    itemComponent.setSize();
-    itemComponent.checkItemChanges(workingItem, previousGeometry);
+    // The engine reports an accepted change through `itemChangeCallback` from
+    // inside the call below, and that report is announced on its own account so
+    // that a pointer drag is not silent. Here it would be an announcement of the
+    // same change one step before this method makes a better one - it knows only
+    // the outcome, while this knows what was ASKED for, which is the whole of the
+    // difference between "moved to column 1" and "cannot be moved left". The flag
+    // stands the engine's report down for exactly the duration of the call.
+    this.isApplyingGeometryStep = true;
+
+    try {
+      itemComponent.setSize();
+      itemComponent.checkItemChanges(workingItem, previousGeometry);
+    } finally {
+      this.isApplyingGeometryStep = false;
+    }
 
     const isAccepted =
       aItem.cols === aGeometry.cols &&
       aItem.rows === aGeometry.rows &&
       aItem.x === aGeometry.x &&
       aItem.y === aGeometry.y;
-    const isResize =
-      aGeometry.cols !== previousGeometry.cols ||
-      aGeometry.rows !== previousGeometry.rows;
 
-    this.announceGeometry(aItem, isAccepted, isResize);
+    this.announceGeometry(aItem, previousGeometry, aGeometry, isAccepted);
 
     this.changeDetectorRef.markForCheck();
   }
 
-  private announceGeometry(
-    aItem: DashboardLayoutItem,
-    aIsAccepted: boolean,
-    aIsResize: boolean
-  ) {
-    const name =
-      this.getModuleDefinition(aItem.moduleType)?.name ?? aItem.moduleType;
+  /**
+   * Writes one sentence to the canvas's live region, and is the only thing that
+   * writes to it.
+   *
+   * A live region is announced when its contents CHANGE, so writing the same
+   * sentence twice says nothing the second time - and the sentence a viewer is most
+   * likely to hear twice is the one that reports a refusal, because holding an arrow
+   * key against the edge of the grid produces it on every press. Measured before
+   * this existed: 11 announcements across 19 presses, so 9 presses were silent, and
+   * each of those was a press the viewer had no way of knowing had been received.
+   *
+   * A repeat is therefore emptied first and refilled a task later, which turns one
+   * message into two changes. The refill has to be a separate task: both halves
+   * inside one task are coalesced into whatever the DOM holds when it next paints,
+   * and the accessibility tree only ever sees that final value - so the clear would
+   * be invisible and nothing would have changed after all.
+   *
+   * A message that DIFFERS from the standing one is written straight through, with
+   * no clear and no deferral. That keeps the common case immediate, keeps the region
+   * from flickering through empty on every announcement, and keeps this method
+   * synchronous from the caller's point of view wherever it can be.
+   *
+   * A pending refill is cancelled by the next call, so the last message wins and two
+   * of them can never arrive out of order.
+   */
+  private announce(aMessage: string) {
+    window.clearTimeout(this.announcementHandle);
+    this.announcementHandle = undefined;
 
-    if (!aIsAccepted) {
-      this.canvasAnnouncement = aIsResize
-        ? $localize`${name}:moduleName: cannot be resized any further`
-        : $localize`${name}:moduleName: cannot be moved any further`;
+    if (this.canvasAnnouncement !== aMessage) {
+      this.canvasAnnouncement = aMessage;
+
+      this.changeDetectorRef.markForCheck();
 
       return;
     }
 
-    this.canvasAnnouncement = aIsResize
-      ? $localize`${name}:moduleName: resized to ${aItem.cols}:columns: columns by ${aItem.rows}:rows: rows`
-      : $localize`${name}:moduleName: moved to column ${aItem.x + 1}:column:, row ${aItem.y + 1}:row:`;
+    this.canvasAnnouncement = '';
+
+    this.changeDetectorRef.markForCheck();
+
+    this.announcementHandle = window.setTimeout(() => {
+      this.announcementHandle = undefined;
+
+      this.canvasAnnouncement = aMessage;
+
+      this.changeDetectorRef.markForCheck();
+    });
+  }
+
+  /**
+   * Reports what happened to one module's geometry, in the terms the viewer asked
+   * in rather than the terms the engine answered in.
+   *
+   * Both the requested geometry and the one it started from are taken, because
+   * neither the engine's report nor the resulting item can say what was WANTED -
+   * and a refusal is only useful if it names the direction that was refused. `cannot
+   * be moved any further` was the same sentence for all four arrow keys and all four
+   * resize gestures, which is both uninformative and, said twice in a row, inaudible.
+   */
+  private announceGeometry(
+    aItem: DashboardLayoutItem,
+    aPreviousGeometry: DashboardModuleGeometry,
+    aRequestedGeometry: DashboardModuleGeometry,
+    aIsAccepted: boolean
+  ) {
+    const name = this.getQualifiedModuleName(aItem.moduleType);
+
+    const deltaCols = aRequestedGeometry.cols - aPreviousGeometry.cols;
+    const deltaRows = aRequestedGeometry.rows - aPreviousGeometry.rows;
+    const isResize = deltaCols !== 0 || deltaRows !== 0;
+
+    if (aIsAccepted) {
+      this.announce(
+        isResize
+          ? $localize`${name}:moduleName: resized to ${aItem.cols}:columns: columns by ${aItem.rows}:rows: rows`
+          : $localize`${name}:moduleName: moved to column ${aItem.x + 1}:column:, row ${aItem.y + 1}:row:`
+      );
+
+      return;
+    }
+
+    this.announce(
+      isResize
+        ? this.describeRefusedResize(name, deltaCols, deltaRows)
+        : this.describeRefusedMove(
+            name,
+            aRequestedGeometry.x - aPreviousGeometry.x,
+            aRequestedGeometry.y - aPreviousGeometry.y
+          )
+    );
+  }
+
+  /**
+   * The four directions an arrow key can be refused in, each saying so.
+   *
+   * `there is no room` rather than naming an edge, because a refusal has two causes
+   * that a viewer cannot tell apart and does not need to: the module is against the
+   * boundary of the grid, or another module is already in the cells it asked for.
+   * Both mean the same thing to the person pressing the key, and claiming an edge
+   * that was really a neighbour would be wrong half the time - the arrangement this
+   * was measured against refuses a rightward step on a module sitting in column 1.
+   */
+  private describeRefusedMove(
+    aName: string,
+    aDeltaX: number,
+    aDeltaY: number
+  ): string {
+    if (aDeltaX < 0) {
+      return $localize`${aName}:moduleName: cannot be moved left: there is no room`;
+    }
+
+    if (aDeltaX > 0) {
+      return $localize`${aName}:moduleName: cannot be moved right: there is no room`;
+    }
+
+    if (aDeltaY < 0) {
+      return $localize`${aName}:moduleName: cannot be moved up: there is no room`;
+    }
+
+    return $localize`${aName}:moduleName: cannot be moved down: there is no room`;
+  }
+
+  /**
+   * The four ways a resize can be refused.
+   *
+   * A shrink and a growth are refused for different reasons and are told apart here.
+   * Shrinking can only ever be stopped by the module's own declared minimum -
+   * nothing collides on the way in - so that refusal names the minimum, which is the
+   * one fact the viewer needs and cannot see. Growing can be stopped by the width of
+   * the grid or by a neighbour, so it says what a refused move says.
+   */
+  private describeRefusedResize(
+    aName: string,
+    aDeltaCols: number,
+    aDeltaRows: number
+  ): string {
+    if (aDeltaCols < 0) {
+      return $localize`${aName}:moduleName: is already as narrow as it goes`;
+    }
+
+    if (aDeltaCols > 0) {
+      return $localize`${aName}:moduleName: cannot be made wider: there is no room`;
+    }
+
+    if (aDeltaRows < 0) {
+      return $localize`${aName}:moduleName: is already as short as it goes`;
+    }
+
+    return $localize`${aName}:moduleName: cannot be made taller: there is no room`;
+  }
+
+  // The qualified form the module chrome and the catalog rows show, because an
+  // announcement that names a module has to name the one the viewer can see: two
+  // registry entries are titled `Settings` and two are titled `Markets`, so a
+  // message saying only `Settings` names either of them. Falls back to the stored
+  // discriminator for a module type this build does not know, which is the only
+  // name such a module has.
+  private getQualifiedModuleName(aModuleType: DashboardModuleType): string {
+    return (
+      getQualifiedDashboardModuleName(this.getModuleDefinition(aModuleType)) ??
+      aModuleType
+    );
+  }
+
+  // The same thing for a definition already in hand, which the placement path has
+  // and which is not necessarily in the registry's own map - a definition can reach
+  // that path from a catalog emission.
+  private qualifyDefinitionName(
+    aDefinition: DashboardModuleDefinition
+  ): string {
+    return (
+      getQualifiedDashboardModuleName(aDefinition) ?? aDefinition.moduleType
+    );
   }
 
   private applyLayout(aLayout: UserDashboardLayout | null) {
     if (aLayout && !this.isReadableLayout(aLayout)) {
-      this.hasLayoutError = true;
-      this.isInitialized = true;
-
-      this.changeDetectorRef.markForCheck();
+      this.markLayoutUnreadable();
 
       return;
     }
@@ -663,15 +1256,101 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     this.applyNewItemReveal(false);
 
+    // Opened BEFORE the items reach the template, because the engine settles them
+    // during the very change-detection pass that draws them.
+    this.beginHydrationSettle();
+
     this.modules.length = 0;
     this.modules.push(...items);
 
     this.lastReportedLayout = this.createLayoutFingerprint();
 
     if (this.modules.length === 0) {
-      this.isCatalogOpen = true;
+      // Through the funnel rather than by assignment, so an arrangement that went
+      // empty opens the panel by exactly the same route the trigger does - which
+      // is what makes the panel record a focus origin and answer which rows can
+      // be added, in this case as well.
+      this.setCatalogOpen(true);
     }
 
+    this.isInitialized = true;
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Suppresses layout WRITES - and only writes - while the grid engine settles an
+   * arrangement this component has just applied.
+   *
+   * A stored arrangement is normalized on the way in, but normalization cannot
+   * resolve collisions: an entry whose coordinate was out of range is clamped, and
+   * a clamped entry can land on top of a neighbour. The engine notices that as it
+   * admits each cell - `addItem` runs its collision check and auto-positions the
+   * loser - and reports the correction through the same change callback a drag
+   * reports through. So the arrangement genuinely differs from the one recorded a
+   * moment earlier, and the write path, working exactly as designed, wrote it back.
+   *
+   * The consequence was severe and completely silent: merely OPENING a dashboard
+   * that needed normalizing issued a PATCH as the last request of the page load,
+   * with no interaction of any kind - and that PATCH carried the arrangement this
+   * client had made of the document rather than the document itself. Every entry it
+   * had dropped as a duplicate was dropped from storage too, permanently.
+   *
+   * Retaining unrecognised entries (see {@link createCanonicalModules}) fixes what
+   * such a write would DESTROY; this fixes the write happening at all. Both are
+   * needed: hydration must not write, and a write must not lose entries.
+   *
+   * The window closes on the next macrotask, which is after the change-detection
+   * pass that mounts the cells and after the engine's own debounced layout pass. It
+   * also closes eagerly at the first thing the viewer does - see
+   * {@link endHydrationSettle} - so no genuine intent can ever be inside it, however
+   * the scheduling turns out.
+   *
+   * A change reported while the window is open is still RECORDED: the fingerprint
+   * and the canonical arrangement are both brought up to date, so the correction is
+   * what the next genuine edit persists. That matches how normalization already
+   * behaved - a correction reaches the server when the viewer next changes
+   * something themselves, and not before.
+   */
+  private beginHydrationSettle() {
+    window.clearTimeout(this.hydrationSettleHandle);
+
+    this.isHydrationSettling = true;
+
+    this.hydrationSettleHandle = window.setTimeout(() => {
+      this.hydrationSettleHandle = undefined;
+      this.isHydrationSettling = false;
+    });
+  }
+
+  // Called at the start of every path that expresses viewer intent, so an
+  // interaction can never be swallowed by a settle window that has outlived the
+  // arrangement it was opened for.
+  private endHydrationSettle() {
+    if (!this.isHydrationSettling) {
+      return;
+    }
+
+    window.clearTimeout(this.hydrationSettleHandle);
+
+    this.hydrationSettleHandle = undefined;
+    this.isHydrationSettling = false;
+  }
+
+  /**
+   * Records that the stored arrangement cannot be interpreted at all, as distinct
+   * from a read that merely failed.
+   *
+   * The two states share a card but not their affordances, and that is the whole
+   * point: a failed read is worth asking again, while a document this build does
+   * not understand will be the same document on the next request - so offering only
+   * a retry left the viewer pressing a control that provably could not succeed. The
+   * server states which it is, with a 409 for the unreadable case, and the client
+   * keeps that distinction rather than flattening both into "something went wrong".
+   */
+  private markLayoutUnreadable() {
+    this.hasLayoutError = true;
+    this.isLayoutUnreadable = true;
     this.isInitialized = true;
 
     this.changeDetectorRef.markForCheck();
@@ -712,7 +1391,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.modules.push(...retained, ...admitted);
 
     if (this.modules.length === 0) {
-      this.isCatalogOpen = true;
+      // Through the funnel rather than by assignment, so an arrangement that went
+      // empty opens the panel by exactly the same route the trigger does - which
+      // is what makes the panel record a focus origin and answer which rows can
+      // be added, in this case as well.
+      this.setCatalogOpen(true);
     }
 
     this.canonicalModules = this.mergeCanonicalModules();
@@ -823,6 +1506,38 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     });
   }
 
+  /**
+   * Takes up the failure the API's federated callbacks report, and removes it from
+   * the address.
+   *
+   * Compared against the one value the contract defines rather than tested for
+   * presence, and never rendered: this arrives in a URL anybody can write, so
+   * displaying what it said would let a link put an arbitrary sentence on the
+   * sign-in card. Anything else is treated as absent, which makes a forged or
+   * mistyped parameter inert rather than merely harmless.
+   *
+   * Cleared the same way the token is - merged, so sibling parameters survive, and
+   * with `replaceUrl` so the failure does not become its own history entry that
+   * Back or a restored tab would replay as a fresh one. The flag is latched first,
+   * because the removal is what makes reading the URL again impossible.
+   */
+  private adoptSignInError() {
+    const { signInError }: GfAppQueryParams = this.route.snapshot.queryParams;
+
+    if (signInError !== 'provider') {
+      return;
+    }
+
+    this.hasSignInError = true;
+
+    void this.router.navigate([], {
+      queryParams: { signInError: null },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route,
+      replaceUrl: true
+    });
+  }
+
   // Exactly the five persisted fields, in a fixed key order, per module and in
   // placement order - the same projection the wire carries, so two arrangements
   // compare equal precisely when they would be stored identically. The explicit
@@ -866,17 +1581,50 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   }
 
   /**
-   * A discriminator the registry no longer knows and a repeated discriminator
-   * are both dropped in silence - the template's cell key could not tell the
-   * latter apart from the first. Permission is deliberately not considered,
-   * which is what separates this from {@link createLayoutItems}: an entry the
-   * viewer may not currently see has to stay or the next edit would delete it.
+   * A repeated discriminator is dropped in silence, because the template's cell
+   * key could not tell a second copy apart from the first and two entries for one
+   * module type cannot both be drawn.
+   *
+   * A discriminator the registry does not know is KEPT. That is the opposite of
+   * dropping it, and the difference is a data-integrity one: this build not
+   * recognising a module type says nothing about whether the type exists. A
+   * renamed module, a client rolled back, a build that has not shipped a module
+   * yet - each produces a stored entry this canvas cannot draw and another client
+   * can, so discarding it here would make merely OPENING the dashboard delete a
+   * module from the saved document, irreversibly and without a word. The server
+   * already takes this position deliberately: its per-item validation defers on an
+   * unknown discriminator precisely so a retired module survives the round trip.
+   *
+   * A kept entry is still brought inside the wire contract, against the GLOBAL
+   * floor rather than a declared minimum, because there is no definition to read
+   * one from. Without that a stored `cols: 99` would be retained verbatim and the
+   * next ordinary edit would be rejected by the server's own bounds - turning a
+   * harmless unrecognised entry into a dashboard that cannot be saved at all.
+   *
+   * Permission is deliberately not considered, which is what separates this from
+   * {@link createLayoutItems}: an entry the viewer may not currently see has to
+   * stay or the next edit would delete it.
    *
    * Every surviving entry is normalized, because the stored geometry is
    * whatever some earlier client wrote and the engine is never consulted for an
    * item that arrives already placed. Nothing is written as a result, so a
    * correction reaches the server only when the viewer next changes something
    * themselves.
+   *
+   * A discard is reported, once per hydration, because it is not free. What can
+   * still be discarded here is a repeated discriminator and an entry whose stored
+   * geometry describes no cell at all, and the next grid change the viewer makes
+   * persists this arrangement without it - so the loss becomes permanent on the
+   * very next drag. Nothing can be decided about that from here, and silence was
+   * the only part that was avoidable: the report is what lets somebody reading a
+   * console see that an arrangement arrived larger than it was drawn, rather than
+   * inferring it from modules that stopped appearing.
+   *
+   * What it emits is a fixed identifier and a count, deliberately mirroring the
+   * server's own `GF-USER-DASHBOARD-LAYOUT-ITEMS-DROPPED` so both halves of the
+   * round trip are searchable the same way. Not the discriminators: they come out
+   * of a stored document and can carry anything the owner's client wrote, and the
+   * console is readable by every script on the page.
    */
   private createCanonicalModules(
     aLayout: UserDashboardLayout | null
@@ -886,19 +1634,24 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
     const placedModuleTypes = new Set<string>();
 
-    for (const { cols, moduleType, rows, x, y } of aLayout?.modules ?? []) {
-      const definition = definitions.get(moduleType);
+    const storedModules = aLayout?.modules ?? [];
 
-      if (!definition || placedModuleTypes.has(moduleType)) {
+    for (const { cols, moduleType, rows, x, y } of storedModules) {
+      if (placedModuleTypes.has(moduleType)) {
         continue;
       }
 
-      const geometry = this.normalizeGeometry(definition, {
-        cols,
-        rows,
-        x,
-        y
-      });
+      const definition = definitions.get(moduleType);
+
+      const geometry = this.normalizeGeometry(
+        definition ?? GLOBAL_MODULE_MINIMUM,
+        {
+          cols,
+          rows,
+          x,
+          y
+        }
+      );
 
       if (!geometry) {
         continue;
@@ -906,7 +1659,18 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
       placedModuleTypes.add(moduleType);
 
-      modules.push({ ...geometry, moduleType: definition.moduleType });
+      modules.push({
+        ...geometry,
+        moduleType: definition?.moduleType ?? moduleType
+      });
+    }
+
+    // Counted by difference rather than incremented at each `continue`, so a
+    // discard reason added later cannot be left out of the tally.
+    const droppedCount = storedModules.length - modules.length;
+
+    if (droppedCount > 0) {
+      console.warn(`${LAYOUT_ITEMS_DROPPED_EVENT} (count ${droppedCount})`);
     }
 
     return modules;
@@ -979,6 +1743,13 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   // identity; every other first paint - and hydration produces one per saved
   // module - is ignored.
   private handleItemInit(aItem: GridsterItemConfig) {
+    // Recorded for every module's first paint, not only for a revealed one: an
+    // entry in the map is what distinguishes a module being MOVED from a module
+    // arriving, and the engine reports an auto-positioned arrival as a change
+    // before it reports the paint. Without the entry the arrival would be
+    // announced twice, once as a placement and once as a move.
+    this.recordAnnouncedGeometry(aItem);
+
     if (!this.pendingRevealItem || aItem !== this.pendingRevealItem) {
       return;
     }
@@ -988,6 +1759,148 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.pendingRevealItem = null;
 
     this.revealPlacedModule(item);
+  }
+
+  /**
+   * The engine reporting that one module's geometry changed.
+   *
+   * This is the only path a POINTER drag or resize has to an announcement: the
+   * keyboard path speaks for itself, and before this a viewer using a mouse got
+   * silence - worse, the region kept whatever it had last been told, so a reader
+   * checking it was told about something that was no longer true.
+   *
+   * The engine offers one hook for both kinds of change and hands over no
+   * before-state, so the kind is derived from what this module was last seen
+   * holding. A module with nothing recorded has just arrived, and an arrival is
+   * announced by the code that placed it; a module whose recorded geometry is
+   * unchanged has been reported without moving, which the engine does while it
+   * settles an arrangement.
+   *
+   * Nothing here writes, persists or positions anything.
+   */
+  private handleItemGeometryChange(aItem: GridsterItemConfig) {
+    const item = this.modules.find((module) => {
+      return module === aItem;
+    });
+
+    if (!item) {
+      return;
+    }
+
+    const previous = this.announcedGeometry.get(item.moduleType);
+
+    this.recordAnnouncedGeometry(item);
+
+    if (
+      this.hasAnnouncedGeometryChange ||
+      this.isApplyingGeometryStep ||
+      this.isHydrationSettling ||
+      previous === undefined ||
+      previous === this.createGeometryFingerprint(item)
+    ) {
+      return;
+    }
+
+    this.hasAnnouncedGeometryChange = true;
+
+    // Deliberately not awaited: this exists only to reopen the gate on the next
+    // microtask, once the engine has finished reporting the rest of the change it
+    // is part way through, and nothing downstream waits for it.
+    void Promise.resolve().then(() => {
+      this.hasAnnouncedGeometryChange = false;
+    });
+
+    const [cols, rows, x, y] = previous.split(':').map(Number);
+
+    this.announceGeometry(item, { cols, rows, x, y }, item, true);
+  }
+
+  /**
+   * Lets the resized module's content find its new size again, in one pass.
+   *
+   * Deliberately clears the three properties rather than restoring whatever was
+   * there before: all three are stylesheet declarations on that region, so
+   * removing the inline copies hands sizing back to the stylesheet instead of
+   * pinning a snapshot of it into the element for good.
+   */
+  private handleResizeGestureEnd() {
+    const content = this.resizingContentElement;
+
+    if (!content) {
+      return;
+    }
+
+    this.resizingContentElement = null;
+
+    content.style.removeProperty('flex-grow');
+    content.style.removeProperty('flex-shrink');
+    content.style.removeProperty('height');
+    content.style.removeProperty('width');
+  }
+
+  /**
+   * Holds the resized module's content box still for the duration of the
+   * gesture, so the module inside re-lays-out once on release instead of on
+   * every pointer move.
+   *
+   * The engine writes the CELL's width and height on each move, and the content
+   * region fills that cell - so every move otherwise reflows the whole module
+   * subtree, wakes the resize observers a charting library installs on its own
+   * container, and paints the module at a size it was never meant to be seen at.
+   * Pinning the region's own box breaks that chain at its source: the cell still
+   * follows the pointer exactly as before, while everything inside keeps the
+   * geometry it already had.
+   *
+   * All four properties are needed and none is redundant. The region is a flex
+   * item that grows and shrinks with its line, so `width` and `height` alone
+   * would be overruled by the flex algorithm in one axis and by the default
+   * cross-axis stretch in the other; taking its grow and shrink factors to zero
+   * is what removes it from that negotiation, and the `auto` basis the
+   * stylesheet already gives it then resolves to the width set here. The
+   * measurements are border-box values, read from an element the stylesheet
+   * gives `box-sizing: border-box`, so they describe the same box the
+   * properties then set.
+   *
+   * The two flex factors are written as longhands rather than as a `flex: none`
+   * shorthand, for one reason: removing a shorthand is specified to remove every
+   * longhand it set, and implementations disagree about honouring that, so a
+   * shorthand risks a hold that cannot be fully released. Longhands are removed
+   * by the same names they were set with, everywhere.
+   *
+   * @param aItemComponent the cell being resized, as reported by the engine's
+   * own `resizable.start` hook.
+   */
+  private handleResizeGestureStart(aItemComponent: GridsterItem) {
+    // A second gesture cannot begin before the first has ended, but releasing
+    // first costs nothing and is what guarantees no element is ever left pinned
+    // by a hold whose counterpart went to a different one.
+    this.handleResizeGestureEnd();
+
+    const content = aItemComponent?.el?.querySelector<HTMLElement>(
+      `.${MODULE_CONTENT_CLASS}`
+    );
+
+    // Both measurements are taken BEFORE anything is written, and that ordering
+    // is load-bearing rather than tidy: `flex: none` restores an `auto` basis,
+    // which resizes the region to its own content in the same layout pass, so a
+    // measurement taken afterwards would describe the box the hold created
+    // instead of the box it was meant to preserve.
+    const height = content?.offsetHeight;
+    const width = content?.offsetWidth;
+
+    // Nothing to hold still, and nothing is lost by declining: a region with no
+    // measurable box is one that is not laid out, so there is no reflow to
+    // avoid.
+    if (!height || !width) {
+      return;
+    }
+
+    this.resizingContentElement = content;
+
+    content.style.setProperty('flex-grow', '0');
+    content.style.setProperty('flex-shrink', '0');
+    content.style.setProperty('height', `${height}px`);
+    content.style.setProperty('width', `${width}px`);
   }
 
   private handleViewerState(aUser: User) {
@@ -1036,8 +1949,17 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       .get(force)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        error: () => {
+        error: (error: unknown) => {
           if (generation !== this.hydrationGeneration) {
+            return;
+          }
+
+          // A conflict is the server saying the stored document cannot be
+          // interpreted at all, which no retry can change. Every other failure is a
+          // request that did not land, which a retry can.
+          if (this.isConflictError(error)) {
+            this.markLayoutUnreadable();
+
             return;
           }
 
@@ -1091,6 +2013,80 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     return !!accessId && !editDialog;
   }
 
+  /**
+   * Sends the discard and rebuilds the canvas as a genuinely empty one.
+   *
+   * The order matters. Nothing is reset before the server confirms, because a
+   * failed discard must leave the viewer exactly where they were rather than
+   * showing them an empty dashboard their account does not have. Once it is
+   * confirmed the arrangement is cleared, the error state is dropped, and the
+   * catalog opens - which is precisely the first-visit state, and correct: after a
+   * discard there really is nothing saved.
+   *
+   * The array is emptied while the canvas is still in its error state and therefore
+   * still refuses writes, so the grid destroying its cells cannot report a removal
+   * as an intent to save an empty arrangement.
+   */
+  private discardLayout() {
+    this.isDiscardingLayout = true;
+
+    this.changeDetectorRef.markForCheck();
+
+    this.dashboardLayoutService
+      .discard()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        error: () => {
+          this.isDiscardingLayout = false;
+
+          this.notificationService.alert({
+            message: $localize`Please try again later.`,
+            title: $localize`Oops! Something went wrong.`
+          });
+
+          this.changeDetectorRef.markForCheck();
+        },
+        next: () => {
+          this.modules.length = 0;
+          this.canonicalModules = [];
+          this.lastReportedLayout = null;
+
+          this.hasConflict = false;
+          this.hasLayoutError = false;
+          this.isDiscardingLayout = false;
+          this.isLayoutUnreadable = false;
+
+          // Focus is moved into the panel for the same reason it is after the last
+          // module is removed: the control that was pressed lives in the error card
+          // this very assignment takes off the screen, so leaving focus where it was
+          // leaves it on a detached element and hands the document body back to the
+          // viewer. The panel this opens is the only thing there is to do next, and
+          // it is opened through the one funnel so this route behaves like every
+          // other open.
+          //
+          // The origin is dropped straight afterwards so that closing the panel
+          // again falls back to the floating trigger rather than to a button that no
+          // longer exists.
+          this.setCatalogOpen(true);
+
+          this.catalogFocusOrigin = null;
+          this.isInitialized = true;
+
+          this.changeDetectorRef.markForCheck();
+        }
+      });
+  }
+
+  // The one status that distinguishes a stored document this build cannot
+  // interpret from a request that failed to land. Narrowed on the response type as
+  // well as the status so a plain object carrying a `status` member cannot be
+  // mistaken for one.
+  private isConflictError(aError: unknown): boolean {
+    return (
+      aError instanceof HttpErrorResponse && aError.status === CONFLICT_STATUS
+    );
+  }
+
   // Only an unauthorized response means the session has ended. Treating every
   // failure as a sign-out would front the sign-in prompt because one request
   // timed out.
@@ -1104,10 +2100,18 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   /**
    * The projection that gets persisted, and it has to answer one question
    * exactly right: a canonical entry with no cell is either a module the viewer
-   * *removed*, which must be forgotten, or one they are not *permitted* to see,
-   * which must be kept. Forget the second and a lapsed subscription silently
-   * deletes modules; keep the first and a removed module comes back on the next
-   * load.
+   * *removed*, which must be forgotten, or one this client cannot currently draw,
+   * which must be kept. Forget the second and a lapsed subscription - or a module
+   * type this build does not know - silently deletes modules; keep the first and a
+   * removed module comes back on the next load.
+   *
+   * Two kinds of entry are kept, for the same reason expressed twice: an entry the
+   * viewer is not PERMITTED to see, and an entry whose module type this build does
+   * not RECOGNISE. Neither absence is evidence that the viewer wanted the module
+   * gone; both are properties of this client at this moment, and a subscription
+   * renewed or a build deployed makes them drawable again. A removal, by contrast,
+   * is something the viewer did, and it is distinguishable precisely because it
+   * takes the entry out of the canonical arrangement rather than out of the grid.
    *
    * Visible modules take their geometry from grid state, so the grid remains
    * the single authority for everything it draws.
@@ -1136,7 +2140,7 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
 
       const definition = definitions.get(moduleType);
 
-      return !!definition && !this.isModulePermitted(definition);
+      return !definition || !this.isModulePermitted(definition);
     });
 
     return [...visible, ...retainedHidden];
@@ -1216,8 +2220,23 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     // Reached only once the engine has settled the cells, which is the earliest
     // point at which asking it what still fits gives a true answer. This is not
     // a save trigger.
-    if (this.isCatalogOpen) {
-      this.refreshCatalogAvailability();
+    //
+    // Unconditional, where it used to run only while the panel was open. The
+    // flags describe the ARRANGEMENT, not the panel, and gating them on the panel
+    // meant that between a change and the next open they described an arrangement
+    // that no longer existed - so anything reading the rows in that interval, a
+    // test included, read a stale answer, and the correctness of the visible list
+    // rested on the open path happening to recompute first. The cost is one grid
+    // scan per unplaced module on a settle, and a settle is a drag, a resize, an
+    // add or a removal - viewer-paced events, not frames.
+    this.refreshCatalogAvailability();
+
+    // Everything above has run - the arrangement is recorded and the catalog knows
+    // what still fits - and only the WRITE is withheld. See
+    // {@link beginHydrationSettle}: this change is the engine settling an
+    // arrangement that was just read, not the viewer changing one.
+    if (this.isHydrationSettling) {
+      return;
     }
 
     this.layoutChange$.next();
@@ -1229,7 +2248,7 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   // footprint is settled before the origin, because the other way round would
   // settle an origin the footprint then overflows.
   private normalizeGeometry(
-    aDefinition: DashboardModuleDefinition,
+    aDefinition: Pick<DashboardModuleDefinition, 'minItemCols' | 'minItemRows'>,
     aGeometry: { cols: number; rows: number; x: number; y: number }
   ): { cols: number; rows: number; x: number; y: number } | null {
     const { cols, rows, x, y } = aGeometry;
@@ -1287,24 +2306,194 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     // {@link releaseGridster} therefore declines the outgoing destruction.
     this.gridsterResizeObserver?.disconnect();
 
+    // A fresh observer answers for a fresh grid, so what this one has acted on is
+    // nothing yet - a rebuilt grid must not be judged against the previous host's
+    // dimensions and skip its first layout.
+    this.lastObservedGridsterHeight = null;
+    this.lastObservedGridsterWidth = null;
+
     this.gridsterResizeObserver = new ResizeObserver(() => {
       const { clientHeight, clientWidth } = aGridster.el;
 
       if (
-        // The guard against feedback: `onResize` re-measures the host and
-        // writes the result back, and laying out the items can itself change
-        // the host's box, so an unconditional call would be observed as another
-        // change and recur.
-        clientHeight === aGridster.curHeight &&
-        clientWidth === aGridster.curWidth
+        // The brake against feedback: laying the items out can itself change the
+        // host's box, so an unconditional call could be observed as another
+        // change and recur. The comparison is against the box THIS observer last
+        // acted on, deliberately, and NOT against the engine's own
+        // `curWidth`/`curHeight` - which is what it used to be, and which was the
+        // bug.
+        //
+        // Those two fields are not a record of the size the current layout was
+        // computed at; they are a measurement cache that ANY caller of
+        // `setGridDimensions()` refreshes, laying nothing out. The engine's
+        // `getNextPossiblePosition()` is exactly such a caller - it looks like a
+        // read-only query and is called once per unplaced module every time the
+        // catalog's availability is recomputed, which happens as the panel opens -
+        // see {@link settleItemPosition} and {@link refreshCatalogAvailability}.
+        // So on a panel open the sequence measured in the browser was: the pane's
+        // margin is applied, the probe reads the new 1088px host and writes it
+        // into `curWidth` at dt 11-16ms while every item is still sized for
+        // 1440px, and the observer's notification arrives at dt 16-21ms, finds
+        // the two already equal, and returns without laying anything out.
+        //
+        // With the drawer animating, 24 further notifications followed and the
+        // next one corrected it, so the fault was invisible. Under
+        // `prefers-reduced-motion: reduce` the width changes exactly ONCE, so
+        // losing that notification lost everything: the grid stayed laid out for
+        // a 1440px container inside an 1088px box, four of six modules kept a
+        // 342px strip underneath the drawer, and the state was terminal -
+        // `calculateLayout()` never ran, so the engine's own
+        // `resize$ -> timer(100) -> resize()` fallback was never armed, and
+        // neither a keypress nor a minute of waiting recovered it. Only a window
+        // resize did, because the engine's own window listener calls `onResize`
+        // unguarded.
+        clientHeight === this.lastObservedGridsterHeight &&
+        clientWidth === this.lastObservedGridsterWidth
       ) {
+        // A resize the engine does not need to act on can still change whether
+        // the canvas overflows - the pane narrowing on a window too small to give
+        // the grid its width back is exactly that case - so the marks are
+        // re-measured either way.
+        this.scheduleCanvasOverflowCheck();
+
         return;
       }
 
+      this.lastObservedGridsterHeight = clientHeight;
+      this.lastObservedGridsterWidth = clientWidth;
+
       aGridster.onResize();
+
+      this.scheduleCanvasOverflowCheck();
     });
 
     this.gridsterResizeObserver.observe(aGridster.el);
+
+    this.observeCanvasPane();
+
+    this.observeGridsterScroll(aGridster.el);
+  }
+
+  /**
+   * Adds the drawer's content pane to the grid observer.
+   *
+   * Separate from {@link observeGridsterViewport}, and called again from
+   * {@link ngAfterViewInit}, because of an ordering that made it silently never
+   * happen: the engine invokes its init callback from its own `ngOnInit`, and a
+   * child directive's `ngOnInit` runs BEFORE the parent's view queries resolve, so
+   * `canvasPane` was still undefined at the only point this used to be attempted.
+   * Instrumenting the browser's own observer callbacks showed the pane's element
+   * never appearing among the observed targets at all.
+   *
+   * It has to be observed because on a window too narrow to pay for both the panel
+   * and the canvas the grid's own box does NOT change when the panel opens - its
+   * width floor holds it and the pane clips onto it instead - so the grid alone
+   * reports nothing and the edge marks would keep describing the pane size that
+   * applied before the panel opened.
+   *
+   * Observing an element twice is a no-op, so being called from both places costs
+   * nothing.
+   */
+  private observeCanvasPane() {
+    if (!this.gridsterResizeObserver || !this.canvasPane?.nativeElement) {
+      return;
+    }
+
+    this.gridsterResizeObserver.observe(this.canvasPane.nativeElement);
+  }
+
+  // The engine's host is the canvas block-axis scrollport, so its scroll position
+  // is what decides whether either edge mark is shown.
+  //
+  // Registered outside Angular, because a scroll listener on the canvas would
+  // otherwise schedule a change-detection pass for every frame of every scroll.
+  // Re-entry is deliberately narrow: only {@link applyCanvasOverflowState} steps
+  // back in, and only when an edge has actually changed.
+  private observeGridsterScroll(aElement: HTMLElement) {
+    this.releaseGridsterScroll();
+
+    this.gridsterScrollElement = aElement;
+
+    this.zone.runOutsideAngular(() => {
+      aElement.addEventListener('scroll', this.scheduleCanvasOverflowCheck, {
+        passive: true
+      });
+
+      this.scheduleCanvasOverflowCheck();
+    });
+  }
+
+  // Compared before anything is written, so a scroll that does not cross an edge
+  // costs no change detection at all - which is what makes it safe to run this
+  // from a per-frame scroll handler.
+  private applyCanvasOverflowState() {
+    const element = this.gridsterScrollElement;
+
+    const hasCanvasOverflowAbove = element
+      ? element.scrollTop > CANVAS_OVERFLOW_TOLERANCE
+      : false;
+    const hasCanvasOverflowBelow = element
+      ? element.scrollHeight - element.clientHeight - element.scrollTop >
+        CANVAS_OVERFLOW_TOLERANCE
+      : false;
+
+    if (
+      hasCanvasOverflowAbove === this.hasCanvasOverflowAbove &&
+      hasCanvasOverflowBelow === this.hasCanvasOverflowBelow
+    ) {
+      return;
+    }
+
+    // The one re-entry into Angular, taken only for an actual change.
+    this.zone.run(() => {
+      this.hasCanvasOverflowAbove = hasCanvasOverflowAbove;
+      this.hasCanvasOverflowBelow = hasCanvasOverflowBelow;
+
+      this.changeDetectorRef.markForCheck();
+    });
+  }
+
+  // Held as a field so the same reference can be added and removed as an event
+  // listener, and coalesced to one measurement per frame because the scroll
+  // listener and the size observer can both fire within a single frame.
+  private scheduleCanvasOverflowCheck = () => {
+    if (this.isCanvasOverflowCheckScheduled) {
+      return;
+    }
+
+    this.isCanvasOverflowCheckScheduled = true;
+
+    // `requestAnimationFrame` is feature-detected because this component is also
+    // instantiated under a DOM shim in tests, where the measurement is taken
+    // straight away instead.
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        this.isCanvasOverflowCheckScheduled = false;
+
+        this.applyCanvasOverflowState();
+      });
+
+      return;
+    }
+
+    this.isCanvasOverflowCheckScheduled = false;
+
+    this.applyCanvasOverflowState();
+  };
+
+  // Paired with {@link observeGridsterScroll}. The marks are cleared with the
+  // listener rather than left standing, because a canvas with no scrollport
+  // cannot be continuing past an edge.
+  private releaseGridsterScroll() {
+    this.gridsterScrollElement?.removeEventListener(
+      'scroll',
+      this.scheduleCanvasOverflowCheck
+    );
+
+    this.gridsterScrollElement = null;
+
+    this.hasCanvasOverflowAbove = false;
+    this.hasCanvasOverflowBelow = false;
   }
 
   /**
@@ -1327,26 +2516,30 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       return;
     }
 
+    this.endHydrationSettle();
+
     const placed = this.modules.find(({ moduleType }) => {
       return moduleType === aDefinition.moduleType;
     });
 
     if (placed) {
-      this.revealPlacedModule(placed);
+      this.revealExistingModule(placed);
 
       return;
     }
 
-    const item = this.createLayoutItem(aDefinition, aPosition);
+    const item = this.settleModuleFootprint(aDefinition, aPosition);
 
-    // A refusal is the engine reporting that this footprint fits nowhere left
-    // on the grid. It has to be surfaced, because the item is deliberately not
-    // added and an unreported refusal is indistinguishable from a click that
-    // did nothing.
-    if (!this.settleItemPosition(item, aPosition)) {
+    // A refusal is the engine reporting that this module fits nowhere left on
+    // the grid at either of the footprints it declares. It has to be surfaced,
+    // because the item is deliberately not added and an unreported refusal is
+    // indistinguishable from a click that did nothing.
+    if (!item) {
       this.hasCapacityError = true;
 
-      this.canvasAnnouncement = $localize`There is no room left on the dashboard for ${aDefinition.name}:moduleName:. Remove or resize a module to make space.`;
+      this.announce(
+        $localize`There is no room left on the dashboard for ${this.qualifyDefinitionName(aDefinition)}:moduleName:. Remove or resize a module to make space.`
+      );
 
       this.changeDetectorRef.markForCheck();
 
@@ -1358,9 +2551,13 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     const isRelocated =
       !!aPosition && (item.x !== aPosition.x || item.y !== aPosition.y);
 
-    this.canvasAnnouncement = isRelocated
-      ? $localize`${aDefinition.name}:moduleName: did not fit where it was dropped and was added at column ${item.x + 1}:column:, row ${item.y + 1}:row:`
-      : $localize`${aDefinition.name}:moduleName: added to the dashboard at column ${item.x + 1}:column:, row ${item.y + 1}:row:`;
+    const name = this.qualifyDefinitionName(aDefinition);
+
+    this.announce(
+      isRelocated
+        ? $localize`${name}:moduleName: did not fit where it was dropped and was added at column ${item.x + 1}:column:, row ${item.y + 1}:row:`
+        : $localize`${name}:moduleName: added to the dashboard at column ${item.x + 1}:column:, row ${item.y + 1}:row:`
+    );
 
     // Released before the cell is drawn, because the engine reads the option on
     // entry to the size computation that draws it. This is the one case the
@@ -1398,6 +2595,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     this.gridsterResizeObserver?.disconnect();
     this.gridsterResizeObserver = null;
 
+    this.lastObservedGridsterHeight = null;
+    this.lastObservedGridsterWidth = null;
+
+    this.releaseGridsterScroll();
+
     this.gridster = null;
   }
 
@@ -1423,10 +2625,67 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
       .filter((definition) => {
         return (
           !placedModuleTypes.has(definition.moduleType) &&
-          !this.settleItemPosition(this.createLayoutItem(definition))
+          !this.settleModuleFootprint(definition)
         );
       })
       .map(({ moduleType }) => moduleType);
+  }
+
+  /**
+   * Offers a module to the engine at its declared DEFAULT footprint and, if that
+   * is refused, again at its declared MINIMUM one - answering with whichever item
+   * the engine accepted, or `null` when neither fits anywhere.
+   *
+   * The second attempt is the correctness of it. A default footprint is a
+   * preference - the size a module is worth having when there is room for it -
+   * while the minimum is the contract: the size below which the module stops
+   * being usable, declared per module and enforced by grid policy. Judging
+   * capacity on the preference alone understated it, and did so visibly: a
+   * twelve-by-seven job queue was reported as having no room while a
+   * six-wide-by-seven-tall hole sat open on the grid, which its own six-by-four
+   * minimum fits twice over - proven when a different module took that exact hole
+   * moments later. A viewer was told the dashboard was full while it was not.
+   *
+   * It never goes below the minimum, so Rule 6's floor is untouched, and it never
+   * shrinks a module that fits at its default. The skip when the two footprints
+   * are equal is not an optimisation - it is what keeps a module that declares no
+   * headroom from being scanned for twice and reported on identically.
+   *
+   * Used by BOTH the add path and the catalog's availability scan, from one
+   * routine, because those two answers must not be able to disagree: a row
+   * offering to add would otherwise be refused on the click, or a row marked
+   * out of room would add when pressed.
+   *
+   * @param aPosition the cell a drop landed on; omitted for click-to-add, where
+   * the engine chooses.
+   */
+  private settleModuleFootprint(
+    aDefinition: DashboardModuleDefinition,
+    aPosition?: { x: number; y: number }
+  ): DashboardLayoutItem | null {
+    const item = this.createLayoutItem(aDefinition, aPosition);
+
+    if (this.settleItemPosition(item, aPosition)) {
+      return item;
+    }
+
+    if (
+      aDefinition.defaultItemCols === aDefinition.minItemCols &&
+      aDefinition.defaultItemRows === aDefinition.minItemRows
+    ) {
+      return null;
+    }
+
+    // A fresh item rather than the one above: the engine writes the cells it
+    // scanned onto the item it is handed even when it ends up refusing, so
+    // reusing it would start the second scan from wherever the first gave up.
+    const minimumItem: DashboardLayoutItem = {
+      ...this.createLayoutItem(aDefinition, aPosition),
+      cols: aDefinition.minItemCols,
+      rows: aDefinition.minItemRows
+    };
+
+    return this.settleItemPosition(minimumItem, aPosition) ? minimumItem : null;
   }
 
   // Delegated to the chrome that owns the mounting, so a module is made to
@@ -1490,6 +2749,15 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
             return;
           }
 
+          // The most severe failure this surface has was also the only one that
+          // left no trace: an unreadable ARRANGEMENT reports
+          // `GF-DASHBOARD-LAYOUT-FETCH-FAILED` while an unreadable VIEWER - which
+          // costs the whole canvas rather than one arrangement - said nothing at
+          // all, so an operator had no breadcrumb for the worse of the two. Same
+          // sanitized reporter as every other diagnostic on this surface, so the
+          // status travels and nothing about the response body does.
+          reportSanitizedError('GF-DASHBOARD-VIEWER-FETCH-FAILED', error);
+
           this.hasViewerError = true;
 
           this.changeDetectorRef.markForCheck();
@@ -1507,8 +2775,6 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   // obliged to focus a button that was clicked. The body is excluded because it
   // is what `activeElement` reports when nothing is focused.
   private captureCatalogFocusOrigin() {
-    this.hasCatalogFocusOrigin = true;
-
     const trigger = this.catalogTrigger?.nativeElement;
     const activeElement = trigger?.ownerDocument?.activeElement;
 
@@ -1529,13 +2795,11 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     return !!activeElement && drawer.contains(activeElement);
   }
 
+  // Unconditional: however the panel came to be open, it takes focus the same
+  // way. The origin is only dropped when the move did not land, because a return
+  // journey to somewhere focus never left is worse than none.
   private moveFocusIntoCatalog() {
-    if (!this.hasCatalogFocusOrigin) {
-      return;
-    }
-
     if (!this.moduleCatalog?.focusSearchField()) {
-      this.hasCatalogFocusOrigin = false;
       this.catalogFocusOrigin = null;
     }
   }
@@ -1556,7 +2820,6 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
   private restoreFocusFromCatalog() {
     const origin = this.catalogFocusOrigin;
 
-    this.hasCatalogFocusOrigin = false;
     this.catalogFocusOrigin = null;
 
     if (!this.isFocusInsideCatalog()) {
@@ -1589,6 +2852,30 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
    * final fallback because it survives an emptied canvas when no module handle
    * does.
    */
+  // Deliberately not the layout fingerprint used for persistence: that one covers
+  // the whole arrangement and exists to decide whether to WRITE. This covers one
+  // module and exists only to decide what to say about it.
+  private createGeometryFingerprint(
+    aGeometry: DashboardModuleGeometry
+  ): string {
+    return `${aGeometry.cols}:${aGeometry.rows}:${aGeometry.x}:${aGeometry.y}`;
+  }
+
+  private recordAnnouncedGeometry(aItem: GridsterItemConfig) {
+    const item = this.modules.find((module) => {
+      return module === aItem;
+    });
+
+    if (!item) {
+      return;
+    }
+
+    this.announcedGeometry.set(
+      item.moduleType,
+      this.createGeometryFingerprint(item)
+    );
+  }
+
   private restoreFocusAfterRemoval(
     aTarget: GfDashboardModuleHostComponent | null
   ) {
@@ -1641,16 +2928,72 @@ export class GfDashboardCanvasComponent implements OnDestroy, OnInit {
     element?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
   }
 
+  /**
+   * A module the viewer asked for that is already on the canvas.
+   *
+   * Nothing is added, which is why this needs to do more than scroll. The module
+   * is often already fully in view, and `scrollIntoView` with `nearest` is by
+   * definition a no-op when it is - so the request reads as a control that did
+   * nothing at all. Worse for a keyboard viewer: the assistant that issued it
+   * closes its own panel without restoring focus, which is how it has always
+   * behaved and was harmless while the same selection was a navigation, because
+   * the router placed focus. On one canvas nothing navigates, so focus is simply
+   * dropped to the document body and the only way back is to Tab from the top.
+   *
+   * Focus therefore lands on the module's own drag handle: the one element every
+   * module always has, positioned first in its chrome, and the one that puts the
+   * arrow keys straight under the reader's fingers on the module they just asked
+   * for. It doubles as the confirmation that the request was heard.
+   */
+  private revealExistingModule(aItem: DashboardLayoutItem) {
+    this.revealPlacedModule(aItem);
+
+    this.focusModule(aItem);
+
+    // Said as well as done, because focus and a scroll are both invisible to a
+    // reader who has neither: the assistant closes its own panel on selection, so
+    // without this the request produced no message, no visible change a reader could
+    // be told about, and - when the module was on screen already - no scroll either.
+    //
+    // One sentence for every outcome, deliberately. Whether focus landed is not the
+    // viewer's concern, and a module that reached this point is always one this build
+    // renders: an unknown or unpermitted entry never becomes a grid item, so it is
+    // never found here in the first place.
+    this.announce(
+      $localize`${this.getQualifiedModuleName(aItem.moduleType)}:moduleName: is already on the dashboard`
+    );
+  }
+
+  // Matched by module type rather than by position: the grid owns the order of
+  // its own children, so the query list is not reliably the array's order. Reports
+  // whether focus landed, because `focus()` on a hidden or detached element is a
+  // silent no-op.
+  private focusModule(aItem: DashboardLayoutItem): boolean {
+    const host = (this.moduleHosts?.toArray() ?? []).find(({ definition }) => {
+      return definition?.moduleType === aItem.moduleType;
+    });
+
+    return host?.focusDragHandle() ?? false;
+  }
+
   // A funnel rather than three assignments, because opening has to answer which
   // rows cannot be added right now and every route in has to answer it: the
   // floating trigger, the empty-canvas affordance, and the drawer closing
   // itself on Escape.
+  //
+  // Recording where focus was is part of opening rather than something each
+  // caller remembers to do first, which is what makes every route in behave the
+  // same - including the two that open the panel because the arrangement went
+  // empty, where the recorded origin is legitimately `null`. Captured before the
+  // flag flips only for legibility; flipping a boolean moves no focus.
   private setCatalogOpen(aIsOpen: boolean) {
-    this.isCatalogOpen = aIsOpen;
-
     if (aIsOpen) {
+      this.captureCatalogFocusOrigin();
+
       this.refreshCatalogAvailability();
     }
+
+    this.isCatalogOpen = aIsOpen;
 
     this.changeDetectorRef.markForCheck();
   }

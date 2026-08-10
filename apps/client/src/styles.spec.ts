@@ -399,3 +399,93 @@ describe('the grid chrome design-token contract', () => {
     expect(declaredColoursIn(local)).toEqual([]);
   });
 });
+
+describe('the canvas bottom reserve', () => {
+  const canvasStyles = readFileSync(
+    join(__dirname, 'app/dashboard/dashboard-canvas/dashboard-canvas.scss'),
+    'utf8'
+  );
+
+  // Three rules have to agree on this measurement exactly, and they are far apart
+  // in the file: the padding that reserves the band the floating catalog trigger
+  // occupies, the empty-canvas state's inset so it centres on the canvas rather
+  // than on the canvas plus that band, and the bottom edge mark's inset so it
+  // marks the scrollport's edge rather than floating inside the band.
+  //
+  // Asserted because they have already drifted once. The reserve began as the
+  // grid's 10px gutter alone; when the trigger's footprint was added to it, the
+  // edge mark was left reading the gutter and ended up stranded 88px below the
+  // edge it was reporting, beside the trigger, where it read as a stray artifact.
+  // A shared custom property is what makes the three move together, so the test
+  // is that all three READ it rather than that they happen to compute the same
+  // number today.
+  it('is declared once and read by every rule that depends on it', () => {
+    expect(
+      /--gf-dashboard-canvas-bottom-reserve: calc\(\s*var\(--gf-dashboard-catalog-trigger-footprint\) \+\s*var\(--gf-dashboard-grid-margin\)\s*\);/.test(
+        canvasStyles
+      )
+    ).toBe(true);
+
+    expect(
+      canvasStyles.match(/var\(--gf-dashboard-canvas-bottom-reserve\)/g)
+    ).toHaveLength(3);
+
+    // The gutter alone must not be what any of those three reads, which is exactly
+    // the mistake the shared property exists to prevent. It is still read to BUILD
+    // the reserve above, so one occurrence is expected and only one.
+    expect(
+      canvasStyles.match(/inset-block-end: var\(--gf-dashboard-grid-margin\)/g)
+    ).toBeNull();
+    expect(
+      canvasStyles.match(
+        /padding-block-end: var\(--gf-dashboard-grid-margin\)/g
+      )
+    ).toBeNull();
+  });
+});
+
+/**
+ * The one thing about the grid chrome that is a behaviour rather than an appearance.
+ *
+ * `gridster-preview` is the picture of where a module would land. The library draws
+ * it as the last child of the grid, absolutely positioned over the cells the module
+ * would occupy, and never listens to it: the drag and drop handlers - `dragenter`,
+ * `dragover`, `dragleave` and `drop` - are all bound on the grid element itself.
+ *
+ * Left hit-testable, the preview becomes the topmost element under the pointer the
+ * instant it is drawn, so the element the browser dispatches the rest of the drag at
+ * changes to a box that only exists because of the drag. That is what made dragging a
+ * catalog row onto the canvas depend on how the pointer moved: a drag that kept moving
+ * re-entered the grid often enough to recover, while one that moved once and released
+ * released over the preview and dropped nothing.
+ *
+ * Asserted here rather than in a component spec because the partial is global by
+ * necessity - all three library components declare `ViewEncapsulation.None` - so no
+ * component stylesheet can reach the element at all.
+ */
+describe('the grid drop target', () => {
+  const gridsterChrome = readFileSync(
+    join(__dirname, 'styles', 'gridster.scss'),
+    'utf8'
+  );
+
+  const readRule = (aSelector: string) => {
+    const declarations = gridsterChrome.replace(/^\s*\/\/.*$/gm, '');
+    const start = declarations.indexOf(`${aSelector} {`);
+
+    expect(start).toBeGreaterThan(-1);
+
+    return declarations.slice(start, declarations.indexOf('}', start));
+  };
+
+  it('keeps the drag preview out of hit-testing', () => {
+    expect(readRule('gridster-preview')).toContain('pointer-events: none;');
+  });
+
+  // The grid itself must stay hit-testable, or nothing would be droppable at all.
+  // Stated as an assertion because the rule above is one line away from being
+  // written on the wrong selector.
+  it('leaves the grid itself hit-testable', () => {
+    expect(readRule('gridster')).not.toContain('pointer-events');
+  });
+});

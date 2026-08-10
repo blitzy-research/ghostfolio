@@ -121,7 +121,12 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
     quickLinks: false
   };
   public isOpen = false;
-  public placeholder = $localize`Find account, holding or page...`;
+  // Names what the third result group actually is now. This field's quick links
+  // used to be routes, and the placeholder named them "page" accordingly; they are
+  // dashboard modules, and searching for one reveals it on the canvas rather than
+  // navigating anywhere - so "page" was the last place in this component still
+  // describing the surface that was replaced.
+  public placeholder = $localize`Find account, holding or module...`;
   public portfolioFilterFormControl = new FormControl<PortfolioFilterFormValue>(
     {
       account: null,

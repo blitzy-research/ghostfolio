@@ -33,12 +33,26 @@
             </div>
           }
           @if (!canCreateAccount && user?.systemMessage) {
-            <div
+            <!--
+              A real `<button>`, for the same reason the create-account variant
+              above is one: this banner has two variants that behave identically
+              under a pointer, and while one was keyboard-reachable with a focus
+              ring the other was a clickable `div` - unreachable by Tab, inert to
+              Enter and Space, and announced as nothing. Which of the two a viewer
+              gets is decided by the server, so the asymmetry was invisible to
+              whoever was looking at either one on its own.
+
+              It needs no styling of its own: `.info-message` already neutralises
+              the user-agent button chrome back to plain banner text and declares
+              the focus ring that clears 3:1 against the brand fill.
+            -->
+            <button
               class="cursor-pointer d-inline-block info-message text-truncate"
+              type="button"
               (click)="onClickSystemMessage()"
             >
               {{ user.systemMessage.message }}
-            </div>
+            </button>
           }
         </div>
       </div>

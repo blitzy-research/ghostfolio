@@ -9,7 +9,7 @@ import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { Filter, InfoItem, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { publicRoutes } from '@ghostfolio/common/routes/routes';
-import { DateRange } from '@ghostfolio/common/types';
+import { ColorScheme, DateRange } from '@ghostfolio/common/types';
 import { GfAssistantComponent } from '@ghostfolio/ui/assistant/assistant.component';
 import { GfLogoComponent } from '@ghostfolio/ui/logo';
 import { NotificationService } from '@ghostfolio/ui/notifications';
@@ -97,6 +97,27 @@ export class GfDashboardToolbarComponent implements OnInit {
   @ViewChild('assistantTrigger') assistentMenuTriggerElement: MatMenuTrigger;
 
   public readonly accountLabel = $localize`Account`;
+
+  /**
+   * The three appearance choices, in the order the account-settings screen has
+   * always listed them.
+   *
+   * The wordings are the same three source messages that screen already uses, which
+   * is deliberate and is what keeps all twelve locales translated: an Angular message
+   * id is a hash of the text, so `Auto`, `Light` and `Dark` written here resolve to
+   * the units those options resolve to rather than introducing three new ones.
+   *
+   * Declared as data rather than three copies of the same markup, so the row, its
+   * radio state and its glyph are written once and cannot drift between the options.
+   */
+  public readonly colorSchemeOptions: {
+    label: string;
+    value: ColorScheme | null;
+  }[] = [
+    { label: $localize`Auto`, value: null },
+    { label: $localize`Light`, value: 'LIGHT' },
+    { label: $localize`Dark`, value: 'DARK' }
+  ];
 
   public deviceType: string;
   public hasFilters: boolean;
@@ -239,6 +260,32 @@ export class GfDashboardToolbarComponent implements OnInit {
     }
 
     window.location.reload();
+  }
+
+  /**
+   * Stores the viewer's appearance choice, or clears it for `Auto`.
+   *
+   * `null` is a value here rather than a missing one: it is how the absence of a
+   * preference is stored, and it is what puts the canvas back under the operating
+   * system's control. The setting DTO marks the field optional, which in
+   * `class-validator` means `null` passes untouched rather than being rejected - the
+   * account-settings screen has always cleared it the same way.
+   *
+   * The theme is not applied here. The shell paints from the viewer's `colorScheme`
+   * whenever the viewer changes, so re-reading the viewer is what makes the choice
+   * visible - and it is also what keeps the module hosting the same setting in step,
+   * rather than leaving two controls disagreeing about what is stored.
+   */
+  public onChangeColorScheme(aColorScheme: ColorScheme | null) {
+    this.dataService
+      .putUserSetting({ colorScheme: aColorScheme })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.userService
+          .get(true)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe();
+      });
   }
 
   public onDateRangeChange(dateRange: DateRange) {

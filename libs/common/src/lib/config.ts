@@ -82,6 +82,56 @@ export const PORTFOLIO_SNAPSHOT_COMPUTATION_QUEUE_PRIORITY_LOW =
 export const STATISTICS_GATHERING_QUEUE = 'STATISTICS_GATHERING_QUEUE';
 
 export const DEFAULT_CURRENCY = 'USD';
+
+/**
+ * How long, in milliseconds, a request may spend obtaining a database
+ * connection - both establishing a new one and waiting for a pooled one to come
+ * free.
+ *
+ * A bound has to exist because the alternative is not a slow request but an
+ * unbounded one. `pg` leaves both halves off by default: with no
+ * `connectionTimeoutMillis` it derives a libpq `connect_timeout` of `0`, and a
+ * pool waiter with no ceiling simply queues until a connection is released,
+ * however long that takes. A database that has become unresponsive rather than
+ * unreachable therefore converts every request behind it into one that never
+ * answers - which is strictly worse than a failure, because a caller can retry a
+ * failure and cannot retry a hang.
+ *
+ * Thirty seconds is chosen to be unmistakably outside normal operation and
+ * unmistakably inside "something is wrong": it is two orders of magnitude above
+ * the dashboard layout read's own stated budget and well above the slowest
+ * observed request in this application, so nothing that works today starts
+ * failing, while a stalled connection is now reported instead of waited on.
+ * Override with `DATABASE_CONNECTION_TIMEOUT`; `0` restores the unbounded
+ * behaviour for an operator who genuinely wants it.
+ */
+export const DEFAULT_DATABASE_CONNECTION_TIMEOUT = 30000;
+
+/**
+ * How long, in milliseconds, a single statement may run before it is abandoned.
+ *
+ * Applied as three separate settings because each covers a failure the others
+ * cannot, and only together do they bound the whole path:
+ *
+ * - `statement_timeout` is enforced by PostgreSQL, so it ends a query that is
+ *   genuinely slow - and it is the only one of the three that also releases the
+ *   server-side resources the query held.
+ * - `query_timeout` is enforced by the client, which is what makes it the half
+ *   that matters when the *server* stops answering: a frozen or wedged backend
+ *   cannot apply its own `statement_timeout`, so without a client-side ceiling
+ *   the driver waits on a socket that will never reply.
+ * - `idle_in_transaction_session_timeout` closes a transaction that was opened
+ *   and then abandoned, which would otherwise hold its locks indefinitely and
+ *   block unrelated writers.
+ *
+ * The value is deliberately the same as the connection ceiling and is chosen the
+ * same way: far above every statement this application issues in normal
+ * operation - the dashboard layout read is a single primary-key lookup costing
+ * well under a millisecond server-side - and far below "forever". Override with
+ * `DATABASE_QUERY_TIMEOUT`; `0` disables all three.
+ */
+export const DEFAULT_DATABASE_QUERY_TIMEOUT = 30000;
+
 export const DEFAULT_DATE_FORMAT_MONTH_YEAR = 'MMM yyyy';
 export const DEFAULT_HOST = '0.0.0.0';
 export const DEFAULT_LANGUAGE_CODE = 'en';
@@ -228,8 +278,37 @@ export const INVESTMENT_ACTIVITY_TYPES = [
 
 export const PORTFOLIO_SNAPSHOT_PROCESS_JOB_NAME = 'PORTFOLIO';
 export const PORTFOLIO_SNAPSHOT_PROCESS_JOB_OPTIONS: JobOptions = {
-  removeOnComplete: true
+  removeOnComplete: true,
+  // A failed job has to be discarded for the same reason a completed one does,
+  // and here the consequence of keeping it is more serious. These jobs are
+  // enqueued under a job id derived from the user, which is what makes several
+  // concurrent requests for one user share a single computation - and it also
+  // means a job left behind in the failed state keeps that id occupied. Every
+  // later request then deduplicates onto the settled failure and is answered
+  // with it verbatim, so one transient failure - a computation the queue
+  // declared stalled, say - becomes a permanent one that no amount of retrying,
+  // and not even a restart, recovers from: it outlives the process, because it
+  // lives in the queue's store. Discarding it leaves the id free, so the next
+  // request enqueues a new computation and the failure lasts exactly as long as
+  // whatever caused it.
+  removeOnFail: true
 };
+
+/**
+ * The most module entries one persisted dashboard layout may hold.
+ *
+ * 300 is the canvas capacity: a 12-column by 100-row grid holds 1200 cells and
+ * the smallest legal module occupies 4 of them.
+ *
+ * Shared deliberately, because the ceiling has to hold on the way OUT as well as
+ * on the way in and the two are enforced in different places - a request body by
+ * the write DTO, a stored document by the read path. A document can reach the
+ * column without passing the DTO at all: written by direct database access,
+ * carried in by a migration, or left by an older build. Two independent literals
+ * would let the halves drift apart, and the half that drifts silently is the
+ * read one, since nothing rejects a document that is already stored.
+ */
+export const MAX_USER_DASHBOARD_LAYOUT_ITEMS = 300;
 
 export const HEADER_KEY_IMPERSONATION = 'Impersonation-Id';
 export const HEADER_KEY_TIMEZONE = 'Timezone';

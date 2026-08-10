@@ -19,6 +19,7 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
+  Input,
   OnInit
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -41,6 +42,17 @@ import { GfDashboardLayoutService } from '../../services/dashboard-layout.servic
   templateUrl: './sign-in-prompt.html'
 })
 export class GfSignInPromptComponent implements OnInit {
+  /**
+   * Whether the visitor reached this card by being refused by an identity
+   * provider, rather than by arriving for the first time.
+   *
+   * A boolean, not the reason: what the provider objected to is between the
+   * deployment's operator and the provider, and the failure marker that carries it
+   * this far travels through a URL the visitor can edit. The sentence rendered
+   * from this is fixed in the template, so nothing a link can write is ever shown.
+   */
+  @Input() hasSignInError = false;
+
   public deviceType: string;
 
   public hasPermissionForAuthGoogle: boolean;

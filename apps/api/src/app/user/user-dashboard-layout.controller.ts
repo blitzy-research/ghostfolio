@@ -7,7 +7,9 @@ import type { RequestWithUser } from '@ghostfolio/common/types';
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Inject,
   Patch,
   Res,
@@ -17,6 +19,7 @@ import {
 import { REQUEST } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
+import { StatusCodes } from 'http-status-codes';
 
 import { UserDashboardLayoutService } from './user-dashboard-layout.service';
 
@@ -62,10 +65,54 @@ export class UserDashboardLayoutController {
    * `docs/setup.md`). An operator who wants to hold this endpoint to its budget
    * sets it there, once, for every timing this application produces.
    *
+   * What that line does NOT measure is worth stating, because the number is easy
+   * to mistake for the whole request. An interceptor wraps the HANDLER, and Nest
+   * runs guards before interceptors, so the elapsed time reported here begins
+   * after authentication has already completed - and authentication is where most
+   * of this request's cost is: it resolves the caller across several tables,
+   * while the handler itself is one primary-key lookup. Measured together, a warm
+   * read spends a handful of milliseconds end to end and a small fraction of it
+   * inside this handler. So the line is evidence about the layout read's own cost,
+   * which is what a regression in THIS code would move; holding the endpoint to a
+   * budget the caller experiences needs a timing source at the request boundary,
+   * which this application deliberately does not install - the read path carries
+   * no global interceptors, and adding one would put work in front of every
+   * endpoint in the application to observe one of them.
+   *
    * The interceptor is method-scoped rather than controller-scoped: the write
    * carries no latency budget, so timing it would add a line per save that says
    * nothing about anything a budget is stated for.
    */
+  /**
+   * Discards the caller's stored arrangement.
+   *
+   * The guard stack is the one every handler on this controller carries, so an
+   * unauthenticated caller is refused by passport before anything here runs and no
+   * caller can reach a row but its own — the identity comes from the request
+   * context, never from a parameter.
+   *
+   * This is deliberately a DELETE and not a layout write, and the distinction is
+   * the whole reason the endpoint exists. A layout may be written only as the
+   * result of a grid state change — a drag, a resize, an add or a remove — and the
+   * canvas refuses every write while it holds an arrangement it could not read,
+   * which is precisely what keeps a damaged document from being overwritten by the
+   * error state that reports it. That left one gap: no way out. Emptying the
+   * arrangement and saving it would have closed the gap by opening a second write
+   * origin — the one able to overwrite a document the canvas never read. Deleting
+   * the row closes it without one: nothing is stored, so nothing is invented, and
+   * the next read reports a genuine absence.
+   *
+   * 204 rather than a body. There is no arrangement left to describe, and an empty
+   * 200 from Nest's Express adapter carries no `Content-Type` at all — which is not
+   * valid JSON and fails any consumer stricter than Angular's `HttpClient`.
+   */
+  @Delete('layout')
+  @HttpCode(StatusCodes.NO_CONTENT)
+  @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
+  public async deleteUserDashboardLayout(): Promise<void> {
+    await this.userDashboardLayoutService.deleteLayout(this.request.user.id);
+  }
+
   @Get('layout')
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
   @UseInterceptors(PerformanceLoggingInterceptor)

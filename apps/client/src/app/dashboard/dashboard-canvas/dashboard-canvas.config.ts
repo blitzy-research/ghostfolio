@@ -2,6 +2,7 @@ import { CompactType, DisplayGrid, GridType } from 'angular-gridster2';
 import type {
   Gridster,
   GridsterConfig,
+  GridsterItem,
   GridsterItemConfig
 } from 'angular-gridster2';
 
@@ -41,11 +42,71 @@ export interface DashboardCanvasConfigHandlers {
   // viewer just added from one that was restored. Not a persistence trigger.
   onItemInit: (item: GridsterItemConfig) => void;
 
+  /**
+   * One module's geometry settled, whatever settled it.
+   *
+   * Carries the item purely so the canvas can SAY which module changed - a pointer
+   * drag was otherwise announced to nobody, and the live region went on reporting
+   * a position the module no longer held. It carries no write and no geometry
+   * decision: the canvas reads the item, never assigns to it, and the persistence
+   * trigger for the very same event is the argument-free callback below.
+   *
+   * Deliberately fed from `itemChangeCallback` alone. `itemResizeCallback` fires
+   * from the engine's own size computation whenever an item's PIXEL box changes,
+   * which includes every recalculation the grid does for its own reasons, so
+   * announcing from there would talk over the viewer without a geometry having
+   * changed at all.
+   */
+  onItemGeometryChange: (item: GridsterItemConfig) => void;
+
   // Intentionally argument-free: every trigger reports the same fact, and the
   // grid item array the canvas owns is the single source of truth for what
   // changed.
   onLayoutChange: () => void;
+
+  /**
+   * The end of a pointer resize gesture, however it ended. The engine calls its
+   * `stop` hook from one place that every ending funnels through - mouseup,
+   * mouseleave, touchend, touchcancel and a window blur alike, and for an
+   * abandoned gesture as much as a completed one - which is what makes it the
+   * only safe place to undo anything {@link onResizeGestureStart} set up.
+   *
+   * Carries no write and is not a persistence trigger: a resize that actually
+   * changed the arrangement is reported separately through
+   * `itemResizeCallback`.
+   */
+  onResizeGestureEnd: (itemComponent: GridsterItem) => void;
+
+  /**
+   * The start of a pointer resize gesture, forwarded with the component whose
+   * cell is being resized so the canvas can hold that module's content box
+   * still for the duration of it.
+   *
+   * The engine writes the cell's `width` and `height` on every pointer move, so
+   * without this the module inside re-lays-out on every move as well - which for
+   * a module holding a chart or a table means its own resize observers, and its
+   * charting library's re-render, run tens of times per gesture and the content
+   * is visibly broken at the intermediate sizes it is asked to fit. The cell
+   * itself still tracks the pointer frame-synchronously; only the content inside
+   * it waits, and it reflows exactly once, on release.
+   *
+   * Carries no write either, for the same reason as its counterpart.
+   */
+  onResizeGestureStart: (itemComponent: GridsterItem) => void;
 }
+
+/**
+ * The class the module host puts on the region that holds a module, handed to
+ * the engine as its `ignoreContentClass` so a press inside a module never starts
+ * a drag.
+ *
+ * Exported because the canvas has to find that same region to hold it still
+ * during a resize, and because the global `styles/gridster.scss` paints its
+ * focus ring - three files that must name the one element, so the name is
+ * declared once. The module host's template carries the literal, which a
+ * template cannot avoid, and says so where it does.
+ */
+export const MODULE_CONTENT_CLASS = 'gridster-item-content';
 
 // The grid-wide floor, handed to the engine as its `minItemCols` /
 // `minItemRows` policy and squared into `minItemArea` so degenerate shapes that
@@ -140,7 +201,7 @@ export function createDashboardCanvasConfig(
       // loaded component inside `.gridster-item-content` for exactly this
       // reason.
       ignoreContent: true,
-      ignoreContentClass: 'gridster-item-content'
+      ignoreContentClass: MODULE_CONTENT_CLASS
     },
     emptyCellDropCallback: (event: DragEvent, item: GridsterItemConfig) =>
       handlers.onEmptyCellDrop(event, item),
@@ -173,7 +234,10 @@ export function createDashboardCanvasConfig(
     // `itemInitCallback` additionally forwards the item to `onItemInit`,
     // because both obligations belong to the same moment and the engine offers
     // no second hook. That forward carries no write.
-    itemChangeCallback: () => handlers.onLayoutChange(),
+    itemChangeCallback: (item: GridsterItemConfig) => {
+      handlers.onLayoutChange();
+      handlers.onItemGeometryChange(item);
+    },
     itemInitCallback: (item: GridsterItemConfig) => {
       handlers.onLayoutChange();
       handlers.onItemInit(item);
@@ -216,7 +280,17 @@ export function createDashboardCanvasConfig(
         se: true,
         sw: false,
         w: false
-      }
+      },
+
+      // The item the engine hands these is its own live geometry object rather
+      // than the array entry, and neither hook has any business reading it - the
+      // component is the only argument either one wants - so the first parameter
+      // is named out of the way. `noUnusedParameters` tolerates the underscore,
+      // and the engine's signature makes declaring it unavoidable.
+      start: (_item: GridsterItemConfig, itemComponent: GridsterItem) =>
+        handlers.onResizeGestureStart(itemComponent),
+      stop: (_item: GridsterItemConfig, itemComponent: GridsterItem) =>
+        handlers.onResizeGestureEnd(itemComponent)
     },
 
     // The engine applies this from the first size computation of every item -

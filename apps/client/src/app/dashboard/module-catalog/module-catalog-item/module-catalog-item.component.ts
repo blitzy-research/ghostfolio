@@ -1,4 +1,7 @@
-import { DashboardModuleType } from '@ghostfolio/common/dashboard';
+import {
+  DashboardModuleType,
+  getQualifiedDashboardModuleName
+} from '@ghostfolio/common/dashboard';
 
 import { FocusableOption } from '@angular/cdk/a11y';
 import {
@@ -78,20 +81,39 @@ export class GfModuleCatalogItemComponent implements FocusableOption {
     return this.hasFocus;
   }
 
+  /**
+   * Each form begins with EXACTLY the text the row draws, and the action follows
+   * it. That order is a requirement rather than a preference: WCAG 2.2 SC 2.5.3
+   * asks that a control's accessible name contain its visible label, and the
+   * automated check for it looks for the visible text as an unbroken run inside
+   * the name. A row that reads `Overview  Added` was named `Reveal Overview
+   * module`, which contains both words but not that run, and that is the one
+   * automated failure this canvas had.
+   *
+   * The state words are therefore repeated here rather than being left to the
+   * badges alone. The badges stay hidden from assistive technology, so nothing is
+   * announced twice: this name is the only place a reader is told that a module is
+   * already placed or that nothing more will fit, and the visible badge is the only
+   * place a viewer sees it.
+   *
+   * The unavailable form says more than its badge does - the badge has a row's
+   * width to fit in, the name does not - which is allowed and is the point: the
+   * name has to CONTAIN the visible text, not equal it.
+   */
   public get ariaLabel() {
     if (this.isPlaced) {
-      return $localize`Reveal ${this.qualifiedName}:moduleName: module`;
+      return $localize`${this.qualifiedName}:moduleName: added, reveal module`;
     }
 
     return this.isUnavailable
-      ? $localize`Add ${this.qualifiedName}:moduleName: module, no room on the dashboard`
-      : $localize`Add ${this.qualifiedName}:moduleName: module`;
+      ? $localize`${this.qualifiedName}:moduleName: no room, add module - remove or resize a module to make space`
+      : $localize`${this.qualifiedName}:moduleName:, add module`;
   }
 
+  // Composed by the shared helper, so this row and the module chrome it will
+  // become name the same module identically.
   public get qualifiedName() {
-    return this.definition?.context
-      ? `${this.definition.name} · ${this.definition.context}`
-      : this.definition?.name;
+    return getQualifiedDashboardModuleName(this.definition);
   }
 
   // Focus is placed on the row's button rather than on the host, and the local

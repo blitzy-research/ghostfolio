@@ -103,18 +103,49 @@ describe('AuthController', () => {
       );
     });
 
-    it('sends a caller without a token to the locale root and nothing else', () => {
+    it('sends a caller without a token to the locale root, marked as a failure', () => {
       const response = createResponse();
 
       authController[handler](createRequest(), response);
 
       // No token means the federated sign-in did not produce one, and the root
       // route will render its signed-out state. Appending an empty `jwt` would make
-      // the route guard save an empty token and the interceptor send it.
+      // the route guard save an empty token and the interceptor send it, so the
+      // parameter is absent - and the marker takes its place, because a visitor
+      // returned silently to the prompt they started from has no way to tell a
+      // refusal from not having tried yet, and presses the same button again.
       expect(redirect).toHaveBeenCalledTimes(1);
       expect(redirect).toHaveBeenCalledWith(
-        `${rootUrl}/${DEFAULT_LANGUAGE_CODE}/`
+        `${rootUrl}/${DEFAULT_LANGUAGE_CODE}/?signInError=provider`
       );
+    });
+
+    it('survives a provider round trip that produced no identity at all', () => {
+      const response = createResponse();
+
+      // What the callback guard hands over when the provider declined or answered
+      // with something unusable: activation proceeds with no user. Reading the
+      // token off it unconditionally is a `TypeError`, and the 500 that used to
+      // greet the visitor would simply have a different cause.
+      expect(() => {
+        authController[handler]({} as unknown as Request, response);
+      }).not.toThrow();
+
+      expect(redirect).toHaveBeenCalledWith(
+        `${rootUrl}/${DEFAULT_LANGUAGE_CODE}/?signInError=provider`
+      );
+    });
+
+    it('sets no credential-protecting headers on a failure redirect', () => {
+      const response = createResponse();
+
+      authController[handler](createRequest(), response);
+
+      // Those headers exist because the success target carries a token. This URL
+      // carries a marker worth nothing if forged, and is one a visitor may
+      // legitimately keep, so treating it as a credential would be misleading
+      // about what it holds.
+      expect(headers()).toEqual({});
     });
 
     it('keeps the credential-bearing redirect out of caches and referrers', () => {
@@ -155,16 +186,31 @@ describe('AuthController', () => {
     });
 
     it('addresses no route that the single-canvas shell removed', () => {
+      // One response for both calls: `createResponse` installs fresh recorders, so
+      // a second one would discard the first target before it could be read.
       const response = createResponse();
 
       authController[handler](createRequest('a-signed-token'), response);
+      authController[handler](createRequest(), response);
 
-      const [target] = redirect.mock.calls[0] as [string];
+      const targets = redirect.mock.calls.map(([target]) => target as string);
 
-      // The mechanical form of the rule, kept separate from the exact-string
-      // assertions above: the shell serves one route, and it is the root.
-      for (const retired of ['/auth', '/home', '/register', '/start', '/zen']) {
-        expect(target).not.toContain(retired);
+      // Both outcomes, because the failure target is a second URL and drifts
+      // independently of the first. The mechanical form of the rule, kept separate
+      // from the exact-string assertions above: the shell serves one route, and it
+      // is the root.
+      expect(targets).toHaveLength(2);
+
+      for (const target of targets) {
+        for (const retired of [
+          '/auth',
+          '/home',
+          '/register',
+          '/start',
+          '/zen'
+        ]) {
+          expect(target).not.toContain(retired);
+        }
       }
     });
   });

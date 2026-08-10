@@ -847,6 +847,87 @@ describe('GfSignInPromptComponent', () => {
     });
   });
 
+  /**
+   * What a visitor sees after an identity provider refused them.
+   *
+   * This card is also what an untouched first visit renders, so without a notice a
+   * declined federated sign-in returns the visitor to a screen identical to the one
+   * they left - and the reasonable response is to press the same button again. The
+   * API reports the refusal through a marker in the address, which the root host
+   * narrows to a boolean before it reaches this component.
+   *
+   * The rendering is asserted here rather than in the canvas suite, which stands
+   * this component in with an empty template and can therefore only prove the
+   * binding was passed.
+   */
+  describe('a refused federated sign-in', () => {
+    /** The sentence, as a visitor reads it, with the template's wrapping removed. */
+    const noticeText = () => {
+      const notice = (fixture.nativeElement as HTMLElement).querySelector(
+        '[role="alert"]'
+      );
+
+      return notice?.textContent.replace(/\s+/g, ' ').trim();
+    };
+
+    it('says the sign-in did not complete', async () => {
+      await createComponent();
+
+      // Through the input, which is how the canvas sets it - and the only way that
+      // marks this `OnPush` view dirty. Assigning the field directly leaves the
+      // template unpainted, so the notice would be absent for a reason that has
+      // nothing to do with the component.
+      fixture.componentRef.setInput('hasSignInError', true);
+      fixture.detectChanges();
+
+      expect(noticeText()).toBe(
+        'Signing in with your identity provider did not complete. Please try again.'
+      );
+    });
+
+    it('announces it, because the visitor did not act on this page to cause it', async () => {
+      await createComponent();
+
+      // Through the input, which is how the canvas sets it - and the only way that
+      // marks this `OnPush` view dirty. Assigning the field directly leaves the
+      // template unpainted, so the notice would be absent for a reason that has
+      // nothing to do with the component.
+      fixture.componentRef.setInput('hasSignInError', true);
+      fixture.detectChanges();
+
+      // An alert rather than a status: the visitor pressed a button, left for a
+      // provider and came back, so nothing they are currently looking at changed to
+      // explain it.
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')
+      ).toBeTruthy();
+    });
+
+    it('still offers the way back in', async () => {
+      await createComponent();
+
+      // Through the input, which is how the canvas sets it - and the only way that
+      // marks this `OnPush` view dirty. Assigning the field directly leaves the
+      // template unpainted, so the notice would be absent for a reason that has
+      // nothing to do with the component.
+      fixture.componentRef.setInput('hasSignInError', true);
+      fixture.detectChanges();
+
+      // The notice carries no action of its own precisely because these controls
+      // are the retry. If it ever renders instead of them, the visitor is told what
+      // happened and given no way to respond.
+      expect(buttonLabelled('Sign in')).toBeTruthy();
+    });
+
+    it('says nothing on an ordinary first visit', async () => {
+      await createComponent();
+
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')
+      ).toBeNull();
+    });
+  });
+
   describe('the rendered surface', () => {
     it('always offers signing in', async () => {
       await createComponent();
@@ -1000,8 +1081,13 @@ describe('GfSignInPromptComponent', () => {
 
       // Visible as well as guarded: a control that has gone quiet for a moment is
       // otherwise indistinguishable from one that did nothing at all.
+      //
+      // Asserted through `aria-disabled` rather than the native property, and the
+      // absence of the native attribute is asserted too, because that absence is
+      // the point - see the test below.
       for (const control of controls) {
-        expect(control.disabled).toBe(true);
+        expect(control.getAttribute('aria-disabled')).toBe('true');
+        expect(control.hasAttribute('disabled')).toBe(false);
         expect(control.getAttribute('aria-busy')).toBe('true');
       }
 
@@ -1015,9 +1101,75 @@ describe('GfSignInPromptComponent', () => {
         buttonLabelled('Sign in'),
         buttonLabelled('Create Account')
       ]) {
-        expect(control.disabled).toBe(false);
+        expect(control.getAttribute('aria-disabled')).not.toBe('true');
+        expect(control.hasAttribute('disabled')).toBe(false);
         expect(control.getAttribute('aria-busy')).toBeNull();
       }
+    });
+
+    /**
+     * The reason the wait is expressed with `aria-disabled` instead of the native
+     * attribute.
+     *
+     * A natively disabled element cannot hold focus, so disabling the button that
+     * was just pressed threw focus to the document body before the dialog had
+     * recorded what to restore it to - and the dialog then restored focus to the
+     * body on close, stranding a keyboard visitor at the top of the document. The
+     * fix is not in the dialog's configuration but in never taking focus off the
+     * opener in the first place.
+     */
+    it('keeps the pressed control focusable while it waits', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      const answers = deferChunkLoads();
+
+      const opener = buttonLabelled('Sign in');
+
+      opener.focus();
+
+      expect(document.activeElement).toBe(opener);
+
+      const opening = component.openLoginDialog();
+
+      fixture.detectChanges();
+
+      // Still the focused element, and still able to become one: the dialog opens
+      // with the opener under focus, which is what it captures as the element to
+      // hand focus back to.
+      expect(document.activeElement).toBe(buttonLabelled('Sign in'));
+      expect(buttonLabelled('Sign in').tabIndex).not.toBe(-1);
+
+      answers[0](GfLoginWithAccessTokenDialogComponent);
+
+      await opening;
+
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(buttonLabelled('Sign in'));
+    });
+
+    it('absorbs a second press rather than leaving it to the platform', async () => {
+      await createComponent({ globalPermissions: allGlobalPermissions });
+
+      const answers = deferChunkLoads();
+
+      const opening = component.openLoginDialog();
+
+      fixture.detectChanges();
+
+      // An interactively disabled control still delivers its click, so the guard in
+      // the handler is what stops a second dialog rather than the platform swallowing
+      // the event. Pressed here as the visitor would, through the DOM.
+      buttonLabelled('Sign in').click();
+      buttonLabelled('Create Account').click();
+
+      expect(lazyDialogServiceMock.load).toHaveBeenCalledTimes(1);
+
+      answers[0](GfLoginWithAccessTokenDialogComponent);
+
+      await opening;
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
     });
 
     it.each([

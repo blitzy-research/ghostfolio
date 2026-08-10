@@ -12,26 +12,37 @@
 // selector from leaking: it matches the elements this template writes, in the bar
 // and in its menus, and nothing a child component renders.
 //
-// The colour is `currentColor`, which is the only value that works for BOTH of
-// the places this rule has to reach: the bar sets a themed `color` that every
-// control inherits, and a menu row inherits the themed colour of the panel it
-// sits in, so one declaration is correct in both themes and in the overlay with
-// nothing left to keep in step. A literal ink plus a `.theme-dark { … }` mirror
-// cannot do the same job - emulated encapsulation rewrites that mirror to
+// The colour resolves through the same token every other focus ring in this
+// chrome names, so the recipe is declared once and in one shape; what differs is
+// the FALLBACK, and only because of where this rule has to reach.
+//
+// `currentColor` is the only fallback that works for BOTH of those places: the
+// bar sets a themed `color` that every control inherits, and a menu row inherits
+// the themed colour of the panel it sits in, so one declaration is correct in
+// both themes and in the overlay with nothing left to keep in step. A literal ink
+// plus a `.theme-dark { … }` mirror cannot do the same job - emulated
+// encapsulation rewrites that mirror to
 // `.theme-dark[_ngcontent-x] button[_ngcontent-x]`, and `.theme-dark` sits on the
 // document body, which carries no content attribute of this component, so it
 // matches nothing while compiling, linting and shipping cleanly.
+//
+// The measured cost of the fallback differing is 1.065:1 in light
+// (`rgb(25, 28, 28)` inherited here against `rgb(33, 33, 33)` painted by the
+// module chrome) and 1.292:1 in dark - indistinguishable - while both clear their
+// own backgrounds by 16.07:1 and 12.76:1. `currentColor` is among the values the
+// design-system rules name as exempt from resolving through a token, so this is
+// compliant rather than an escape hatch; naming the token anyway is what lets the
+// ring join the system layer if it is ever populated, without giving up the
+// inheritance the overlay depends on today.
 //
 // `:host-context(.theme-dark)` would reach the bar and NOT the menus, which is
 // the trap worth recording: it tests the ancestors of the host, and a menu panel
 // is attached to the document body outside this component's host altogether.
 // That asymmetry is why a theme-conditional rule is the wrong shape here and an
-// inherited value is the right one. `currentColor` is also among the values the
-// design-system rules name as exempt from resolving through a token, so this is
-// compliant rather than an escape hatch.
+// inherited value is the right one.
 button:focus-visible,
 a:focus-visible {
-  outline: 2px solid currentColor;
+  outline: 2px solid var(--mat-sys-on-surface, currentColor);
   outline-offset: 2px;
 
   // Drawn inside the row for a menu item, not around it. A menu panel is sized
@@ -41,6 +52,16 @@ a:focus-visible {
   &.mat-mdc-menu-item {
     outline-offset: -2px;
   }
+
+  // Inward for the refresh mark as well. It is the first control in the bar and
+  // the bar carries no inline padding, so it sits flush against the leading edge
+  // and fills the bar's height: an outward ring falls outside the viewport on the
+  // left and outside the bar above and below, leaving one visible edge out of
+  // four. Inside its own box all four edges paint, and the mark keeps its own
+  // 8px inset so the ring does not touch the wordmark.
+  &.gf-dashboard-refresh {
+    outline-offset: -2px;
+  }
 }
 
 :host {
@@ -48,6 +69,17 @@ a:focus-visible {
 
   // Keep the toolbar below overlay-hosted menus/dialogs while above page
   // content.
+  //
+  // `position` is what makes the `z-index` below mean anything: on a statically
+  // positioned box a stacking order is simply ignored, so the declaration was
+  // inert and a module dragged upward painted straight over the control bar -
+  // the one piece of chrome that must stay legible while an arrangement is being
+  // rearranged. `relative` with no offsets moves nothing and changes no layout;
+  // it only lets the box take the order it already declared. Overlay-hosted
+  // menus and dialogs are attached to the document body at a higher level, so
+  // they still draw above this.
+  position: relative;
+
   z-index: 999;
 
   .mat-toolbar {

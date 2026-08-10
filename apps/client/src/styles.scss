@@ -197,6 +197,25 @@
   --palette-warn-contrast-900: 255, 255, 255, 1;
 }
 
+// Paints the eventual surface on the FIRST frame, before the application has
+// decided which theme it is in.
+//
+// The theme class is put on the body by the root shell once the viewer's
+// appearance setting has resolved, and until then the body carries no background
+// at all - so a viewer whose system asks for dark got a full white viewport for
+// as long as the bundle took to boot, then the dark canvas. Painting the dark
+// surface from the system preference closes that window without changing the
+// application's own decision: the `:not()` guards mean this rule stops applying
+// the instant either theme class lands, whichever one the setting resolves to.
+//
+// A user-preference query, not a viewport one, so this introduces no breakpoint.
+@media (prefers-color-scheme: dark) {
+  body:not(.theme-dark):not(.theme-light) {
+    background: var(--dark-background);
+    color: rgba(var(--light-primary-text));
+  }
+}
+
 body {
   font-family: var(--font-family-sans-serif);
   margin: 0;

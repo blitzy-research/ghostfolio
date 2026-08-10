@@ -18,6 +18,25 @@
  */
 import '@angular/localize/init';
 import { setupZoneTestEnv } from 'jest-preset-angular/setup-env/zone';
+import { deserialize, serialize } from 'node:v8';
 import 'reflect-metadata';
 
 setupZoneTestEnv();
+
+/**
+ * `structuredClone`, which this test environment does not provide.
+ *
+ * Unlike the two imports above this is not an application polyfill: it is a
+ * standard global that both Node and every browser have, and that the jsdom realm
+ * these specs run in simply does not expose. A component calling it therefore
+ * throws `ReferenceError` under test while working everywhere it actually runs.
+ *
+ * Backed by V8's own serializer rather than by a JSON round-trip, so it really is
+ * a structured clone: dates, maps, sets and cycles survive it, and a spec cannot
+ * pass here on data that the real algorithm would have rejected or altered.
+ *
+ * Installed conditionally, so a future environment that provides its own keeps it.
+ */
+globalThis.structuredClone ??= (<T>(aValue: T): T => {
+  return deserialize(serialize(aValue)) as T;
+}) as typeof structuredClone;

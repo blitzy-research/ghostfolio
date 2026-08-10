@@ -5,6 +5,8 @@ import { NotificationService } from '@ghostfolio/ui/notifications';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, NavigationExtras, Router } from '@angular/router';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 import { GfBenchmarkDetailDialogComponent } from './benchmark-detail-dialog/benchmark-detail-dialog.component';
@@ -221,6 +223,96 @@ describe('GfBenchmarkComponent', () => {
     for (const fixture of fixtures) {
       fixture.destroy();
     }
+  });
+
+  /**
+   * The name of a row's actions trigger.
+   *
+   * The trigger opens a menu whose only item deletes, and the label it carried was
+   * a fixed sentence naming a KIND - "Actions for this benchmark". That was wrong
+   * twice over. It named the wrong kind in the watchlist, whose rows are watchlist
+   * items rather than benchmarks; and being fixed, it was identical on every row,
+   * so a reader moving through the table heard the same name for each of them with
+   * nothing to say which holding they were about to remove. On the single canvas the
+   * duplication ran across tables as well, because all three hosting modules can be
+   * on screen at once.
+   *
+   * Asserted through the label-composing method rather than by rendering rows and
+   * reading the DOM, because a rendered row would put Material's table and menu
+   * between the assertion and the string under test. The template's use of it is
+   * asserted from the template source below, which is the other half.
+   */
+  describe("naming a row's actions", () => {
+    const labelFor = (
+      fixture: ComponentFixture<GfBenchmarkComponent>,
+      benchmark: unknown
+    ) => {
+      return (
+        fixture.componentInstance as unknown as {
+          getItemActionsLabel: (aBenchmark: unknown) => string;
+        }
+      ).getItemActionsLabel(benchmark);
+    };
+
+    it('names the row rather than a kind of row', () => {
+      const fixture = mount(DashboardModuleType.WATCHLIST);
+
+      const label = labelFor(fixture, { name: 'Apple Inc.', symbol: 'AAPL' });
+
+      expect(label).toContain('Apple Inc.');
+
+      // The word that made the label wrong in one of its three hosts. Its absence
+      // is what makes the same label correct in all three.
+      expect(label.toLowerCase()).not.toContain('benchmark');
+    });
+
+    it('gives two rows two different names', () => {
+      const fixture = mount(DashboardModuleType.MARKETS);
+
+      expect(
+        labelFor(fixture, { name: 'Apple Inc.', symbol: 'AAPL' })
+      ).not.toBe(
+        labelFor(fixture, { name: 'Microsoft Corp.', symbol: 'MSFT' })
+      );
+    });
+
+    it('falls back to the symbol when a profile carries no name', () => {
+      const fixture = mount(DashboardModuleType.MARKETS);
+
+      expect(labelFor(fixture, { name: null, symbol: 'AAPL' })).toContain(
+        'AAPL'
+      );
+
+      // Both forms are text the row itself shows - the name first, the symbol
+      // beneath it - so the spoken name is never something the viewer cannot see.
+      expect(labelFor(fixture, { name: '', symbol: 'AAPL' })).toContain('AAPL');
+    });
+
+    it('survives a row with neither', () => {
+      const fixture = mount(DashboardModuleType.MARKETS);
+
+      // A table is rendered before its data arrives, so the label must not throw on
+      // a partial row - a thrown expression in a template binding abandons the whole
+      // render pass.
+      expect(() => labelFor(fixture, undefined)).not.toThrow();
+      expect(() => labelFor(fixture, {})).not.toThrow();
+    });
+
+    it('is what the trigger is actually named by', () => {
+      const template = readFileSync(
+        join(__dirname, 'benchmark.component.html'),
+        'utf8'
+      );
+
+      expect(template).toContain(
+        '[attr.aria-label]="getItemActionsLabel(element)"'
+      );
+
+      // The label this replaced. Left behind anywhere it would still be announced,
+      // because an `aria-label` attribute beside the binding would win or conflict
+      // depending on order.
+      expect(template).not.toContain('Actions for this benchmark');
+    });
   });
 
   describe('answering a request on the shared query stream', () => {

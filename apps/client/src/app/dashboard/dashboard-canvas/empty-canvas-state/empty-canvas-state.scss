@@ -1,11 +1,39 @@
 :host {
   display: block;
 
+  // Keyboard focus ring for the controls on this notice.
+  //
+  // Two things remove it otherwise: the global stylesheet resets `button:focus`,
+  // and this theme builds with `mat.define-theme()` rather than opting into
+  // Material's strong focus indicators, so all that is left under keyboard focus
+  // is a flat state layer - which measures barely above the surface it sits on
+  // and falls far short of the 3:1 a non-text indicator is held to. This is the
+  // same ring the module chrome, the control bar and the catalog rows already
+  // draw, so the whole of the new chrome now agrees.
+  //
+  // Offset outward on purpose. The ring then sits on the card behind the button
+  // rather than on the button's own fill, and the card is the surface a focus
+  // indicator's contrast is properly measured against - which matters most for
+  // the filled control, whose fill is the brand teal.
+  button:focus-visible {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: 2px;
+  }
+
   mat-card {
     background: var(--mat-sys-surface-container, #ffffff);
     border-color: var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
     border-radius: var(--mat-sys-corner-medium, 4px);
     color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+
+    // Sized to its own content rather than to the region it is centred in. The
+    // canvas hands this component the whole region so the notice can be centred
+    // in it, and a card that stretched to fill it would be the full-width band
+    // the centring exists to replace. The cap keeps the two lines of copy on a
+    // comfortable measure and, on a narrow viewport, keeps the card inside the
+    // region instead of overhanging it - which is what pushed the action button
+    // past its own card's edge before.
+    max-inline-size: min(100%, 28rem);
   }
 
   // The outline is what makes this read as a control, so it is stated rather than
@@ -22,6 +50,22 @@
       --mat-sys-outline,
       rgba(0, 0, 0, 0.38)
     );
+
+    // The canvas centres this notice over the grid and switches the whole
+    // overlay to `pointer-events: none` so that a catalog row dragged onto an
+    // empty canvas still reaches the grid's drop target underneath. This is the
+    // one element that has to answer a pointer, so it takes them back for
+    // itself - and only for itself, which leaves the rest of the card
+    // transparent to a drag.
+    pointer-events: auto;
+  }
+
+  // Separated from the primary action by a rule rather than by spacing alone, so
+  // the destructive option reads as a different kind of thing rather than as a
+  // second suggestion.
+  .discard-section {
+    border-block-start: 1px solid
+      var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
   }
 
   .secondary-text {
@@ -38,10 +82,21 @@
 }
 
 :host-context(.theme-dark) {
+  button:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+
   mat-card {
     background: var(--mat-sys-surface-container, #262626);
     border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
     color: var(--mat-sys-on-surface, #ffffff);
+  }
+
+  .discard-section {
+    border-block-start-color: var(
+      --mat-sys-outline-variant,
+      rgba(255, 255, 255, 0.12)
+    );
   }
 
   .browse-modules-button {

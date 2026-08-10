@@ -2,6 +2,33 @@
   color: rgb(var(--dark-primary-text));
   display: block;
 
+  /**
+   * The keyboard focus indicator for this surface's own controls.
+   *
+   * It has to be authored here rather than inherited, because the global
+   * stylesheet resets it away: Bootstrap's reboot ships `button:focus { outline: 0 }`,
+   * so a control paints no ring at all unless its own component puts one back. Every
+   * other surface this refactor introduced does exactly that; this one did not, and
+   * the omission was measurable rather than theoretical - a screenshot of the
+   * `Continue to Ghostfolio` button focused was byte-identical to the same button
+   * unfocused, all 1,296,000 viewport pixels included, so there was nothing on
+   * screen to tell a keyboard visitor where they were.
+   *
+   * That button is the sole control on the unavailable-share branch, which makes it
+   * the one place a visitor who followed a dead link has to go. The anchor is
+   * covered by the same rule for the CTA at the foot of the loaded portfolio.
+   *
+   * Same declaration as the sign-in prompt and the empty-canvas state, deliberately:
+   * one indicator across every surface a signed-out visitor can reach. The token
+   * resolves to nothing in this theme, so the fallback is what paints - hence the
+   * dark-theme mirror below, which only has to restate the colour.
+   */
+  a:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: 2px;
+  }
+
   .allocations-by-symbol {
     gf-portfolio-proportion-chart {
       max-width: 80vh;
@@ -19,4 +46,9 @@
 
 :host-context(.theme-dark) {
   color: rgb(var(--light-primary-text));
+
+  a:focus-visible,
+  button:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
 }

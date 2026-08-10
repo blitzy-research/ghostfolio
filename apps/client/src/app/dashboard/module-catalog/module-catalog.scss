@@ -31,6 +31,35 @@
       var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
     flex: 0 0 auto;
 
+    // Retones the two things Material paints to mark this field focused, and it
+    // is a contrast fix rather than a preference.
+    //
+    // The theme sets both of these tokens to the brand primary - `#36cfcc`, a
+    // light teal - which is legible against the field's resting surface and
+    // stops being legible against the wash below: composited over the surface
+    // that wash resolves to roughly `#dff7f7`, and teal on that measures 1.83:1,
+    // against the 3:1 a focus indicator owes and the 4.5:1 a text label owes.
+    // Both the outline AND the floating label were affected, so the field
+    // announced its focus twice and neither announcement was readable.
+    //
+    // On-surface is the same ink every other focused control in this chrome
+    // draws its ring in, so the field now matches the catalog rows below it
+    // instead of contradicting them, and it clears both thresholds against the
+    // wash in either theme. The width is left at Material's own focused 2px,
+    // which is already the value the rest of the chrome uses.
+    //
+    // Declared on this region rather than on the field so the pairing stays with
+    // the background that made it necessary - the two cannot drift apart, and
+    // nothing outside this container is retoned.
+    --mat-form-field-outlined-focus-label-text-color: var(
+      --mat-sys-on-surface,
+      rgba(0, 0, 0, 0.87)
+    );
+    --mat-form-field-outlined-focus-outline-color: var(
+      --mat-sys-on-surface,
+      rgba(0, 0, 0, 0.87)
+    );
+
     // Focus affordance on the catalog's own chrome: a brand-tinted wash marks
     // the search region active while focus sits inside it. `:focus-within`
     // rather than `:focus-visible` is correct because the styled element is the
@@ -55,5 +84,18 @@
   .search-container {
     border-block-end: 1px solid
       var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
+
+    // Restated because the fallback is what paints while the `--mat-sys` layer is
+    // unpopulated, and because this is the pairing that differs: the wash is the
+    // same brand tint over a `#262626` surface, so the readable ink against it is
+    // white rather than near-black.
+    --mat-form-field-outlined-focus-label-text-color: var(
+      --mat-sys-on-surface,
+      #ffffff
+    );
+    --mat-form-field-outlined-focus-outline-color: var(
+      --mat-sys-on-surface,
+      #ffffff
+    );
   }
 }

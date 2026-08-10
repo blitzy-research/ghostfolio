@@ -171,6 +171,41 @@ export class GfBenchmarkComponent {
     addIcons({ ellipsisHorizontal, trashOutline });
   }
 
+  /**
+   * The accessible name of a row's actions trigger, naming that row's own subject.
+   *
+   * Composed here rather than written as a fixed label in the template, for two
+   * reasons that a single string cannot satisfy at once.
+   *
+   * The first is that a fixed label has to name a KIND, and this component has no
+   * single kind to name: three modules mount it, and in the watchlist the rows are
+   * watchlist items rather than benchmarks - so `Actions for this benchmark` was
+   * simply describing the wrong thing on one of the three. Naming the row's own
+   * subject sidesteps the question: the row is what the menu acts on, whatever the
+   * module hosting it is called.
+   *
+   * The second is that a fixed label is the SAME on every row. This trigger opens
+   * a menu whose only item deletes, and a reader moving through a table of them
+   * would hear one identical name per row with nothing to say which holding they
+   * were about to remove. On the single canvas all three hosting modules can be on
+   * screen at once, so the duplication was across tables as well as within one.
+   *
+   * The name is preferred over the symbol because the name is what the row shows
+   * first; the symbol is the fallback for a profile carrying no name, and is also
+   * shown beneath the name whenever `showSymbol` is set, so either way the spoken
+   * name is text the viewer can see.
+   */
+  protected getItemActionsLabel(aBenchmark: Benchmark) {
+    // Length-tested rather than coalesced: a profile can carry an EMPTY name as
+    // well as none at all, and `??` would take the empty one and leave the trigger
+    // named after nothing.
+    const subject = aBenchmark?.name?.length
+      ? aBenchmark.name
+      : aBenchmark?.symbol;
+
+    return $localize`Actions for ${subject}:itemName:`;
+  }
+
   protected onDeleteItem({ dataSource, symbol }: AssetProfileIdentifier) {
     this.notificationService.confirm({
       confirmFn: () => {

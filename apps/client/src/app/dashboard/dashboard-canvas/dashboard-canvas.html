@@ -7,7 +7,19 @@
     here.
   -->
   <div class="flex-grow-1 overflow-auto">
-    <div class="container">
+    <!--
+      `py-3` gives this branch the breathing room the module cards give every other
+      one. Without it the first thing on the surface starts at y=0: the greeting's
+      line box began one pixel ABOVE its own element box, so the tops of its capitals
+      and of the shared portfolio's name were being shaved off, and at 375px, where
+      the greeting wraps to two lines, the same loss landed on both. The invalid-link
+      branch had it too, one level out - the card itself was flush against the top
+      edge with nothing above it.
+
+      Applied here rather than in the hosted component so that both of its branches
+      get it from one place, and so the leaf stays usable at page scale.
+    -->
+    <div class="container py-3">
       <!--
         This is the one branch a signed-in viewer never sees, yet it reaches the
         widest dependency graph here - two data tables, the proportion charts and
@@ -16,18 +28,46 @@
         it only works while this component is referenced nowhere else in the
         template.
 
-        `when isPublicPortfolio` rather than a viewport or interaction trigger:
-        the branch is already guarded on exactly that condition, so the chunk is
-        requested precisely when the branch is drawn and never otherwise.
+        `on immediate` rather than `when isPublicPortfolio`, which is what this used
+        to say and is the reason the placeholder below never appeared. This whole
+        branch is ALREADY guarded on `isPublicPortfolio`, so by the time the defer
+        block exists the condition it was waiting for is true - the trigger fired in
+        the very change-detection pass that created the block, and the placeholder was
+        gone before a frame had been painted with it in. A visitor got 149ms of empty
+        container and then the finished page arriving in one 1766px step.
+
+        `on immediate` fires after the client has finished rendering instead, so the
+        placeholder is painted first and the chunk is still requested straight away.
+        The request timing is therefore unchanged, and the chunk stays out of the
+        initial bundle exactly as before.
+
+        The `@loading` block is what closes the gap the trigger opened: once a trigger
+        fires, the placeholder is retired, and with nothing declared for the loading
+        state that left the container empty until the chunk resolved. It repeats the
+        placeholder's skeleton deliberately - the two states are indistinguishable to
+        a visitor and should be, so that the affordance is continuous from first paint
+        to mounted content. `minimum` on the placeholder guards the remaining case, a
+        chunk already in cache resolving inside one frame and flashing the skeleton.
       -->
-      @defer (when isPublicPortfolio) {
+      @defer (on immediate) {
         <gf-public-portfolio />
-      } @placeholder {
+      } @placeholder (minimum 100ms) {
         <ngx-skeleton-loader
           animation="pulse"
           class="d-block py-3"
+          [count]="3"
           [theme]="{
-            height: '24rem',
+            height: '12rem',
+            width: '100%'
+          }"
+        />
+      } @loading {
+        <ngx-skeleton-loader
+          animation="pulse"
+          class="d-block py-3"
+          [count]="3"
+          [theme]="{
+            height: '12rem',
             width: '100%'
           }"
         />
@@ -35,7 +75,14 @@
     </div>
   </div>
 } @else if (isSignedOut) {
-  <gf-sign-in-prompt />
+  <!--
+    The prompt is told whether the visitor has just been refused by an identity
+    provider, because this branch is also what an untouched first visit renders:
+    without it, a declined sign-in returns the visitor to the card they started
+    from with nothing changed, and the natural response is to press the same
+    button again.
+  -->
+  <gf-sign-in-prompt [hasSignInError]="hasSignInError" />
 } @else if (hasViewerError) {
   <!--
     A request that went wrong, not a sign-out: an unauthorized answer arrives
@@ -46,6 +93,18 @@
   <div class="align-items-center d-flex flex-grow-1 justify-content-center p-3">
     <mat-card appearance="outlined">
       <div class="p-3 text-center" role="alert">
+        <!--
+          The brand mark is here and not on the other notice for a reason: this is
+          the ONE branch that draws no control bar, because the bar acts for a
+          viewer and this branch has none. Without it the most severe failure on
+          the surface was also the least recognisable - a small unbranded card on
+          an empty field, with nothing saying which application had failed - while
+          the *less* severe unreadable-arrangement branch kept the bar and its
+          wordmark. The mark needs no viewer, so it costs nothing to keep.
+        -->
+        <div class="d-flex justify-content-center mb-2">
+          <gf-logo size="large" />
+        </div>
         <div class="mb-1" i18n>Oops! Something went wrong.</div>
         <div class="mb-3 secondary-text" i18n>Please try again later.</div>
         <div class="d-flex justify-content-center">
@@ -61,16 +120,102 @@
       </div>
     </mat-card>
   </div>
-} @else if (isInitialized) {
+} @else if (hasResolvedViewer) {
   <!--
-    Outside the drawer container on purpose: it spans the full width and the
-    container takes the height left beneath it, so the catalog opens below the bar
-    rather than across it and the bar stays put while the canvas scrolls. Drawn
-    for the failed-read state too, because nothing on it concerns the arrangement.
+    Keyed on the viewer alone, not on the arrangement, and that is the whole point:
+    everything below that does not depend on the arrangement is drawn as soon as
+    there is somebody to draw it for, while the arrangement is still on its way.
+
+    Two serialized reads stand between opening the application and knowing what is
+    on this canvas - the viewer, then their arrangement - and gating this entire
+    branch on the second of them meant the browser had nothing to paint but a
+    background until both had answered. It is measured in seconds on a cold cache,
+    and the interval is not idle: the viewer is known, the control bar's every
+    capability is available, and none of it concerns where the modules sit.
+
+    The control bar sits outside the drawer container on purpose: it spans the full
+    width and the container takes the height left beneath it, so the catalog opens
+    below the bar rather than across it and the bar stays put while the canvas
+    scrolls. It is also outside the branch below, so it is created once and survives
+    the arrangement arriving rather than being torn down and rebuilt - which would
+    make every capability on it re-resolve a second time.
+
+    Drawn for the failed-read state too, because nothing on it concerns the
+    arrangement.
   -->
   <gf-dashboard-toolbar />
 
-  @if (hasLayoutError) {
+  <!--
+    The root of the heading hierarchy the module chrome contributes to. Every
+    module header is a level-2 heading, and a document whose first heading is a
+    level 2 has no root for a rotor to hang them from - so this supplies one.
+
+    Announced but not drawn, which is not a compromise: the canvas has no visible
+    page title by design, because every square of it belongs to a module and a
+    title band would take that space from the arrangement. Written once here,
+    outside every state branch below, so the hierarchy holds while the layout is
+    loading, while it has failed to load, and while it is empty.
+  -->
+  <h1 class="sr-only" i18n>Dashboard</h1>
+
+  @if (!isInitialized) {
+    <!--
+      The arrangement is on its way. Deliberately NOT the empty notice and NOT the
+      failed-read card: this state means the answer has not arrived, and saying
+      either of the other two things would be a claim about an answer nobody has
+      yet - the empty notice in particular opens the catalog as though this were a
+      first visit.
+
+      Placeholders rather than a spinner, because the shape of what is coming is
+      the useful thing to say, and this is the same idiom the shared-portfolio
+      branch above uses for its own deferred content. They carry no text, so this
+      state introduces no message to translate; `aria-busy` is what says the
+      region is mid-update, which is the text-free way to say it.
+
+      Neither the drawer nor the catalog trigger is drawn here, and that is load
+      bearing: an empty arrangement has to find the catalog ALREADY open on the
+      canvas's first frame, which is only true while the drawer is created after
+      `isCatalogOpen` is known. Creating it here, necessarily closed, would turn
+      that into an animation the viewer watches instead.
+    -->
+    <div aria-busy="true" class="flex-grow-1 overflow-hidden p-3">
+      <div class="row">
+        <div class="col-8">
+          <ngx-skeleton-loader
+            animation="pulse"
+            class="d-block"
+            [theme]="{
+              height: '21.875rem',
+              width: '100%'
+            }"
+          />
+        </div>
+        <div class="col-4">
+          <ngx-skeleton-loader
+            animation="pulse"
+            class="d-block"
+            [theme]="{
+              height: '21.875rem',
+              width: '100%'
+            }"
+          />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-12">
+          <ngx-skeleton-loader
+            animation="pulse"
+            class="d-block"
+            [theme]="{
+              height: '16.25rem',
+              width: '100%'
+            }"
+          />
+        </div>
+      </div>
+    </div>
+  } @else if (hasLayoutError) {
     <!--
       Deliberately NOT the empty notice: an arrangement that failed to load is not
       an arrangement with nothing in it, and saying so would open the catalog as
@@ -84,13 +229,46 @@
       <mat-card appearance="outlined">
         <div class="p-3 text-center" role="alert">
           <div class="mb-1" i18n>Oops! Something went wrong.</div>
-          <div class="mb-3 secondary-text" i18n>Please try again later.</div>
           <!--
-            Asking again is deliberately the only way out. A layout write may
-            originate only from a grid state change - drag, resize, add or remove
-            - so any action here that emptied the arrangement and wrote it back
-            would be a second write origin, and the only affordance able to
-            overwrite an arrangement the canvas has never successfully read.
+            The two failures are told apart because their recoveries are opposites.
+            A request that did not land is worth asking about again; a stored
+            document this build cannot interpret will be the same document on the
+            next request, so a retry there is a control that provably cannot
+            succeed - which is what a viewer whose saved dashboard was written by a
+            newer build was left pressing.
+          -->
+          @if (isLayoutUnreadable) {
+            <div class="mb-3 secondary-text" i18n>
+              Your saved dashboard cannot be read by this version of Ghostfolio.
+            </div>
+          } @else {
+            <div class="mb-3 secondary-text" i18n>Please try again later.</div>
+          }
+          <!--
+            Asking again stays first, because a failed read is the more common of
+            the two and is genuinely worth another attempt.
+
+            The discard beside it is what makes an uninterpretable arrangement
+            recoverable, and it is NOT a second write origin: it deletes the stored
+            row rather than saving anything, so it cannot overwrite an arrangement
+            the canvas never read - it can only remove it. That is why the endpoint
+            behind it is a DELETE and why the rule that a layout is written only by
+            a grid state change is untouched. It is offered only for the
+            uninterpretable case, and behind a confirmation, because the document it
+            destroys may be perfectly good and merely newer than this build.
+
+            A read that simply did not land gets the other way out: abandoning the
+            saved arrangement for a blank canvas without touching the stored row at
+            all. It resets only what this component holds, so the stored document
+            survives until the viewer places a module - and it is that placement,
+            not this control, that reports the new arrangement down the one write
+            path. Neither control is a second write origin: a layout is persisted
+            only as the consequence of a grid state change, so drag, resize, add and
+            remove remain the whole set.
+
+            Ordering and emphasis say which is which: asking again is the first
+            thing to try and comes first, while leaving the saved arrangement behind
+            is offered beside it without an accent.
           -->
           <div class="d-flex justify-content-center">
             <button
@@ -101,6 +279,28 @@
             >
               <span i18n>Try again</span>
             </button>
+            @if (isLayoutUnreadable) {
+              <button
+                class="ml-2"
+                mat-button
+                type="button"
+                [attr.aria-busy]="isDiscardingLayout ? 'true' : null"
+                [disabled]="isDiscardingLayout"
+                [disabledInteractive]="true"
+                (click)="onDiscardLayout()"
+              >
+                <span i18n>Start over with a blank dashboard</span>
+              </button>
+            } @else {
+              <button
+                class="ml-2"
+                mat-button
+                type="button"
+                (click)="onStartBlankDashboard()"
+              >
+                <span i18n>Start with a blank dashboard</span>
+              </button>
+            }
           </div>
         </div>
       </mat-card>
@@ -125,22 +325,41 @@
     }
 
     <!--
-      The engine declines silently when the arrangement has no room left, so
-      without this a viewer clicking a catalog row sees no module, no message and
-      no reason. A plain `role="status"` notice rather than an alert, because
-      nothing is broken and the state is within the viewer's control; the sentence
-      is the same one written to the canvas's live region so both audiences are
-      told the same thing.
+      A write that was REFUSED rather than failed, which needs a different sentence
+      and different controls. Another client of this same account - most often this
+      person in a second tab - saved while this canvas was being edited, so a layout
+      is a whole document and there are now two of them. Merging is not available:
+      the two disagree about where modules are, and only the viewer can say which
+      arrangement they meant. Retrying unchanged would be worse than useless - it
+      would either be refused identically or, if the token were quietly dropped,
+      destroy the other tab's work without telling anyone, which is the defect this
+      notice exists to end.
+
+      `role="status"` rather than an alert: nothing is broken, what is on screen is
+      still what the viewer arranged, and it is theirs to keep or replace.
     -->
-    @if (hasCapacityError) {
+    @if (hasConflict) {
       <div
-        class="align-items-center d-flex justify-content-center px-3 pt-3"
+        class="align-items-center d-flex flex-wrap justify-content-center px-3 pt-3"
         role="status"
       >
-        <span class="text-center" i18n>
-          There is no room left on the dashboard. Make a module smaller or
-          remove one to add another.
-        </span>
+        <span class="mr-2 text-center" i18n
+          >Your dashboard was changed in another tab.</span
+        >
+        <button
+          mat-button
+          type="button"
+          (click)="onReloadLayoutAfterConflict()"
+        >
+          <span i18n>Load the newer dashboard</span>
+        </button>
+        <button
+          mat-button
+          type="button"
+          (click)="onOverwriteLayoutAfterConflict()"
+        >
+          <span i18n>Keep this arrangement</span>
+        </button>
       </div>
     }
 
@@ -161,11 +380,27 @@
       makes the drawer keep its hands off focus. The drawer element is referenced
       so the canvas can ask whether focus is still inside the panel as it closes.
     -->
+      <!--
+        Named and given a landmark role, because a drawer is a `<div>` as far as
+        assistive technology is concerned: without these it could be reached only
+        by walking into it from the control that opens it, and a reader who has
+        arrowed away from that control had no way back. `region` rather than
+        `complementary`, because the panel sits inside `<main>` and a
+        `complementary` landmark is meant to be a sibling of the main content
+        rather than a part of it; a named `region` is a landmark in either place.
+
+        The role is on the drawer rather than on the catalog component inside it,
+        so the landmark covers exactly what the panel holds and disappears from
+        the landmark list with it.
+      -->
       <mat-sidenav
         #catalogDrawer
+        aria-label="Module catalog"
+        i18n-aria-label
         id="gfDashboardModuleCatalog"
         mode="side"
         position="end"
+        role="region"
         [opened]="isCatalogOpen"
         (openedChange)="onCatalogOpenedChange($event)"
       >
@@ -184,26 +419,164 @@
         />
       </mat-sidenav>
 
-      <mat-sidenav-content>
+      <mat-sidenav-content #canvasPane>
         <!--
         The grid stays mounted underneath this notice rather than being swapped
         out, so the drop target a dragged catalog row needs exists on a canvas
         that is still empty - precisely when it is most likely to be used.
       -->
+        <!--
+          `canDiscardLayout` is bound rather than assumed: retaining an entry the
+          canvas cannot draw - a module the viewer is no longer permitted to see, or
+          a module type this build does not recognise - is what stops a lapsed
+          subscription or a renamed module from deleting a saved module, but it also
+          means the stored document can hold entries the viewer can neither see nor
+          remove. The discard is offered exactly there, so an arrangement that looks
+          empty while something is still saved is not a dead end, and a genuinely
+          new visitor is never offered a destructive action against a document they
+          do not have.
+        -->
         @if (!modules?.length) {
-          <gf-empty-canvas-state class="p-3" (openCatalog)="onOpenCatalog()" />
+          <gf-empty-canvas-state
+            class="p-3"
+            [canDiscardLayout]="hasUnrenderableModules"
+            [isDiscardingLayout]="isDiscardingLayout"
+            (discardLayout)="onDiscardLayout()"
+            (openCatalog)="onOpenCatalog()"
+          />
+        }
+
+        <!--
+          The engine declines silently when the arrangement has no room left, so
+          without this a viewer clicking a catalog row sees no module, no message
+          and no reason. A `role="status"` notice rather than an alert, because
+          nothing is broken and the state is within the viewer's control; the
+          sentence is the same one written to the canvas's live region so both
+          audiences are told the same thing.
+
+          Three things about how it is presented were wrong and are fixed
+          together.
+
+          It was a sentence of bare body copy - no icon, no container, nothing to
+          separate it from the canvas - so the one message the canvas ever
+          volunteers read as a caption rather than as the application answering a
+          click. It now takes the same shape the rest of this chrome uses for a
+          notice: a tokenised container with a leading glyph, which is also what
+          makes it survive forced-colors, where a tint would be dropped and a
+          border and a glyph are not.
+
+          It offered no way out. The notice clears itself on the next add or
+          removal, but until then the only way to be rid of a message about a
+          refusal was to succeed at something - so a viewer who had read it and
+          accepted it was stuck looking at it. The dismissal is a real button, and
+          it is the only control here: nothing in this notice can write a layout.
+
+          It was in flow ABOVE the drawer container, so appearing pushed the whole
+          canvas down forty pixels and disappearing pulled it back up - a
+          reflow of every module as the answer to a click that added nothing.
+          Overlaid on the canvas instead, it costs no layout at all. It is
+          positioned against this region exactly as the edge marks are, so it
+          stays put while the grid scrolls beneath it, and it is `aria-hidden` to
+          nobody: the live region below carries the same words to a screen reader
+          the moment the refusal happens, which is why this one is polite and
+          unfocused.
+        -->
+        @if (hasCapacityError) {
+          <div class="gf-dashboard-canvas-notice" role="status">
+            <div
+              class="align-items-center d-flex gf-dashboard-canvas-notice-body px-3 py-2"
+            >
+              <ion-icon
+                aria-hidden="true"
+                class="mr-2"
+                name="alert-circle-outline"
+              />
+
+              <span class="flex-grow-1" i18n>
+                There is no room left on the dashboard. Make a module smaller or
+                remove one to add another.
+              </span>
+
+              <!--
+                Named for what it dismisses rather than as a bare "Close", because
+                a viewer arriving at this button out of context - by keyboard, or
+                through a list of the page's controls - is told which of the
+                things on screen it acts on.
+              -->
+              <button
+                #capacityNoticeDismiss
+                aria-label="Dismiss the no-room notice"
+                class="ml-2"
+                i18n-aria-label
+                mat-icon-button
+                type="button"
+                (click)="onDismissCapacityNotice()"
+              >
+                <ion-icon aria-hidden="true" name="close-outline" />
+              </button>
+            </div>
+          </div>
         }
 
         <!--
           Outside the grid, because anything inside it would be laid out as a
           cell. Polite rather than assertive: a repositioning is never urgent
           enough to interrupt.
+
+          `aria-atomic` makes the region re-read as a whole on every change. Without
+          it a reader is told only the part of the sentence that differs, which for
+          these messages is usually a single number - "3" on its own, with no way to
+          tell whether it names a column or a row. The messages are one sentence each
+          and short, so re-reading the whole of one costs nothing.
+
+          Repeated messages are handled in the class rather than here - see
+          `announce()`: an attribute cannot make an unchanged string change.
         -->
-        <div aria-live="polite" class="sr-only" role="status">
+        <div
+          aria-atomic="true"
+          aria-live="polite"
+          class="sr-only"
+          role="status"
+        >
           {{ canvasAnnouncement }}
         </div>
 
-        <gridster [options]="options">
+        <!--
+          Says that the canvas continues past its edge, which nothing else here
+          does: user placement is never auto-compacted, so removing the modules at
+          the top of an arrangement leaves several hundred pixels of empty canvas
+          with the rest below the fold, and this platform paints overlay
+          scrollbars so that region composites identically to one with nothing
+          hidden.
+
+          Siblings of the grid rather than children of it, because anything inside
+          the grid would be laid out as a cell. `aria-hidden` because they
+          duplicate no information a screen reader lacks - every module is in the
+          accessibility tree whether or not it is scrolled into view - and each is
+          rendered only when there really is something in that direction, so the
+          marking itself carries meaning.
+        -->
+        @if (hasCanvasOverflowAbove) {
+          <div
+            aria-hidden="true"
+            class="gf-dashboard-canvas-edge-mark is-above"
+          ></div>
+        }
+
+        @if (hasCanvasOverflowBelow) {
+          <div
+            aria-hidden="true"
+            class="gf-dashboard-canvas-edge-mark is-below"
+          ></div>
+        }
+
+        <!--
+          `cdkScrollable` registers this element - the grid's own vertical
+          scroller - with the CDK scroll dispatcher, which is what lets every
+          Material overlay opened from inside a module reposition or close as the
+          canvas scrolls. It changes no scrolling behaviour of its own.
+        -->
+        <gridster cdkScrollable [options]="options">
           <!--
           Tracked by module type, which is unique across the registry and stable
           for the life of a placement, so each cell keeps its element - and the

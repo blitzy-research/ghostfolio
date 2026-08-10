@@ -7,6 +7,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { StatusCodes } from 'http-status-codes';
 import { DeviceDetectorService } from 'ngx-device-detector';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { BehaviorSubject, throwError } from 'rxjs';
 
 import { GfPublicPortfolioComponent } from './public-portfolio.component';
@@ -216,6 +218,63 @@ describe('GfPublicPortfolioComponent', () => {
         expect(isReportingError(component)).toBe(true);
       }
     );
+  });
+
+  /**
+   * The keyboard focus indicator, asserted from the stylesheet source.
+   *
+   * It cannot be asserted from behaviour here. This environment applies no
+   * component-scoped stylesheet and computes no outline, so a rendered-and-focused
+   * assertion passes whether the rule exists or not - which is precisely how a ring
+   * that was authored, compiled and shipped once turned out to paint nothing. The
+   * source is the only thing a test in this environment can actually see.
+   *
+   * Both selectors matter and they are asserted separately. The button is the sole
+   * control on the unavailable-share branch, and the anchor is the CTA at the foot
+   * of a loaded portfolio; a rule naming only one of them would leave a signed-out
+   * visitor with an unindicated control on whichever surface it missed.
+   */
+  describe('the focus indicator on its own controls', () => {
+    const styles = readFileSync(
+      join(__dirname, 'public-portfolio.scss'),
+      'utf8'
+    );
+
+    it('names both the button and the anchor', () => {
+      expect(styles).toContain('a:focus-visible,');
+      expect(styles).toContain('button:focus-visible {');
+    });
+
+    it('draws the same indicator as every other signed-out surface', () => {
+      // Identical to the sign-in prompt and the empty-canvas state. The token is
+      // unpopulated in this theme, so the fallback is what paints, and it is the
+      // fallback - not the token - that has to be right.
+      expect(styles).toContain(
+        'outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));'
+      );
+      expect(styles).toContain('outline-offset: 2px;');
+    });
+
+    it('restates only the colour for the dark theme', () => {
+      // A second full declaration would re-specify the width and offset in a place
+      // nobody would think to look when changing them.
+      const darkTheme = styles.slice(
+        styles.indexOf(':host-context(.theme-dark)')
+      );
+
+      expect(darkTheme).toContain(
+        'outline-color: var(--mat-sys-on-surface, #ffffff);'
+      );
+      expect(darkTheme).not.toContain('outline-offset');
+    });
+
+    it('does not reach into the tables and charts it hosts', () => {
+      // Deliberate: those are pre-existing shared components with their own
+      // indicators to answer for, and a component-scoped rule could not reach them
+      // anyway. Asserted so that a later attempt to fix them from here is caught
+      // here rather than discovered to be inert in a browser.
+      expect(styles).not.toContain('::ng-deep');
+    });
   });
 
   describe('the fetched portfolio', () => {

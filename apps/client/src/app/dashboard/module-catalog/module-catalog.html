@@ -22,6 +22,13 @@
       change, and the hint deliberately sits ABOVE the list where the reader of an
       auto-opened catalog will actually meet it.
     -->
+    <!--
+      `spellcheck="false"` alongside the two corrections already disabled here, and
+      for the same reason: what is typed into this field is matched against a fixed
+      list of module names, several of which no dictionary holds - `Watchlist`,
+      `FIRE`, `X-ray` - so the browser drew a red underline under a term that had
+      just found what the viewer was looking for.
+    -->
     <input
       #search
       aria-describedby="gfDashboardCatalogHint"
@@ -29,6 +36,7 @@
       autocorrect="off"
       matInput
       name="search"
+      spellcheck="false"
       type="text"
       [formControl]="searchFormControl"
     />
@@ -94,8 +102,14 @@
     Reached only once a search term has narrowed the list to nothing, so a catalog
     that is merely still empty never claims a failed search. Dropping the results
     region rather than leaving it standing empty also keeps `role="list"` from
-    existing with no row to own it, and the notice is announced politely because
-    the list it replaces changes without moving focus.
+    existing with no row to own it.
+
+    It carries NO `role="status"` of its own, which it used to. A live region is
+    announced when its CONTENTS change, and this element arrives already holding its
+    sentence: assistive technology has to have been watching the region before the
+    text landed in it, and nothing was watching an element that did not exist. The
+    announcing is done by the region at the foot of this file, which is mounted for
+    the whole life of the panel; this notice is now the visible half alone.
 
     The notice sits inside `<ng-container i18n>` so that its message id stays
     tied to the text alone: Angular hashes the surrounding whitespace along with
@@ -106,7 +120,32 @@
     break, because `role="status"` pushes the opening tag past the 80-column print
     width and the formatter then moves the text onto a line of its own.
   -->
-  <div class="flex-grow-1 no-results px-3 py-2" role="status">
+  <div class="flex-grow-1 no-results px-3 py-2">
     <ng-container i18n>No results found...</ng-container>
   </div>
 }
+
+<!--
+  Mounted for as long as the panel is, and empty until there is something to say,
+  which is what makes it work: assistive technology observes a live region it can
+  already see, so the region has to outlive every message that passes through it.
+
+  It reports the SIZE of the result set rather than repeating the visible notice,
+  because a count is the one thing a reader cannot get from the list without walking
+  it - and because the interesting case is not the empty one. A term that narrows
+  fifteen modules to two changes the list silently: focus stays in the search field,
+  the rows below it are replaced, and nothing says so.
+
+  The term is named in the message as well as the count, and that is deliberate
+  rather than decorative: two successive searches can return the same number of
+  rows, and a live region says nothing when its text does not change. Including
+  what was searched for makes each answer differ from the last for the same reason
+  it makes the answer useful.
+
+  Silent while nothing has been typed. The full catalog is not a search result, and
+  an announcement on open would talk over the panel's own name at exactly the moment
+  a reader is being told where they are.
+-->
+<div aria-atomic="true" aria-live="polite" class="sr-only" role="status">
+  {{ searchAnnouncement }}
+</div>

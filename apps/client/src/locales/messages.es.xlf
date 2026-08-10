@@ -15,11 +15,19 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">102</context>
+          <context context-type="linenumber">84</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/sign-in-prompt/sign-in-prompt.html</context>
-          <context context-type="linenumber">35</context>
+          <context context-type="linenumber">70</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="914277005441799293" datatype="html">
+        <source>Dismiss the no-room notice</source>
+        <target state="new">Dismiss the no-room notice</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">508</context>
         </context-group>
       </trans-unit>
       <trans-unit id="9147595614021697177" datatype="html">
@@ -69,6 +77,10 @@
           <context context-type="sourcefile">apps/client/src/app/components/access-table/access-table.component.html</context>
           <context context-type="linenumber">71</context>
         </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
+          <context context-type="linenumber">246</context>
+        </context-group>
       </trans-unit>
       <trans-unit id="4423815953848062546" datatype="html">
         <source>Continue to Ghostfolio</source>
@@ -83,7 +95,7 @@
         <target state="new">Refresh dashboard</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">27</context>
+          <context context-type="linenumber">47</context>
         </context-group>
       </trans-unit>
       <trans-unit id="135077277733987408" datatype="html">
@@ -319,7 +331,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.html</context>
-          <context context-type="linenumber">197</context>
+          <context context-type="linenumber">196</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8280212421112607879" datatype="html">
@@ -360,6 +372,22 @@
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
           <context context-type="linenumber">15</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4467323362722952678" datatype="html">
+        <source>Unknown</source>
+        <target state="new">Unknown</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/allocations/allocations.html</context>
+          <context context-type="linenumber">241</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/public-portfolio/public-portfolio.html</context>
+          <context context-type="linenumber">230</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/portfolio-proportion-chart/portfolio-proportion-chart.component.ts</context>
+          <context context-type="linenumber">482</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4467730511941715714" datatype="html">
@@ -538,14 +566,6 @@
           <context context-type="linenumber">54</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="6196674674178890387" datatype="html">
-        <source><x id="moduleName" equiv-text="name"/> cannot be resized any further</source>
-        <target state="new"><x id="moduleName" equiv-text="name"/> cannot be resized any further</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">639</context>
-        </context-group>
-      </trans-unit>
       <trans-unit id="2401298947964935245" datatype="html">
         <source>Activity Count</source>
         <target state="translated">Número de operaciones</target>
@@ -715,7 +735,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">279</context>
+          <context context-type="linenumber">299</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2395205455607568422" datatype="html">
@@ -738,14 +758,6 @@
           <context context-type="linenumber">116</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="346265439849052359" datatype="html">
-        <source>Add <x id="moduleName" equiv-text="this.qualifiedName"/> module, no room on the dashboard</source>
-        <target state="new">Add <x id="moduleName" equiv-text="this.qualifiedName"/> module, no room on the dashboard</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.component.ts</context>
-          <context context-type="linenumber">87</context>
-        </context-group>
-      </trans-unit>
       <trans-unit id="3462698906491525936" datatype="html">
         <source>Last Request</source>
         <target state="translated">Última petición</target>
@@ -759,7 +771,7 @@
         <target state="translated">Sentimiento del mercado</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/fear-and-greed-index/fear-and-greed-index.component.html</context>
-          <context context-type="linenumber">12</context>
+          <context context-type="linenumber">20</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2045779543869682721" datatype="html">
@@ -779,11 +791,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/sign-in-prompt/sign-in-prompt.component.ts</context>
-          <context context-type="linenumber">172</context>
+          <context context-type="linenumber">184</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/sign-in-prompt/sign-in-prompt.html</context>
-          <context context-type="linenumber">24</context>
+          <context context-type="linenumber">58</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -803,11 +815,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.component.ts</context>
-          <context context-type="linenumber">190</context>
+          <context context-type="linenumber">184</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/sign-in-prompt/sign-in-prompt.component.ts</context>
-          <context context-type="linenumber">187</context>
+          <context context-type="linenumber">199</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5047379499293213623" datatype="html">
@@ -823,7 +835,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> resized to <x id="columns" equiv-text="aItem.cols"/> columns by <x id="rows" equiv-text="aItem.rows"/> rows</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">646</context>
+          <context context-type="linenumber">1145</context>
         </context-group>
       </trans-unit>
       <trans-unit id="103717583691217276" datatype="html">
@@ -835,7 +847,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/markets/markets.html</context>
-          <context context-type="linenumber">17</context>
+          <context context-type="linenumber">42</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2232148295564585586" datatype="html">
@@ -855,15 +867,15 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">65</context>
+          <context context-type="linenumber">91</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">73</context>
+          <context context-type="linenumber">99</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">298</context>
+          <context context-type="linenumber">300</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6627551976444260400" datatype="html">
@@ -896,14 +908,6 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/login-with-access-token-dialog/login-with-access-token-dialog.html</context>
           <context context-type="linenumber">49</context>
-        </context-group>
-      </trans-unit>
-      <trans-unit id="2792782663677800884" datatype="html">
-        <source>Actions for this benchmark</source>
-        <target state="new">Actions for this benchmark</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.html</context>
-          <context context-type="linenumber">174</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6023420556639522969" datatype="html">
@@ -991,7 +995,7 @@
         <target state="new">There is no room left on the dashboard. Make a module smaller or remove one to add another.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">141</context>
+          <context context-type="linenumber">496</context>
         </context-group>
       </trans-unit>
       <trans-unit id="293512063893966488" datatype="html">
@@ -1107,7 +1111,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">391</context>
+          <context context-type="linenumber">396</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7377728350294749129" datatype="html">
@@ -1119,7 +1123,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">403</context>
+          <context context-type="linenumber">408</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8768104874317770689" datatype="html">
@@ -1131,7 +1135,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">413</context>
+          <context context-type="linenumber">418</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7304247106520037555" datatype="html">
@@ -1143,7 +1147,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">437</context>
+          <context context-type="linenumber">442</context>
         </context-group>
       </trans-unit>
       <trans-unit id="366169681580494481" datatype="html">
@@ -1163,7 +1167,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">443</context>
+          <context context-type="linenumber">448</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1579692722565712588" datatype="html">
@@ -1179,7 +1183,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">87</context>
+          <context context-type="linenumber">89</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1726363342938046830" datatype="html">
@@ -1219,7 +1223,7 @@
         <target state="new">Remove</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">120</context>
+          <context context-type="linenumber">140</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4819099731531004979" datatype="html">
@@ -1243,7 +1247,7 @@
         <target state="translated">¿Seguro que quieres eliminar este método de acceso?</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.component.ts</context>
-          <context context-type="linenumber">278</context>
+          <context context-type="linenumber">272</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5186999845658578027" datatype="html">
@@ -1295,7 +1299,7 @@
         <target state="new">No prompt is generated for another portfolio.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">96</context>
+          <context context-type="linenumber">124</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3840128361464861696" datatype="html">
@@ -1319,7 +1323,7 @@
         <target state="new">Module actions</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">112</context>
+          <context context-type="linenumber">132</context>
         </context-group>
       </trans-unit>
       <trans-unit id="54566436799650845" datatype="html">
@@ -1350,14 +1354,6 @@
           <context context-type="linenumber">154</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4558422042251216201" datatype="html">
-        <source>Zen Mode</source>
-        <target state="translated">Modo Zen</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">220</context>
-        </context-group>
-      </trans-unit>
       <trans-unit id="802458941707537739" datatype="html">
         <source>Low</source>
         <target state="new">Low</target>
@@ -1371,7 +1367,7 @@
         <target state="translated">Iniciar sesión con huella digital</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">238</context>
+          <context context-type="linenumber">240</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2128755808672960949" datatype="html">
@@ -1383,7 +1379,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">271</context>
+          <context context-type="linenumber">273</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-detail-dialog/user-detail-dialog.html</context>
@@ -1447,7 +1443,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">287</context>
+          <context context-type="linenumber">312</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -1575,11 +1571,7 @@
         <target state="translated">Control de administrador</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">352</context>
-        </context-group>
-        <context-group purpose="location">
-          <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">378</context>
+          <context context-type="linenumber">383</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -1659,11 +1651,11 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">212</context>
+          <context context-type="linenumber">230</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">227</context>
+          <context context-type="linenumber">252</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -1687,7 +1679,7 @@
         <target state="translated">Distribución</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">260</context>
+          <context context-type="linenumber">285</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -1779,7 +1771,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">244</context>
+          <context context-type="linenumber">269</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -1800,14 +1792,6 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/portfolio-analysis/portfolio-analysis.html</context>
           <context context-type="linenumber">298</context>
-        </context-group>
-      </trans-unit>
-      <trans-unit id="3561591494576871163" datatype="html">
-        <source>Add <x id="moduleName" equiv-text="this.qualifiedName"/> module</source>
-        <target state="new">Add <x id="moduleName" equiv-text="this.qualifiedName"/> module</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.component.ts</context>
-          <context context-type="linenumber">88</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3566146404399602757" datatype="html">
@@ -1847,7 +1831,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">196</context>
+          <context context-type="linenumber">206</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -2027,7 +2011,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">252</context>
+          <context context-type="linenumber">277</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -2127,11 +2111,11 @@
         <target state="translated">Copiar al portapapeles</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">89</context>
+          <context context-type="linenumber">115</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">114</context>
+          <context context-type="linenumber">142</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/value/value.component.html</context>
@@ -2151,15 +2135,19 @@
         <target state="translated">Prueba otra vez</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">58</context>
+          <context context-type="linenumber">117</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">102</context>
+          <context context-type="linenumber">280</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">122</context>
+          <context context-type="linenumber">322</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
+          <context context-type="linenumber">263</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4808589666930368915" datatype="html">
@@ -2295,7 +2283,7 @@
         <target state="translated">Esta funcionalidad no está disponible actualmente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">51</context>
+          <context context-type="linenumber">53</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7224997887539831269" datatype="html">
@@ -2310,36 +2298,44 @@
           <context context-type="linenumber">193</context>
         </context-group>
         <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
+          <context context-type="linenumber">60</context>
+        </context-group>
+        <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">84</context>
+          <context context-type="linenumber">86</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/lazy-dialog.service.ts</context>
           <context context-type="linenumber">89</context>
         </context-group>
         <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">49</context>
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">2044</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">86</context>
+          <context context-type="linenumber">108</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">120</context>
+          <context context-type="linenumber">231</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">320</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">179</context>
+          <context context-type="linenumber">247</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
-          <context context-type="linenumber">335</context>
+          <context context-type="linenumber">382</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">72</context>
+          <context context-type="linenumber">80</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8947585964755853889" datatype="html">
@@ -2350,24 +2346,32 @@
           <context context-type="linenumber">195</context>
         </context-group>
         <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">53</context>
+          <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
+          <context context-type="linenumber">61</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">86</context>
+          <context context-type="linenumber">55</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
+          <context context-type="linenumber">88</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">2043</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">50</context>
+          <context context-type="linenumber">109</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">87</context>
+          <context context-type="linenumber">245</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">73</context>
+          <context context-type="linenumber">81</context>
         </context-group>
       </trans-unit>
       <trans-unit id="79310201207169632" datatype="html">
@@ -2579,7 +2583,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/markets/markets.component.ts</context>
-          <context context-type="linenumber">58</context>
+          <context context-type="linenumber">78</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
@@ -2591,7 +2595,7 @@
         <target state="new">AI Chat</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">403</context>
+          <context context-type="linenumber">441</context>
         </context-group>
       </trans-unit>
       <trans-unit id="683858407534897338" datatype="html">
@@ -2623,7 +2627,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/markets/markets.component.ts</context>
-          <context context-type="linenumber">59</context>
+          <context context-type="linenumber">79</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/i18n.ts</context>
@@ -2691,7 +2695,7 @@
         <target state="translated">Funcionalidades experimentales</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">254</context>
+          <context context-type="linenumber">256</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1931353503905413384" datatype="html">
@@ -2753,6 +2757,10 @@
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
           <context context-type="linenumber">191</context>
         </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
+          <context context-type="linenumber">117</context>
+        </context-group>
       </trans-unit>
       <trans-unit id="8671234314555525900" datatype="html">
         <source>Appearance</source>
@@ -2760,6 +2768,10 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
           <context context-type="linenumber">177</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
+          <context context-type="linenumber">334</context>
         </context-group>
       </trans-unit>
       <trans-unit id="413116577994876478" datatype="html">
@@ -2769,6 +2781,10 @@
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
           <context context-type="linenumber">192</context>
         </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
+          <context context-type="linenumber">118</context>
+        </context-group>
       </trans-unit>
       <trans-unit id="3892161059518616136" datatype="html">
         <source>Dark</source>
@@ -2776,6 +2792,10 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
           <context context-type="linenumber">193</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
+          <context context-type="linenumber">119</context>
         </context-group>
       </trans-unit>
       <trans-unit id="112783260724635106" datatype="html">
@@ -2787,11 +2807,11 @@
         </context-group>
       </trans-unit>
       <trans-unit id="5236122920872326751" datatype="html">
-        <source><x id="moduleName" equiv-text="aDefinition.name"/> did not fit where it was dropped and was added at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></source>
-        <target state="new"><x id="moduleName" equiv-text="aDefinition.name"/> did not fit where it was dropped and was added at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></target>
+        <source><x id="moduleName" equiv-text="name"/> did not fit where it was dropped and was added at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></source>
+        <target state="new"><x id="moduleName" equiv-text="name"/> did not fit where it was dropped and was added at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1362</context>
+          <context context-type="linenumber">2558</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5242468862715363747" datatype="html">
@@ -2815,7 +2835,7 @@
         <target state="new">No room</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.html</context>
-          <context context-type="linenumber">120</context>
+          <context context-type="linenumber">151</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8192718423057883427" datatype="html">
@@ -2839,7 +2859,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">295</context>
+          <context context-type="linenumber">326</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/activities-table/activities-table.component.html</context>
@@ -3066,28 +3086,24 @@
         <source>No data available</source>
         <target state="translated">Sin datos disponibles</target>
         <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/components/allocations/allocations.html</context>
-          <context context-type="linenumber">241</context>
+          <context context-type="sourcefile">apps/client/src/app/components/fear-and-greed-index/fear-and-greed-index.component.html</context>
+          <context context-type="linenumber">37</context>
         </context-group>
         <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/components/public-portfolio/public-portfolio.html</context>
-          <context context-type="linenumber">230</context>
+          <context context-type="sourcefile">apps/client/src/app/components/markets/markets.html</context>
+          <context context-type="linenumber">65</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">86</context>
+          <context context-type="linenumber">114</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.html</context>
-          <context context-type="linenumber">230</context>
+          <context context-type="linenumber">229</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/portfolio-proportion-chart/portfolio-proportion-chart.component.ts</context>
-          <context context-type="linenumber">462</context>
-        </context-group>
-        <context-group purpose="location">
-          <context context-type="sourcefile">libs/ui/src/lib/portfolio-proportion-chart/portfolio-proportion-chart.component.ts</context>
-          <context context-type="linenumber">476</context>
+          <context context-type="linenumber">496</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/top-holdings/top-holdings.component.html</context>
@@ -3159,7 +3175,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
-          <context context-type="linenumber">334</context>
+          <context context-type="linenumber">381</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5957846001261659229" datatype="html">
@@ -3319,11 +3335,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">221</context>
-        </context-group>
-        <context-group purpose="location">
-          <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">370</context>
+          <context context-type="linenumber">401</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -3335,7 +3347,7 @@
         <target state="translated">Usuarios</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">393</context>
+          <context context-type="linenumber">431</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -3359,7 +3371,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">204</context>
+          <context context-type="linenumber">214</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -3494,20 +3506,12 @@
           <context context-type="linenumber">204</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="6337822466854281629" datatype="html">
-        <source>Distraction-free experience for turbulent times</source>
-        <target state="translated">Experiencia sin distracciones para tiempos turbulentos</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">222</context>
-        </context-group>
-      </trans-unit>
       <trans-unit id="6268497822578092660" datatype="html">
         <source>Sneak peek at upcoming functionality</source>
         <target state="translated">Un adelanto de las próximas funciones</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">256</context>
+          <context context-type="linenumber">258</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5451369123952965511" datatype="html">
@@ -3591,15 +3595,15 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">111</context>
+          <context context-type="linenumber">131</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">118</context>
+          <context context-type="linenumber">138</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">219</context>
+          <context context-type="linenumber">239</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7498591289549626867" datatype="html">
@@ -3624,6 +3628,14 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/portfolio-summary/portfolio-summary.component.html</context>
           <context context-type="linenumber">92</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="2956056528330437143" datatype="html">
+        <source>Highlights</source>
+        <target state="new">Highlights</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
+          <context context-type="linenumber">224</context>
         </context-group>
       </trans-unit>
       <trans-unit id="296005715452289357" datatype="html">
@@ -3727,7 +3739,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">217</context>
+          <context context-type="linenumber">237</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8197682624172763038" datatype="html">
@@ -3891,11 +3903,11 @@
         <target state="translated">Ajustes</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">307</context>
+          <context context-type="linenumber">338</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">384</context>
+          <context context-type="linenumber">422</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -3951,7 +3963,7 @@
         <target state="new">Assistant</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">47</context>
+          <context context-type="linenumber">67</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8423347267877569584" datatype="html">
@@ -4323,7 +4335,7 @@
         <target state="translated">Autenticación biométrica</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">237</context>
+          <context context-type="linenumber">239</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3627006945295714424" datatype="html">
@@ -4339,7 +4351,7 @@
         <target state="translated">Exportar datos</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">279</context>
+          <context context-type="linenumber">281</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8298612418414367990" datatype="html">
@@ -4613,7 +4625,7 @@
         <target state="new">Added</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.html</context>
-          <context context-type="linenumber">109</context>
+          <context context-type="linenumber">134</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2321031042449352964" datatype="html">
@@ -4709,11 +4721,11 @@
         </context-group>
       </trans-unit>
       <trans-unit id="6560417966637697963" datatype="html">
-        <source>There is no room left on the dashboard for <x id="moduleName" equiv-text="aDefinition.name"/>. Remove or resize a module to make space.</source>
-        <target state="new">There is no room left on the dashboard for <x id="moduleName" equiv-text="aDefinition.name"/>. Remove or resize a module to make space.</target>
+        <source>There is no room left on the dashboard for <x id="moduleName" equiv-text="this.qualifyDefinitionName(aDefinition)"/>. Remove or resize a module to make space.</source>
+        <target state="new">There is no room left on the dashboard for <x id="moduleName" equiv-text="this.qualifyDefinitionName(aDefinition)"/>. Remove or resize a module to make space.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1349</context>
+          <context context-type="linenumber">2541</context>
         </context-group>
       </trans-unit>
       <trans-unit id="9011425576088183078" datatype="html">
@@ -4753,11 +4765,11 @@
         </context-group>
       </trans-unit>
       <trans-unit id="840024562399595677" datatype="html">
-        <source><x id="moduleName" equiv-text="aDefinition.name"/> added to the dashboard at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></source>
-        <target state="new"><x id="moduleName" equiv-text="aDefinition.name"/> added to the dashboard at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></target>
+        <source><x id="moduleName" equiv-text="name"/> added to the dashboard at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></source>
+        <target state="new"><x id="moduleName" equiv-text="name"/> added to the dashboard at column <x id="column" equiv-text="item.x + 1"/>, row <x id="row" equiv-text="item.y + 1"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">1363</context>
+          <context context-type="linenumber">2559</context>
         </context-group>
       </trans-unit>
       <trans-unit id="840264455199725883" datatype="html">
@@ -4781,7 +4793,7 @@
         <target state="new">Copy the prompt, then paste it into your AI tool.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">98</context>
+          <context context-type="linenumber">126</context>
         </context-group>
       </trans-unit>
       <trans-unit id="3737711445155929474" datatype="html">
@@ -4793,7 +4805,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">315</context>
+          <context context-type="linenumber">346</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -4817,7 +4829,7 @@
         <target state="translated">Acceso</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">343</context>
+          <context context-type="linenumber">374</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -4941,7 +4953,7 @@
         <target state="translated">Ghostfolio es un panel de control de finanzas personales para hacer un seguimiento de tu patrimonio neto, incluyendo efectivo, acciones, ETFs y criptomonedas a través de múltiples plataformas.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">86</context>
+          <context context-type="linenumber">100</context>
         </context-group>
       </trans-unit>
       <trans-unit id="page.fire.projected.1" datatype="html">
@@ -4977,7 +4989,7 @@
         <target state="translated">Software de gestión de patrimonio de código abierto</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">317</context>
+          <context context-type="linenumber">331</context>
         </context-group>
       </trans-unit>
       <trans-unit id="metaKeywords" datatype="html">
@@ -4985,7 +4997,7 @@
         <target state="translated">aplicación, activo, criptomoneda, panel, ETF, finanzas, gestión, rendimiento, cartera, software, acciones, comercio, patrimonio, web3</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">91</context>
+          <context context-type="linenumber">105</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1868064391111970959" datatype="html">
@@ -5185,7 +5197,7 @@
         <target state="translated">Cola de trabajos</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">361</context>
+          <context context-type="linenumber">392</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -5265,7 +5277,7 @@
         <target state="translated">Semana hasta la fecha</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">395</context>
+          <context context-type="linenumber">400</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7449130515300985957" datatype="html">
@@ -5273,7 +5285,7 @@
         <target state="new">AI prompts are unavailable while viewing another portfolio.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">52</context>
+          <context context-type="linenumber">60</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7451343426685730864" datatype="html">
@@ -5285,7 +5297,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">395</context>
+          <context context-type="linenumber">400</context>
         </context-group>
       </trans-unit>
       <trans-unit id="358501326846847310" datatype="html">
@@ -5293,7 +5305,7 @@
         <target state="translated">Mes hasta la fecha</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">399</context>
+          <context context-type="linenumber">404</context>
         </context-group>
       </trans-unit>
       <trans-unit id="399380803601269035" datatype="html">
@@ -5305,7 +5317,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">399</context>
+          <context context-type="linenumber">404</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2593751087640318641" datatype="html">
@@ -5313,7 +5325,7 @@
         <target state="translated">Año hasta la fecha</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">403</context>
+          <context context-type="linenumber">408</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2509141182388535183" datatype="html">
@@ -5353,7 +5365,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">413</context>
+          <context context-type="linenumber">418</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7658073495909471632" datatype="html">
@@ -5365,7 +5377,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">437</context>
+          <context context-type="linenumber">442</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4252274043276232149" datatype="html">
@@ -5422,7 +5434,7 @@
         <target state="translated">¡Vaya! Parece que estás haciendo demasiadas solicitudes. Por favor, reduce la velocidad un poco.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">104</context>
+          <context context-type="linenumber">106</context>
         </context-group>
       </trans-unit>
       <trans-unit id="myAccount" datatype="html">
@@ -5430,7 +5442,7 @@
         <target state="translated">Mi cuenta</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">94</context>
+          <context context-type="linenumber">108</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8204176479746810612" datatype="html">
@@ -5490,11 +5502,11 @@
         <target state="new">Browse modules</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">282</context>
+          <context context-type="linenumber">655</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
-          <context context-type="linenumber">286</context>
+          <context context-type="linenumber">659</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/empty-canvas-state/empty-canvas-state.html</context>
@@ -5522,7 +5534,7 @@
         <target state="translated">Esta acción no está permitida.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
-          <context context-type="linenumber">63</context>
+          <context context-type="linenumber">65</context>
         </context-group>
       </trans-unit>
       <trans-unit id="67933701892581429" datatype="html">
@@ -5562,7 +5574,7 @@
         <target state="new">Move or resize module</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
-          <context context-type="linenumber">65</context>
+          <context context-type="linenumber">66</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7373613501758200135" datatype="html">
@@ -5578,7 +5590,7 @@
         <target state="translated">¿Seguro que quieres eliminar tu cuenta de Ghostfolio?</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.component.ts</context>
-          <context context-type="linenumber">204</context>
+          <context context-type="linenumber">198</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8555430830140981847" datatype="html">
@@ -5586,7 +5598,7 @@
         <target state="translated">Zona peligrosa</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">291</context>
+          <context context-type="linenumber">293</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4310394964982912017" datatype="html">
@@ -5594,7 +5606,7 @@
         <target state="translated">Eliminar cuenta</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">329</context>
+          <context context-type="linenumber">331</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4931386094893319473" datatype="html">
@@ -5626,7 +5638,7 @@
         <target state="translated">¡Vaya! Hubo un error al configurar la autenticación biométrica.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.component.ts</context>
-          <context context-type="linenumber">327</context>
+          <context context-type="linenumber">305</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7215101881367554791" datatype="html">
@@ -5675,14 +5687,6 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/home-holdings/home-holdings.html</context>
           <context context-type="linenumber">37</context>
-        </context-group>
-      </trans-unit>
-      <trans-unit id="1393760626854342932" datatype="html">
-        <source><x id="moduleName" equiv-text="name"/> cannot be moved any further</source>
-        <target state="new"><x id="moduleName" equiv-text="name"/> cannot be moved any further</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">640</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7798195225890418363" datatype="html">
@@ -5811,14 +5815,6 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/admin-jobs/admin-jobs.html</context>
           <context context-type="linenumber">258</context>
-        </context-group>
-      </trans-unit>
-      <trans-unit id="8803383987246271354" datatype="html">
-        <source>Reveal <x id="moduleName" equiv-text="this.qualifiedName"/> module</source>
-        <target state="new">Reveal <x id="moduleName" equiv-text="this.qualifiedName"/> module</target>
-        <context-group purpose="location">
-          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.component.ts</context>
-          <context context-type="linenumber">83</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8812557643580169825" datatype="html">
@@ -6022,7 +6018,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">49</context>
+          <context context-type="linenumber">67</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/historical-market-data-editor/historical-market-data-editor-dialog/historical-market-data-editor-dialog.html</context>
@@ -6288,7 +6284,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> moved to column <x id="column" equiv-text="aItem.x + 1"/>, row <x id="row" equiv-text="aItem.y + 1"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">647</context>
+          <context context-type="linenumber">1146</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6044768969177890700" datatype="html">
@@ -6364,7 +6360,7 @@
         <target state="new"><x id="moduleName" equiv-text="name"/> removed from the dashboard</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
-          <context context-type="linenumber">474</context>
+          <context context-type="linenumber">895</context>
         </context-group>
       </trans-unit>
       <trans-unit id="9173945515149078768" datatype="html">
@@ -6488,7 +6484,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">256</context>
+          <context context-type="linenumber">276</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1769610706135259386" datatype="html">
@@ -6612,7 +6608,7 @@
         <target state="new">Click a module to add it, or drag it onto the canvas.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog.html</context>
-          <context context-type="linenumber">52</context>
+          <context context-type="linenumber">60</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7109040016560023658" datatype="html">
@@ -6628,7 +6624,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">131</context>
+          <context context-type="linenumber">159</context>
         </context-group>
       </trans-unit>
       <trans-unit id="567268522134288870" datatype="html">
@@ -6768,7 +6764,7 @@
         <target state="translated">Continuar</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">58</context>
+          <context context-type="linenumber">136</context>
         </context-group>
       </trans-unit>
       <trans-unit id="2495756706109462943" datatype="html">
@@ -6776,7 +6772,7 @@
         <target state="translated">Aquí está tu token de seguridad. Solo es visible una vez, por favor guárdalo y mantenlo en un lugar seguro.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-registration-dialog/user-account-registration-dialog.html</context>
-          <context context-type="linenumber">68</context>
+          <context context-type="linenumber">94</context>
         </context-group>
       </trans-unit>
       <trans-unit id="8944214829054650479" datatype="html">
@@ -6799,12 +6795,12 @@
           <context context-type="linenumber">219</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="6752851341939241310" datatype="html">
-        <source>Find account, holding or page...</source>
-        <target state="translated">Busca una cuenta, posición o página...</target>
+      <trans-unit id="5637270855107639023" datatype="html">
+        <source>Find account, holding or module...</source>
+        <target state="new">Busca una cuenta, posición o página...</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.component.ts</context>
-          <context context-type="linenumber">124</context>
+          <context context-type="linenumber">129</context>
         </context-group>
       </trans-unit>
       <trans-unit id="6759205696902713848" datatype="html">
@@ -6889,7 +6885,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-account-settings/user-account-settings.html</context>
-          <context context-type="linenumber">305</context>
+          <context context-type="linenumber">307</context>
         </context-group>
       </trans-unit>
       <trans-unit id="4391289919356861627" datatype="html">
@@ -6973,7 +6969,7 @@
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
-          <context context-type="linenumber">236</context>
+          <context context-type="linenumber">261</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/common/src/lib/routes/routes.ts</context>
@@ -6985,7 +6981,7 @@
         <target state="translated">¿Seguro que quieres eliminar este elemento?</target>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.ts</context>
-          <context context-type="linenumber">180</context>
+          <context context-type="linenumber">215</context>
         </context-group>
       </trans-unit>
       <trans-unit id="7507948636555938109" datatype="html">
@@ -6993,7 +6989,7 @@
         <target state="translated">Cerrar sesión</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
-          <context context-type="linenumber">286</context>
+          <context context-type="linenumber">360</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5323883986770878166" datatype="html">
@@ -7001,11 +6997,11 @@
         <target state="translated">Los cálculos se basan en datos de mercado con retraso y es posible que no se muestren en tiempo real.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/home-market/home-market.html</context>
-          <context context-type="linenumber">46</context>
+          <context context-type="linenumber">47</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/markets/markets.html</context>
-          <context context-type="linenumber">55</context>
+          <context context-type="linenumber">86</context>
         </context-group>
       </trans-unit>
       <trans-unit id="routes.about.changelog" datatype="html">
@@ -7034,7 +7030,7 @@
         <target state="new">Viewing another account</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.component.ts</context>
-          <context context-type="linenumber">104</context>
+          <context context-type="linenumber">125</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5342678948449903412" datatype="html">
@@ -7050,7 +7046,7 @@
         <target state="translated">Establecer</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">225</context>
+          <context context-type="linenumber">239</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.emergencyFundSetup.false" datatype="html">
@@ -7058,7 +7054,7 @@
         <target state="translated">No se ha creado ningún fondo de emergencia</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">227</context>
+          <context context-type="linenumber">241</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.emergencyFundSetup.true" datatype="html">
@@ -7066,7 +7062,7 @@
         <target state="translated">Se ha creado un fondo de emergencia</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">230</context>
+          <context context-type="linenumber">244</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.feeRatioTotalInvestmentVolume" datatype="html">
@@ -7074,7 +7070,7 @@
         <target state="translated">Relación de comisiones</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">232</context>
+          <context context-type="linenumber">246</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.feeRatioTotalInvestmentVolume.false" datatype="html">
@@ -7082,7 +7078,7 @@
         <target state="translated">Las comisiones superan el ${thresholdMax}% de tu volumen total de inversión (${feeRatio}%)</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">234</context>
+          <context context-type="linenumber">248</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.feeRatioTotalInvestmentVolume.true" datatype="html">
@@ -7090,7 +7086,7 @@
         <target state="translated">Las comisiones no superan el ${thresholdMax}% de tu volumen total de inversión (${feeRatio}%)</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">238</context>
+          <context context-type="linenumber">252</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1140327701924892323" datatype="html">
@@ -7130,7 +7126,7 @@
         <target state="translated">Cuenta única</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">109</context>
+          <context context-type="linenumber">123</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.accountClusterRiskSingleAccount.false" datatype="html">
@@ -7138,7 +7134,7 @@
         <target state="translated">Tu patrimonio neto está gestionado por una única cuenta</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">111</context>
+          <context context-type="linenumber">125</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.accountClusterRiskSingleAccount.true" datatype="html">
@@ -7146,7 +7142,7 @@
         <target state="translated">Tu patrimonio neto está gestionado por ${accountsLength} cuentas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">117</context>
+          <context context-type="linenumber">131</context>
         </context-group>
       </trans-unit>
       <trans-unit id="routes.resources.personalFinanceTools" datatype="html">
@@ -7200,7 +7196,7 @@
         <target state="new">Stop viewing it to generate a prompt for your own.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/modules/ai-chat/ai-chat.module.html</context>
-          <context context-type="linenumber">54</context>
+          <context context-type="linenumber">62</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5743832581969115624" datatype="html">
@@ -7256,7 +7252,7 @@
         <target state="translated">Inversión</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">96</context>
+          <context context-type="linenumber">110</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.accountClusterRiskCurrentInvestment.false" datatype="html">
@@ -7264,7 +7260,7 @@
         <target state="translated">Más del ${thresholdMax}% de tu inversión actual está en ${maxAccountName} (${maxInvestmentRatio}%)</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">98</context>
+          <context context-type="linenumber">112</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.accountClusterRiskCurrentInvestment.true" datatype="html">
@@ -7272,7 +7268,7 @@
         <target state="translated">La mayor parte de tu inversión actual está en ${maxAccountName} (${maxInvestmentRatio}%) y no excede el ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">105</context>
+          <context context-type="linenumber">119</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskEquity" datatype="html">
@@ -7280,7 +7276,7 @@
         <target state="translated">Renta variable</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">122</context>
+          <context context-type="linenumber">136</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskEquity.false.max" datatype="html">
@@ -7288,7 +7284,7 @@
         <target state="translated">La contribución de renta variable de tu inversión actual (${equityValueRatio}%) supera el ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">124</context>
+          <context context-type="linenumber">138</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskEquity.false.min" datatype="html">
@@ -7296,7 +7292,7 @@
         <target state="translated">La contribución de renta variable de tu inversión actual (${equityValueRatio}%) está por debajo del ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">128</context>
+          <context context-type="linenumber">142</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskEquity.true" datatype="html">
@@ -7304,7 +7300,7 @@
         <target state="translated">La contribución de renta variable de tu inversión actual (${equityValueRatio}%) está dentro del rango entre ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">132</context>
+          <context context-type="linenumber">146</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskFixedIncome" datatype="html">
@@ -7312,7 +7308,7 @@
         <target state="translated">Renta fija</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">136</context>
+          <context context-type="linenumber">150</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskFixedIncome.false.max" datatype="html">
@@ -7320,7 +7316,7 @@
         <target state="translated">La contribución de renta fija de tu inversión actual (${fixedIncomeValueRatio}%) supera el ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">138</context>
+          <context context-type="linenumber">152</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskFixedIncome.false.min" datatype="html">
@@ -7328,7 +7324,7 @@
         <target state="translated">La contribución de renta fija de tu inversión actual (${fixedIncomeValueRatio}%) está por debajo del ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">142</context>
+          <context context-type="linenumber">156</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRiskFixedIncome.true" datatype="html">
@@ -7336,7 +7332,7 @@
         <target state="translated">La contribución de renta fija de tu inversión actual (${fixedIncomeValueRatio}%) está dentro del rango entre ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">146</context>
+          <context context-type="linenumber">160</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRiskBaseCurrencyCurrentInvestment" datatype="html">
@@ -7344,7 +7340,7 @@
         <target state="translated">Inversión: Divisa base</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">165</context>
+          <context context-type="linenumber">179</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRiskBaseCurrencyCurrentInvestment.false" datatype="html">
@@ -7352,7 +7348,7 @@
         <target state="translated">La mayor parte de tu inversión actual no está en tu divisa base (${baseCurrencyValueRatio}% en ${baseCurrency})</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">168</context>
+          <context context-type="linenumber">182</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRiskBaseCurrencyCurrentInvestment.true" datatype="html">
@@ -7360,7 +7356,7 @@
         <target state="translated">La mayor parte de tu inversión actual está en tu divisa base (${baseCurrencyValueRatio}% en ${baseCurrency})</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">172</context>
+          <context context-type="linenumber">186</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRiskCurrentInvestment" datatype="html">
@@ -7368,7 +7364,7 @@
         <target state="translated">Inversión</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">175</context>
+          <context context-type="linenumber">189</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRiskCurrentInvestment.false" datatype="html">
@@ -7376,7 +7372,7 @@
         <target state="translated">Más del ${thresholdMax}% de tu inversión actual está en ${currency} (${maxValueRatio}%)</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">177</context>
+          <context context-type="linenumber">191</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRiskCurrentInvestment.true" datatype="html">
@@ -7384,7 +7380,7 @@
         <target state="translated">La mayor parte de tu inversión actual está en ${currency} (${maxValueRatio}%) y no supera el ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">181</context>
+          <context context-type="linenumber">195</context>
         </context-group>
       </trans-unit>
       <trans-unit id="routes.start" datatype="html">
@@ -7421,7 +7417,7 @@
         <target state="translated">Acciones</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/markets/markets.component.ts</context>
-          <context context-type="linenumber">63</context>
+          <context context-type="linenumber">84</context>
         </context-group>
       </trans-unit>
       <trans-unit id="1419479195323304896" datatype="html">
@@ -7429,7 +7425,7 @@
         <target state="translated">Criptomonedas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/markets/markets.component.ts</context>
-          <context context-type="linenumber">64</context>
+          <context context-type="linenumber">85</context>
         </context-group>
       </trans-unit>
       <trans-unit id="142654590491855672" datatype="html">
@@ -7464,6 +7460,14 @@
           <context context-type="linenumber">46</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="29832309535656200" datatype="html">
+        <source>System</source>
+        <target state="new">System</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/common/src/lib/dashboard/dashboard-module.ts</context>
+          <context context-type="linenumber">416</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="5795124554973640871" datatype="html">
         <source>Collectible</source>
         <target state="translated">Coleccionable</target>
@@ -7489,7 +7493,7 @@
         <target state="translated">Riesgos de agrupación de cuentas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">95</context>
+          <context context-type="linenumber">109</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.assetClassClusterRisk.category" datatype="html">
@@ -7497,7 +7501,7 @@
         <target state="translated">Riesgos de agrupación de tipos de activos</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">120</context>
+          <context context-type="linenumber">134</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.currencyClusterRisk.category" datatype="html">
@@ -7505,7 +7509,7 @@
         <target state="translated">Riesgos de agrupación de divisas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">163</context>
+          <context context-type="linenumber">177</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRisk.category" datatype="html">
@@ -7513,7 +7517,7 @@
         <target state="translated">Riesgos de agrupación de mercados económicos</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">186</context>
+          <context context-type="linenumber">200</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.emergencyFund.category" datatype="html">
@@ -7521,7 +7525,7 @@
         <target state="translated">Fondo de emergencia</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">224</context>
+          <context context-type="linenumber">238</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.fees.category" datatype="html">
@@ -7529,7 +7533,7 @@
         <target state="translated">Comisiones</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">241</context>
+          <context context-type="linenumber">255</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.liquidity.category" datatype="html">
@@ -7537,7 +7541,7 @@
         <target state="translated">Liquidez</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">150</context>
+          <context context-type="linenumber">164</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.liquidityBuyingPower" datatype="html">
@@ -7545,7 +7549,7 @@
         <target state="translated">Poder adquisitivo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">151</context>
+          <context context-type="linenumber">165</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.liquidityBuyingPower.false.min" datatype="html">
@@ -7553,7 +7557,7 @@
         <target state="translated">Tu poder adquisitivo está por debajo de ${thresholdMin} ${baseCurrency}</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">153</context>
+          <context context-type="linenumber">167</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.liquidityBuyingPower.false.zero" datatype="html">
@@ -7561,7 +7565,7 @@
         <target state="translated">Tu poder adquisitivo es 0 ${baseCurrency}</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">157</context>
+          <context context-type="linenumber">171</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.liquidityBuyingPower.true" datatype="html">
@@ -7569,7 +7573,7 @@
         <target state="translated">Tu poder adquisitivo supera ${thresholdMin} ${baseCurrency}</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">160</context>
+          <context context-type="linenumber">174</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRisk.category" datatype="html">
@@ -7577,7 +7581,7 @@
         <target state="translated">Riesgos de agrupación de mercados regionales</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">243</context>
+          <context context-type="linenumber">257</context>
         </context-group>
       </trans-unit>
       <trans-unit id="5815936665222001383" datatype="html">
@@ -7585,7 +7589,7 @@
         <target state="translated">No se encontraron resultados...</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog.html</context>
-          <context context-type="linenumber">110</context>
+          <context context-type="linenumber">124</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">libs/ui/src/lib/assistant/assistant.html</context>
@@ -7597,7 +7601,7 @@
         <target state="translated">Mercados desarrollados</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">189</context>
+          <context context-type="linenumber">203</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskDevelopedMarkets.false.max" datatype="html">
@@ -7605,7 +7609,7 @@
         <target state="translated">La contribución a mercados desarrollados de tu inversión actual (${developedMarketsValueRatio}%) supera ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">192</context>
+          <context context-type="linenumber">206</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskDevelopedMarkets.false.min" datatype="html">
@@ -7613,7 +7617,7 @@
         <target state="translated">La contribución a mercados desarrollados de tu inversión actual (${developedMarketsValueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">197</context>
+          <context context-type="linenumber">211</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskDevelopedMarkets.true" datatype="html">
@@ -7621,7 +7625,7 @@
         <target state="translated">La contribución a mercados desarrollados de tu inversión actual (${developedMarketsValueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">202</context>
+          <context context-type="linenumber">216</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskEmergingMarkets" datatype="html">
@@ -7629,7 +7633,7 @@
         <target state="translated">Mercados emergentes</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">207</context>
+          <context context-type="linenumber">221</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskEmergingMarkets.false.max" datatype="html">
@@ -7637,7 +7641,7 @@
         <target state="translated">La contribución a mercados emergentes de tu inversión actual (${emergingMarketsValueRatio}%) supera ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">210</context>
+          <context context-type="linenumber">224</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskEmergingMarkets.false.min" datatype="html">
@@ -7645,7 +7649,7 @@
         <target state="translated">La contribución a mercados emergentes de tu inversión actual (${emergingMarketsValueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">215</context>
+          <context context-type="linenumber">229</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.economicMarketClusterRiskEmergingMarkets.true" datatype="html">
@@ -7653,7 +7657,7 @@
         <target state="translated">La contribución a mercados emergentes de tu inversión actual (${emergingMarketsValueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">220</context>
+          <context context-type="linenumber">234</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.accountClusterRiskCurrentInvestment.false.invalid" datatype="html">
@@ -7661,7 +7665,7 @@
         <target state="translated">No se han configurado cuentas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">102</context>
+          <context context-type="linenumber">116</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.accountClusterRiskSingleAccount.false.invalid" datatype="html">
@@ -7669,7 +7673,7 @@
         <target state="translated">Tu patrimonio neto es administrado por 0 cuentas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">114</context>
+          <context context-type="linenumber">128</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskAsiaPacific" datatype="html">
@@ -7677,7 +7681,7 @@
         <target state="translated">Asia-Pacífico</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">245</context>
+          <context context-type="linenumber">259</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskAsiaPacific.false.max" datatype="html">
@@ -7685,7 +7689,7 @@
         <target state="translated">La contribución al mercado Asiático-Pacífico de tu inversión actual (${valueRatio}%) supera ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">247</context>
+          <context context-type="linenumber">261</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskAsiaPacific.false.min" datatype="html">
@@ -7693,7 +7697,7 @@
         <target state="translated">La contribución al mercado Asiático-Pacífico de tu inversión actual (${valueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">251</context>
+          <context context-type="linenumber">265</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskAsiaPacific.true" datatype="html">
@@ -7701,7 +7705,7 @@
         <target state="translated">La contribución al mercado Asiático-Pacífico de tu inversión actual (${valueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">255</context>
+          <context context-type="linenumber">269</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEmergingMarkets" datatype="html">
@@ -7709,7 +7713,7 @@
         <target state="translated">Mercados emergentes</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">260</context>
+          <context context-type="linenumber">274</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEmergingMarkets.false.max" datatype="html">
@@ -7717,7 +7721,7 @@
         <target state="translated">La contribución a mercados emergentes de tu inversión actual (${valueRatio}%) supera ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">263</context>
+          <context context-type="linenumber">277</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEmergingMarkets.false.min" datatype="html">
@@ -7725,7 +7729,7 @@
         <target state="translated">La contribución a mercados emergentes de tu inversión actual (${valueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">267</context>
+          <context context-type="linenumber">281</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEmergingMarkets.true" datatype="html">
@@ -7733,7 +7737,7 @@
         <target state="translated">La contribución a mercados emergentes de tu inversión actual (${valueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">271</context>
+          <context context-type="linenumber">285</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEurope" datatype="html">
@@ -7741,7 +7745,7 @@
         <target state="translated">Europa</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">275</context>
+          <context context-type="linenumber">289</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEurope.false.max" datatype="html">
@@ -7749,7 +7753,7 @@
         <target state="translated">La contribución al mercado europeo de tu inversión actual (${valueRatio}%) supera ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">277</context>
+          <context context-type="linenumber">291</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEurope.false.min" datatype="html">
@@ -7757,7 +7761,7 @@
         <target state="translated">La contribución al mercado europeo de tu inversión actual (${valueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">281</context>
+          <context context-type="linenumber">295</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskEurope.true" datatype="html">
@@ -7765,7 +7769,7 @@
         <target state="translated">La contribución al mercado europeo de tu inversión actual (${valueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">285</context>
+          <context context-type="linenumber">299</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskJapan" datatype="html">
@@ -7773,7 +7777,7 @@
         <target state="translated">Japón</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">289</context>
+          <context context-type="linenumber">303</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskJapan.false.max" datatype="html">
@@ -7781,7 +7785,7 @@
         <target state="translated">La contribución al mercado japonés de tu inversión actual (${valueRatio}%) supera el ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">291</context>
+          <context context-type="linenumber">305</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskJapan.false.min" datatype="html">
@@ -7789,7 +7793,7 @@
         <target state="translated">La contribución al mercado japonés de tu inversión actual (${valueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">295</context>
+          <context context-type="linenumber">309</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskJapan.true" datatype="html">
@@ -7797,7 +7801,7 @@
         <target state="translated">La contribución al mercado japonés de tu inversión actual (${valueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">299</context>
+          <context context-type="linenumber">313</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskNorthAmerica" datatype="html">
@@ -7805,7 +7809,7 @@
         <target state="translated">Norteamérica</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">303</context>
+          <context context-type="linenumber">317</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskNorthAmerica.false.max" datatype="html">
@@ -7813,7 +7817,7 @@
         <target state="translated">La contribución al mercado de América del Norte de tu inversión actual (${valueRatio}%) supera el ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">305</context>
+          <context context-type="linenumber">319</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskNorthAmerica.false.min" datatype="html">
@@ -7821,7 +7825,7 @@
         <target state="translated">La contribución al mercado de América del Norte de tu inversión actual (${valueRatio}%) es inferior a ${thresholdMin}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">309</context>
+          <context context-type="linenumber">323</context>
         </context-group>
       </trans-unit>
       <trans-unit id="rule.regionalMarketClusterRiskNorthAmerica.true" datatype="html">
@@ -7829,7 +7833,7 @@
         <target state="translated">La contribución al mercado de América del Norte de tu inversión actual (${valueRatio}%) está dentro del rango de ${thresholdMin}% y ${thresholdMax}%</target>
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/app.component.html</context>
-          <context context-type="linenumber">313</context>
+          <context context-type="linenumber">327</context>
         </context-group>
       </trans-unit>
       <trans-unit id="339860602695747533" datatype="html">
@@ -7838,6 +7842,282 @@
         <context-group purpose="location">
           <context context-type="sourcefile">apps/client/src/app/components/user-detail-dialog/user-detail-dialog.html</context>
           <context context-type="linenumber">53</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="912780384164800157" datatype="html">
+        <source>Dashboard controls</source>
+        <target state="new">Dashboard controls</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-toolbar/dashboard-toolbar.html</context>
+          <context context-type="linenumber">17</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="6512167219722245286" datatype="html">
+        <source>Your saved dashboard will be permanently deleted and you will start with a blank one. This cannot be undone.</source>
+        <target state="new">Your saved dashboard will be permanently deleted and you will start with a blank one. This cannot be undone.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">752</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4459730717184592256" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> cannot be moved down: there is no room</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> cannot be moved down: there is no room</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1190</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="5045695729747559841" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> cannot be made wider: there is no room</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> cannot be made wider: there is no room</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1212</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="1030993956379088547" datatype="html">
+        <source>Actions for <x id="itemName" equiv-text="subject"/></source>
+        <target state="new">Actions for <x id="itemName" equiv-text="subject"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">libs/ui/src/lib/benchmark/benchmark.component.ts</context>
+          <context context-type="linenumber">206</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3823219296477075982" datatype="html">
+        <source>Discard</source>
+        <target state="new">Discard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">750</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8015522585369733678" datatype="html">
+        <source><x id="moduleName" equiv-text="this.qualifiedName"/>, add module</source>
+        <target state="new"><x id="moduleName" equiv-text="this.qualifiedName"/>, add module</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.component.ts</context>
+          <context context-type="linenumber">110</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="5087994444517261752" datatype="html">
+        <source>No modules match <x id="searchTerm" equiv-text="aSearchTerm"/></source>
+        <target state="new">No modules match <x id="searchTerm" equiv-text="aSearchTerm"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog.component.ts</context>
+          <context context-type="linenumber">373</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8890968967231313116" datatype="html">
+        <source>1 module matches <x id="searchTerm" equiv-text="aSearchTerm"/></source>
+        <target state="new">1 module matches <x id="searchTerm" equiv-text="aSearchTerm"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog.component.ts</context>
+          <context context-type="linenumber">377</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8748691011454082949" datatype="html">
+        <source>Your saved dashboard cannot be read by this version of Ghostfolio.</source>
+        <target state="new">Your saved dashboard cannot be read by this version of Ghostfolio.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">242</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4745289298822352991" datatype="html">
+        <source><x id="moduleName" equiv-text="this.qualifiedName"/> no room, add module - remove or resize a module to make space</source>
+        <target state="new"><x id="moduleName" equiv-text="this.qualifiedName"/> no room, add module - remove or resize a module to make space</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.component.ts</context>
+          <context context-type="linenumber">109</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="1483487469023977118" datatype="html">
+        <source><x id="count" equiv-text="aCount"/> modules match <x id="searchTerm" equiv-text="aSearchTerm"/></source>
+        <target state="new"><x id="count" equiv-text="aCount"/> modules match <x id="searchTerm" equiv-text="aSearchTerm"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog.component.ts</context>
+          <context context-type="linenumber">380</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="1483978513594130243" datatype="html">
+        <source>Module catalog</source>
+        <target state="new">Module catalog</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">398</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4570641215082101218" datatype="html">
+        <source>Load the newer dashboard</source>
+        <target state="new">Load the newer dashboard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">354</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="5912205385706157350" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> cannot be moved left: there is no room</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> cannot be moved left: there is no room</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1179</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8083819961525279008" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> is already as narrow as it goes</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> is already as narrow as it goes</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1208</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3000467297595148293" datatype="html">
+        <source>Your dashboard was changed in another tab.</source>
+        <target state="new">Your dashboard was changed in another tab.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">347</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="7655839911369134208" datatype="html">
+        <source>Keep this arrangement</source>
+        <target state="new">Keep this arrangement</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">361</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8400584448396971077" datatype="html">
+        <source>Some modules in your saved dashboard cannot be shown here.</source>
+        <target state="new">Some modules in your saved dashboard cannot be shown here.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/empty-canvas-state/empty-canvas-state.html</context>
+          <context context-type="linenumber">44</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3751967511377702512" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> cannot be made taller: there is no room</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> cannot be made taller: there is no room</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1219</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="6570363013146073520" datatype="html">
+        <source>Dashboard</source>
+        <target state="new">Dashboard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">159</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="6485539205009380401" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> cannot be moved up: there is no room</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> cannot be moved up: there is no room</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1187</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4259456486991896663" datatype="html">
+        <source><x id="moduleName" equiv-text="this.qualifiedName"/> added, reveal module</source>
+        <target state="new"><x id="moduleName" equiv-text="this.qualifiedName"/> added, reveal module</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/module-catalog/module-catalog-item/module-catalog-item.component.ts</context>
+          <context context-type="linenumber">105</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3141251887838840827" datatype="html">
+        <source>This module cannot be loaded again on its own. Reload the page to bring it back.</source>
+        <target state="new">This module cannot be loaded again on its own. Reload the page to bring it back.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
+          <context context-type="linenumber">251</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="7251425536119775900" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> is already as short as it goes</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> is already as short as it goes</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1216</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="957039751193824734" datatype="html">
+        <source>Start over with a blank dashboard?</source>
+        <target state="new">Start over with a blank dashboard?</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">753</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="4776085538703946002" datatype="html">
+        <source><x id="moduleName" equiv-text="aName"/> cannot be moved right: there is no room</source>
+        <target state="new"><x id="moduleName" equiv-text="aName"/> cannot be moved right: there is no room</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">1183</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="353195626077156609" datatype="html">
+        <source>Start over with a blank dashboard</source>
+        <target state="new">Start over with a blank dashboard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">292</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/empty-canvas-state/empty-canvas-state.html</context>
+          <context context-type="linenumber">54</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="6942914903641996670" datatype="html">
+        <source>Reload page</source>
+        <target state="new">Reload page</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-module-host/dashboard-module-host.html</context>
+          <context context-type="linenumber">257</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="1135478870079964507" datatype="html">
+        <source>Refreshing the dashboard</source>
+        <target state="new">Refreshing the dashboard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">478</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="113909370360915303" datatype="html">
+        <source><x id="moduleName" equiv-text="this.getQualifiedModuleName(aItem.moduleType)"/> is already on the dashboard</source>
+        <target state="new"><x id="moduleName" equiv-text="this.getQualifiedModuleName(aItem.moduleType)"/> is already on the dashboard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.component.ts</context>
+          <context context-type="linenumber">2963</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3239589020047044075" datatype="html">
+        <source>Your session has expired. Please sign in again.</source>
+        <target state="new">Your session has expired. Please sign in again.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/core/http-response.interceptor.ts</context>
+          <context context-type="linenumber">184</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="8501914419803908202" datatype="html">
+        <source>Signing in with your identity provider did not complete. Please try again.</source>
+        <target state="new">Signing in with your identity provider did not complete. Please try again.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/sign-in-prompt/sign-in-prompt.html</context>
+          <context context-type="linenumber">22</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="3543450128191631317" datatype="html">
+        <source>Start with a blank dashboard</source>
+        <target state="new">Start with a blank dashboard</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">apps/client/src/app/dashboard/dashboard-canvas/dashboard-canvas.html</context>
+          <context context-type="linenumber">301</context>
         </context-group>
       </trans-unit>
     </body>

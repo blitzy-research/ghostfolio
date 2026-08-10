@@ -8,6 +8,33 @@
     background-color: currentColor;
     margin-top: -2px;
     mask: url('/assets/ghost.svg') no-repeat center;
+
+    // Keeps the ghost visible where a viewer has a forced palette active.
+    //
+    // The glyph is a MASK: the shape comes from the SVG and the ink comes from this
+    // background. A forced-colours mode repaints every background to the system
+    // canvas, so the ink became the same colour as the surface behind it and the mark
+    // vanished, leaving the wordmark next to an empty square. Measured: the 24x24 box
+    // held exactly one colour and zero pixels differing from the toolbar, against
+    // 69% coverage in normal rendering.
+    //
+    // Naming a SYSTEM colour is what survives that mode - an author colour, including
+    // `currentColor`, is substituted away, while `CanvasText` is honoured. It also
+    // keeps the viewer's palette in charge, which opting out of forcing would not:
+    // this puts the glyph on whichever side of their palette text is on, so it works
+    // for a light and a dark forced palette alike.
+    //
+    // It lives HERE, in the component that owns the mask, rather than in the canvas's
+    // global grid stylesheet where it was first written. That version never applied:
+    // `.gf-gridster gf-logo .logo` scores (0,2,1) and the declaration above it scores
+    // (0,3,0) once Angular has stamped its encapsulation attributes on, so the global
+    // rule lost the cascade and the glyph stayed invisible. Restating it in the same
+    // stylesheet as the declaration it has to beat makes it win on source order, and
+    // it now reaches every consumer of the logo rather than only those inside a
+    // canvas.
+    @media (forced-colors: active) {
+      background-color: CanvasText;
+    }
   }
 }
 

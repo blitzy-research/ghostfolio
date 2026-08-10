@@ -511,6 +511,18 @@ export class DataService {
     return this.http.delete<Tag>(encodeApiPath`/api/v1/tags/${aId}`);
   }
 
+  /**
+   * Discards the signed-in user's saved dashboard arrangement.
+   *
+   * Typed `void` because the endpoint answers 204 with no body. It is deliberately
+   * NOT a layout write: it stores no arrangement, which is what lets a dashboard
+   * the client cannot interpret be recovered without giving the error state that
+   * reports it the ability to overwrite the stored document.
+   */
+  public deleteUserDashboardLayout() {
+    return this.http.delete<void>('/api/v1/user/layout');
+  }
+
   public deleteUser(aId: string) {
     return this.http.delete<UserModel>(encodeApiPath`/api/v1/user/${aId}`);
   }
@@ -568,8 +580,27 @@ export class DataService {
     );
   }
 
+  /**
+   * Reads the benchmark list.
+   *
+   * Coalesced for the same structural reason as the environment description: two
+   * separate modules read it, the free markets module and the premium one, and a
+   * viewer entitled to both can have both on screen - at which point the two ask
+   * for a parameterless document at the same moment and previously got two
+   * requests for it.
+   *
+   * Safe to share despite the two readers holding the response rather than
+   * consuming it: each hands the array to a table of its own, which orders a copy
+   * rather than sorting in place, so neither can disturb what the other is
+   * rendering.
+   */
   public fetchBenchmarks() {
-    return this.http.get<BenchmarkResponse>('/api/v1/benchmarks');
+    const url = '/api/v1/benchmarks';
+
+    return this.coalesceInFlightGet<BenchmarkResponse>(
+      this.buildInFlightGetKey(url, new HttpParams()),
+      () => this.http.get<BenchmarkResponse>(url)
+    );
   }
 
   public fetchDataProviderHealth(dataSource: DataSource) {
@@ -1084,19 +1115,81 @@ export class DataService {
     );
   }
 
+  /**
+   * Re-reads the deployment's own description and republishes it.
+   *
+   * Coalesced, because the callers overlap on first paint rather than only in
+   * theory. The platform and tag administration components each refresh this
+   * after loading their own list, and both are hosted by the administration
+   * settings module - so on one canvas load they issued two identical reads
+   * milliseconds apart. Sharing an in-flight read makes that one request while
+   * leaving the refresh after a mutation untouched, which is the other reason
+   * these callers exist: the register drops the entry as soon as the read
+   * settles, so a later call always asks the server again. A cache with a
+   * lifetime would have answered a post-mutation refresh from before the
+   * mutation.
+   *
+   * The projection and the republish sit INSIDE the shared request rather than in
+   * each subscriber, so they run exactly once per response no matter how many
+   * callers joined. That matters here specifically: the permission filter is
+   * applied to `info.globalPermissions` in place, and a second pass over the same
+   * object would filter an already-filtered list. It is also why every caller
+   * ignores the result: the answer is delivered by publication, not by return.
+   */
   public updateInfo() {
-    this.http.get<InfoItem>('/api/v1/info').subscribe((info) => {
-      const utmSource = window.localStorage.getItem('utm_source') as
-        | 'ios'
-        | 'trusted-web-activity';
+    const url = '/api/v1/info';
 
-      info.globalPermissions = filterGlobalPermissions(
-        info.globalPermissions,
-        utmSource
-      );
+    this.coalesceInFlightGet(
+      this.buildInFlightGetKey(url, new HttpParams()),
+      () =>
+        this.http.get<InfoItem>(url).pipe(
+          map((info) => {
+            const utmSource = window.localStorage.getItem('utm_source') as
+              | 'ios'
+              | 'trusted-web-activity';
 
-      (window as any).info = info;
-    });
+            info.globalPermissions = filterGlobalPermissions(
+              info.globalPermissions,
+              utmSource
+            );
+
+            (window as any).info = info;
+
+            return info;
+          })
+        )
+    ).subscribe();
+  }
+
+  /**
+   * Issues a GET that joins an identical read already in flight, for a caller
+   * outside this facade.
+   *
+   * The sibling admin facade reads endpoints of its own that co-mounted modules
+   * ask for simultaneously, and it has no register to share - so without this it
+   * either duplicates every such read or keeps a second, independent register,
+   * which would partition by authorization context separately and could disagree
+   * with this one about when an identity changed. Exposing the one register is the
+   * narrower of the two, and it is the same reasoning that already makes
+   * {@link buildFiltersAsQueryParams} public for that caller.
+   *
+   * Deliberately offers no response mapping. Everything about coalescing that
+   * needs care - the key, the authorization partitioning, the register's
+   * lifetime - stays private, and the one hazard a shared read carries is a
+   * mapping that rewrites the response in place. A caller with such a mapping
+   * belongs in this class, where it can be placed inside the request; a caller
+   * with none, like a plain document read, is safe by construction.
+   *
+   * @param url the request path, which is also the key together with the
+   * parameters and the current authorization context.
+   * @param params the query parameters, in the order they were appended - two
+   * callers that assemble the same parameters differently simply do not share.
+   */
+  public coalesceGet<T>(url: string, params = new HttpParams()): Observable<T> {
+    return this.coalesceInFlightGet<T>(
+      this.buildInFlightGetKey(url, params),
+      () => this.http.get<T>(url, { params })
+    );
   }
 
   /**

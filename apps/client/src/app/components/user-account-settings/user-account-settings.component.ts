@@ -73,7 +73,6 @@ export class GfUserAccountSettingsComponent implements OnInit {
     accessToken: ['', Validators.required]
   });
   public hasPermissionToDeleteOwnUser: boolean;
-  public hasPermissionToUpdateViewMode: boolean;
   public hasPermissionToUpdateUserSettings: boolean;
   public isAccessTokenHidden = true;
   public isFingerprintSupported = this.doesBrowserSupportAuthn();
@@ -128,11 +127,6 @@ export class GfUserAccountSettingsComponent implements OnInit {
           this.hasPermissionToUpdateUserSettings = hasPermission(
             this.user.permissions,
             permissions.updateUserSettings
-          );
-
-          this.hasPermissionToUpdateViewMode = hasPermission(
-            this.user.permissions,
-            permissions.updateViewMode
           );
 
           this.locales.push(this.user.settings.locale);
@@ -278,22 +272,6 @@ export class GfUserAccountSettingsComponent implements OnInit {
         title: $localize`Do you really want to remove this sign in method?`
       });
     }
-  }
-
-  public onViewModeChange(aEvent: MatSlideToggleChange) {
-    this.dataService
-      .putUserSetting({ viewMode: aEvent.checked === true ? 'ZEN' : 'DEFAULT' })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.userService
-          .get(true)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe((user) => {
-            this.user = user;
-
-            this.changeDetectorRef.markForCheck();
-          });
-      });
   }
 
   private deregisterDevice() {

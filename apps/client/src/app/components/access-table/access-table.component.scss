@@ -21,33 +21,34 @@
     }
   }
 
-  // Stops the share address from dictating how wide this table has to be.
+  // Stops the share address from dictating how wide this table has to be, WITHOUT
+  // hiding any of it.
   //
-  // The mechanism is the clamp, not the ellipsis. A box's min-content
-  // contribution is its own min-content size clamped by `max-width`, and the
-  // address is a single unbreakable token inside a `white-space: nowrap` cell -
-  // so without a clamp its min-content contribution is the full 70-character
-  // string, which alone sets a table-width floor that no viewport can reduce. With
-  // the clamp the column can be squeezed like any other, and the ellipsis is what
-  // keeps the result legible rather than sliced.
+  // Two things have to be true at once here. The address is the payload of this
+  // table - a viewer copies it, mails it, checks that the identifier in it is the
+  // one they meant - so it has to be readable in full. And it is also a single
+  // unbreakable 70-character token, whose min-content contribution would
+  // otherwise set a table-width floor that no cell width can get under, which is
+  // what made this column the widest thing in the module.
   //
-  // 14rem is chosen against the narrowest arrangement a saved layout can place
-  // this module at rather than by eye: it leaves the table a floor of roughly
-  // 574px, which fits inside the 591px content box of a six-column module at a
-  // 1280px viewport. Larger values reintroduce the clipping at exactly that
-  // width.
+  // Clamping the box and eliding the overflow satisfies the second and breaks the
+  // first: it buys the width back by deleting the tail of the very string the
+  // table exists to show, and the tail is the part that differs between one share
+  // link and the next. Wrapping satisfies both. `overflow-wrap: anywhere` is the
+  // value that also reduces the intrinsic minimum - `break-word` wraps but leaves
+  // min-content at the full token, so it would move the text without moving the
+  // floor - and it takes the minimum down to one character, which is a lower floor
+  // than any clamp could give. The address then occupies two or three lines in a
+  // narrow module and one line in a wide one, and every character of it is
+  // present at both.
   //
-  // `inline-block` is required for the clamp to apply at all: `max-inline-size`
-  // has no effect on a non-replaced inline box. The `overflow` is what enables
-  // `text-overflow`, and `white-space` is declared rather than inherited so the
-  // rule holds wherever this component is placed.
+  // `white-space` is declared rather than inherited because the enclosing cell is
+  // `text-nowrap`, whose `!important` would otherwise suppress the wrap; scoping
+  // the override to this element leaves the rest of the cell, including the icon
+  // row, on one line as intended.
   .gf-access-detail-value {
-    display: inline-block;
-    max-inline-size: 14rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    vertical-align: bottom;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 }
 

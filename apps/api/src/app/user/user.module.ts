@@ -18,7 +18,20 @@ import { UserController } from './user.controller';
 import { UserService } from './user.service';
 
 @Module({
-  controllers: [UserController, UserDashboardLayoutController],
+  // Order matters, and it is not cosmetic: `UserController` declares
+  // `@Delete(':id')` for deleting a user, which is annotated with the `deleteUser`
+  // permission. Nest registers controllers in the order given and the router
+  // matches the first declaration that fits, so with `UserController` first,
+  // `DELETE /api/v1/user/layout` was captured by that parameterised route with
+  // `id: 'layout'` - and answered 403 to every viewer without administrative
+  // rights, making the layout discard unreachable for exactly the accounts it
+  // exists to recover. The two read/write layout routes never collided, because
+  // `UserController` declares no parameterised `GET` or `PATCH`.
+  //
+  // The specific route is therefore declared ahead of the parameterised one. The
+  // alternative - renaming the layout path - would change a public endpoint to work
+  // around a local ordering detail.
+  controllers: [UserDashboardLayoutController, UserController],
   exports: [UserService],
   imports: [
     ActivitiesModule,

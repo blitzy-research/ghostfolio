@@ -1,3 +1,42 @@
 :host {
   display: block;
+
+  // Makes the total row read as a total.
+  //
+  // It carried the same weight and the same colour as every account above it, and
+  // the only thing separating it was the shared table mixin's 12%-alpha hairline -
+  // which at 1px on a card surface is close to invisible, and was reported as
+  // absent. So a row whose figures are the sum of the rows above it looked like one
+  // more account named "Total", and the eye had nothing to land on when checking
+  // that the column added up.
+  //
+  // Bold is the answer this app already gives to the same question: the portfolio
+  // summary marks "Net Worth" with `font-weight-bold` for exactly this reason, so
+  // matching it keeps one convention for "this figure is the total" rather than
+  // inventing a second. The weight is set on the row so it reaches the label cell
+  // and every `gf-value` in the row alike, none of which declares a weight of its
+  // own.
+  //
+  // The rule is restated here rather than in the shared table mixin because a
+  // footer is not always a total - some tables foot with a count or a note - and
+  // this is the table where it is.
+  .mat-mdc-footer-row {
+    font-weight: 700;
+
+    .mat-mdc-footer-cell {
+      // Raises the separator from the 12% divider the shared mixin gives every
+      // footer to the outline token, which is the value this design system uses
+      // where a line has to be seen rather than merely implied. At 1px on a card
+      // surface, 12% was the reason the rule was read as missing.
+      border-top-color: var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+    }
+  }
+}
+
+:host-context(.theme-dark) {
+  .mat-mdc-footer-row {
+    .mat-mdc-footer-cell {
+      border-top-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
+    }
+  }
 }

@@ -2,6 +2,7 @@ import { UpdateUserDashboardLayoutDto } from '@ghostfolio/common/dtos';
 import { UserDashboardLayout } from '@ghostfolio/common/interfaces';
 import { DataService } from '@ghostfolio/ui/services';
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { ObservableStore } from '@codewithdan/observable-store';
 import type { StateHistory } from '@codewithdan/observable-store';
@@ -90,6 +91,7 @@ describe('GfDashboardLayoutService', () => {
 
   let consoleErrorSpy: jest.SpyInstance;
   let dataServiceMock: {
+    deleteUserDashboardLayout: jest.Mock<Observable<void>, []>;
     fetchUserDashboardLayout: jest.Mock<Observable<UserDashboardLayout>, []>;
     patchUserDashboardLayout: jest.Mock<
       Observable<UserDashboardLayout>,
@@ -293,6 +295,10 @@ describe('GfDashboardLayoutService', () => {
     });
 
     dataServiceMock = {
+      // The endpoint answers a discard with nothing at all, so the double completes
+      // without a value. Typed as `void` rather than left untyped so a test that
+      // expected a layout back from a delete would not compile.
+      deleteUserDashboardLayout: jest.fn(() => of(undefined as void)),
       fetchUserDashboardLayout: jest.fn(() => of(null)),
       // The endpoint answers a write with the layout it stored, so the default
       // mock echoes the request back. Declaring the parameter also keeps the
@@ -318,6 +324,23 @@ describe('GfDashboardLayoutService', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+
+    // Destroyed here, deliberately, and BEFORE the spy is handed back.
+    //
+    // The service releases whatever is still pending when it is destroyed, and a
+    // snapshot whose write has already failed is released again and reported
+    // again - which is behaviour this suite asserts on purpose. Angular's
+    // automatic teardown is registered at ROOT level, by `setupZoneTestEnv()` in
+    // `apps/client/src/test-setup.ts`, so it runs AFTER every hook declared
+    // inside a `describe`: the destroy used to happen once the spy below had
+    // already been restored, and eight sanitized reports reached the real
+    // `console.error` on a fully passing run. Nothing was wrong with the
+    // assertions - the reports simply arrived after the only thing that was
+    // capturing them had gone. Resetting here brings the destroy back inside the
+    // spy's lifetime, where it is captured and assertable; Angular's own
+    // teardown then finds nothing left to destroy.
+    TestBed.resetTestingModule();
+
     consoleErrorSpy.mockRestore();
     jest.restoreAllMocks();
   });
@@ -1032,6 +1055,59 @@ describe('GfDashboardLayoutService', () => {
       expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
       expect(readPatchedDto(1)).toEqual(readPatchedDto(0));
       expect(observed).toEqual([false, true, false]);
+    });
+
+    it('gives up the failed snapshot when it is discarded', () => {
+      dataServiceMock.patchUserDashboardLayout.mockReturnValueOnce(
+        throwError(() => new Error('PATCH failed'))
+      );
+
+      const observed: boolean[] = [];
+
+      service.getHasSaveError().subscribe((hasSaveError) => {
+        observed.push(hasSaveError);
+      });
+
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+      expect(observed).toEqual([false, true]);
+
+      // The canvas calls this when a viewer abandons an arrangement that could not
+      // be read and starts a blank one: what was outstanding describes the
+      // arrangement they have just left, so it stops being offered and stops being
+      // reported as unsaved.
+      service.discardFailedSave();
+
+      expect(observed).toEqual([false, true, false]);
+
+      service.retryFailedSave();
+
+      jest.advanceTimersByTime(500);
+
+      // And it is genuinely given up rather than merely hidden - the retry has
+      // nothing left to send, so no second request appears.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing on discarding when every snapshot has been acknowledged', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+
+      expect(() => service.discardFailedSave()).not.toThrow();
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing on retry when every snapshot has been acknowledged', () => {
@@ -1786,6 +1862,524 @@ describe('GfDashboardLayoutService', () => {
    * nobody can arrange on demand. Reading the source is the only way to observe
    * the thing being forbidden.
    */
+
+  /**
+   * The concurrency token, and what it is for.
+   *
+   * Two clients of one account each hold the arrangement they read. Without a
+   * token the second one to save silently replaces the first one's dashboard,
+   * because a layout is a whole document and the write says nothing about what it
+   * was built on. The token is the row's own `updatedAt`, carried on the read and
+   * handed back on the write, which turns the write into "replace the arrangement
+   * I read" rather than "replace whatever is there".
+   *
+   * It is transport-only: it describes the ROW, never the arrangement, so it must
+   * not travel inside the stored document and must not survive a change of
+   * identity.
+   */
+  describe('the concurrency token', () => {
+    const REVISION = '2026-01-01T00:00:00.000Z';
+
+    const SUPERSEDING_REVISION = '2026-02-02T12:30:00.000Z';
+
+    it('carries the token it read back on the next write', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          revision: REVISION,
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(readPatchedDto(0).revision).toBe(REVISION);
+    });
+
+    it('adopts the token the write produced, so the write after it is not refused', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          revision: REVISION,
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          of({
+            modules: aData.modules,
+            revision: SUPERSEDING_REVISION,
+            version: 1
+          })
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      // The row has moved on, so a second write still carrying the token the first
+      // one superseded would be refused - and every write after it too.
+      expect(readPatchedDto(1).revision).toBe(SUPERSEDING_REVISION);
+    });
+
+    it('omits the token entirely when it holds none, rather than sending an empty one', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      // Absent means unconditional, and the API validates with
+      // `forbidNonWhitelisted`. A key present but undefined is neither of those
+      // things, so the key set is asserted rather than the value.
+      expect(Object.keys(readPatchedDto(0)).sort()).toEqual([
+        'modules',
+        'version'
+      ]);
+      expect(readPatchedDto(0)).not.toHaveProperty('revision');
+    });
+
+    it('drops the token when a different viewer is adopted', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          revision: REVISION,
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      // The token belongs to the previous viewer's row. Carrying it into the next
+      // viewer's first write would have that write compared against a revision of
+      // somebody else's row.
+      service.adoptIdentity('viewer-2');
+
+      service.scheduleSave('viewer-2', [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(readPatchedDto(0)).not.toHaveProperty('revision');
+    });
+  });
+
+  /**
+   * What happens when the row has moved past the arrangement being written.
+   *
+   * The refusal is reported rather than retried, because the two things that can
+   * be done about it - take the newer document, or overwrite it - are choices only
+   * the viewer can make. It is deliberately NOT reported as a save failure: the
+   * write did not fail, it was declined, and the retry a failure offers would be
+   * declined again for exactly the same reason.
+   */
+  describe('a write the row has moved past', () => {
+    /**
+     * A refusal as the facade really rejects with one.
+     *
+     * A real `HttpErrorResponse` rather than the plain stand-in the other failure
+     * tests use, because the service narrows the refusal on the response TYPE as
+     * well as the status - a plain object carrying `status: 409` is deliberately
+     * not a conflict, so a stand-in here would assert the fallback path instead.
+     * It still carries every marker a leak would expose, so the reporting contract
+     * stays under test.
+     */
+    const createConflict = () =>
+      new HttpErrorResponse({
+        error: { detail: `rejected for ${SECRET_TOKEN}` },
+        status: 409,
+        statusText: 'Conflict',
+        url: SECRET_URL
+      });
+
+    it('does not mistake a status carried on a plain object for a refusal', () => {
+      jest.useFakeTimers();
+
+      const conflicts: boolean[] = [];
+
+      service.getHasConflict().subscribe((hasConflict) => {
+        conflicts.push(hasConflict);
+      });
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createRequestFailure({ status: 409 }))
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(conflicts).toEqual([false]);
+    });
+
+    it('reports a conflict rather than a save failure', () => {
+      jest.useFakeTimers();
+
+      const conflicts: boolean[] = [];
+      const failures: boolean[] = [];
+
+      service.getHasConflict().subscribe((hasConflict) => {
+        conflicts.push(hasConflict);
+      });
+
+      service.getHasSaveError().subscribe((hasSaveError) => {
+        failures.push(hasSaveError);
+      });
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createConflict())
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(conflicts).toEqual([false, true]);
+      expect(failures).toEqual([false]);
+    });
+
+    it('reports a failure that is not a conflict as a failure', () => {
+      jest.useFakeTimers();
+
+      const conflicts: boolean[] = [];
+
+      service.getHasConflict().subscribe((hasConflict) => {
+        conflicts.push(hasConflict);
+      });
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createRequestFailure({ status: 500 }))
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(conflicts).toEqual([false]);
+    });
+
+    it('keeps holding the refused arrangement so the viewer can still choose to keep it', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createConflict())
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          of({ modules: aData.modules, version: 1 })
+      );
+
+      service.overwriteAfterConflict();
+
+      jest.advanceTimersByTime(500);
+
+      // The arrangement written is the one that was refused, not a rebuilt one: the
+      // canvas hands over nothing here, so if the snapshot had been dropped there
+      // would be nothing left to keep.
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+      expect(readPatchedDto(1).modules).toEqual([
+        { cols: 8, moduleType: 'portfolio-overview', rows: 4, x: 0, y: 0 }
+      ]);
+    });
+
+    it('writes the kept arrangement unconditionally, which is what makes the overwrite deliberate', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          revision: '2026-01-01T00:00:00.000Z',
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createConflict())
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(readPatchedDto(0).revision).toBe('2026-01-01T00:00:00.000Z');
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          of({ modules: aData.modules, version: 1 })
+      );
+
+      service.overwriteAfterConflict();
+
+      jest.advanceTimersByTime(500);
+
+      // Dropping the token is the whole mechanism: a conditional write would be
+      // refused again for exactly the same reason it was refused the first time. The
+      // member is absent rather than present-and-undefined, because absence is what
+      // the server reads as unconditional.
+      expect(readPatchedDto(1)).not.toHaveProperty('revision');
+      expect(Object.keys(readPatchedDto(1)).sort()).toEqual([
+        'modules',
+        'version'
+      ]);
+    });
+
+    it('clears the conflict when it is dismissed', () => {
+      jest.useFakeTimers();
+
+      const conflicts: boolean[] = [];
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createConflict())
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      service.getHasConflict().subscribe((hasConflict) => {
+        conflicts.push(hasConflict);
+      });
+
+      service.dismissConflict();
+
+      expect(conflicts).toEqual([true, false]);
+    });
+
+    it('drops the refused arrangement when it is dismissed, so taking the newer one cannot resurrect it', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createConflict())
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      service.dismissConflict();
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) =>
+          of({ modules: aData.modules, version: 1 })
+      );
+
+      // Nothing may re-enter the queue afterwards: the release before a departure
+      // and the retry after a failure both re-send whatever is still pending, and a
+      // dismissed arrangement is one the viewer has decided against.
+      service.releasePendingSave();
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * Discarding the stored arrangement.
+   *
+   * The reason this exists is that a document this build cannot interpret leaves
+   * the canvas refusing every write, so the dashboard is unreachable from the UI
+   * without it. It is emphatically not a fifth persistence trigger: it stores no
+   * arrangement, which is why the endpoint behind it is a DELETE.
+   */
+  describe('discarding the stored arrangement', () => {
+    it('deletes rather than writing an emptied arrangement', () => {
+      service.discard().subscribe();
+
+      expect(dataServiceMock.deleteUserDashboardLayout).toHaveBeenCalledTimes(
+        1
+      );
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('leaves the store reporting a genuine absence rather than a stale layout', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      expect(readStoreLayout()).not.toBeNull();
+
+      service.discard().subscribe();
+
+      // `null` is the store's "fetched and absent", which is exactly the state the
+      // account is now in - and it is what opens the catalog on the next read
+      // rather than serving the document that was just deleted.
+      expect(readStoreLayout()).toBeNull();
+      expect(readStoreAction()).toBe(
+        DashboardLayoutStoreActions.DeleteDashboardLayout
+      );
+    });
+
+    it('never serves the discarded document again, even unforced', () => {
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+      service.discard().subscribe();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(of(null));
+
+      let served: UserDashboardLayout = {
+        modules: [],
+        version: 1
+      };
+
+      // Unforced, which is the read a later hydration makes. The cache was
+      // invalidated by the discard rather than merely overwritten, so this goes back
+      // to the endpoint instead of answering from a state the client inferred - and
+      // either way the document that was deleted can never be handed back.
+      service.get().subscribe((layout) => {
+        served = layout;
+      });
+
+      expect(served).toBeNull();
+      expect(dataServiceMock.fetchUserDashboardLayout).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops a pending arrangement, so nothing writes the dashboard back after it was discarded', () => {
+      jest.useFakeTimers();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      service.discard().subscribe();
+
+      jest.advanceTimersByTime(500);
+
+      // The pending snapshot was produced from the arrangement being destroyed. A
+      // debounce window that outlived the discard would re-create the very row the
+      // viewer asked to be rid of.
+      expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
+    });
+
+    it('drops the token, so the first write after a discard is unconditional', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          revision: '2026-01-01T00:00:00.000Z',
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+      service.discard().subscribe();
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      // There is no row for the token to be compared against, so a conditional write
+      // would be refused and the viewer's first arrangement after starting over
+      // would never be stored.
+      expect(readPatchedDto(0)).not.toHaveProperty('revision');
+    });
+
+    it('clears an outstanding conflict, because the document it was about is gone', () => {
+      jest.useFakeTimers();
+
+      const conflicts: boolean[] = [];
+
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 409,
+              statusText: 'Conflict',
+              url: SECRET_URL
+            })
+        )
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      service.getHasConflict().subscribe((hasConflict) => {
+        conflicts.push(hasConflict);
+      });
+
+      service.discard().subscribe();
+
+      expect(conflicts).toEqual([true, false]);
+    });
+
+    it('reports a failed discard to its caller and changes nothing', () => {
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      dataServiceMock.deleteUserDashboardLayout.mockReturnValue(
+        throwError(() => createRequestFailure({ status: 500 }))
+      );
+
+      let reported: unknown = null;
+
+      service.discard().subscribe({
+        error: (error: unknown) => {
+          reported = error;
+        }
+      });
+
+      // Nothing was destroyed, so the store must not say it was: a cleared slice
+      // here would leave the canvas showing a blank dashboard over a row that is
+      // still stored.
+      expect(reported).not.toBeNull();
+      expect(readStoreLayout()).not.toBeNull();
+    });
+
+    it('reports a failed discard without disclosing what the request carried', () => {
+      dataServiceMock.deleteUserDashboardLayout.mockReturnValue(
+        throwError(() => createRequestFailure({ status: 500 }))
+      );
+
+      service.discard().subscribe({
+        error: () => undefined
+      });
+
+      expectSanitizedReport('GF-DASHBOARD-LAYOUT-DISCARD-FAILED', 500);
+    });
+  });
+
   describe('the single write origin', () => {
     /** Resolved from this spec's own location, so the walk cannot drift. */
     const clientAppDirectory = join(__dirname, '..', '..');
@@ -1861,19 +2455,35 @@ describe('GfDashboardLayoutService', () => {
     });
 
     it('exposes no method that subscribes to a request of its own', () => {
-      // The two public entry points that re-send an arrangement - the release before
-      // a departure and the retry after a failure - both hand the pending snapshot
-      // back to a subject the one dispatcher drains, and stop there.
+      // The three public entry points that re-send an arrangement - the release
+      // before a departure, the retry after a failure, and the overwrite after a
+      // refusal - all hand the pending snapshot back to a subject the one dispatcher
+      // drains, and stop there. The overwrite differs only in dropping the
+      // concurrency token, which is what makes it unconditional; it builds no body
+      // of its own and issues no request of its own.
       expect(source).toContain('public releasePendingSave(): Observable<void>');
       expect(source).toContain('public retryFailedSave()');
-      expect(source.match(/this\.snapshot\$\.next\(/g)).toHaveLength(2);
+      expect(source).toContain('public overwriteAfterConflict()');
+      expect(source.match(/this\.snapshot\$\.next\(/g)).toHaveLength(3);
       expect(source.match(/this\.immediateSnapshot\$\.next\(/g)).toHaveLength(
         1
       );
 
+      // The one write call in the file, so no entry point can have grown a second
+      // request path of its own. The discard beside it is a DELETE and stores no
+      // arrangement, which is exactly why recovering from an uninterpretable layout
+      // does not count as a write.
+      expect(
+        source.match(/this\.dataService\.patchUserDashboardLayout\(/g)
+      ).toHaveLength(1);
+      expect(
+        source.match(/this\.dataService\.deleteUserDashboardLayout\(/g)
+      ).toHaveLength(1);
+
       // Two subscriptions, both internal and neither of them to the facade: the
       // dispatcher itself, and the one that reports a released snapshot's outcome
-      // back to the caller awaiting it.
+      // back to the caller awaiting it. The discard is returned to its caller
+      // unsubscribed, so it adds none.
       expect(source.match(/\.subscribe\(/g)).toHaveLength(2);
     });
   });

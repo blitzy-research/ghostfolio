@@ -26,6 +26,7 @@ import { AddressInfo } from 'node:net';
 
 import { UserDashboardLayoutController } from './user-dashboard-layout.controller';
 import { UserDashboardLayoutService } from './user-dashboard-layout.service';
+import { UserController } from './user.controller';
 import { UserModule } from './user.module';
 import { UserService } from './user.service';
 
@@ -33,6 +34,16 @@ describe('UserDashboardLayoutController', () => {
   const layoutPath = '/api/v1/user/layout';
 
   const requestUserId = 'c0a8012e-4f7b-4d1a-9f3e-2b6d8c5a1e44';
+
+  /**
+   * The `updatedAt` the stubbed row reports, and therefore the concurrency token
+   * every response below carries.
+   *
+   * Named rather than repeated, because it appears on both sides of the round trip:
+   * a write answers with the token the row now holds, and the next write is
+   * compared against exactly that.
+   */
+  const writtenRevision = '2026-01-01T00:00:00.000Z';
 
   /**
    * The secret the booted application is configured with, and therefore the only
@@ -74,8 +85,10 @@ describe('UserDashboardLayoutController', () => {
 
   // The Prisma delegate is handed to Nest once, when the application boots, so
   // these functions are created once and reset between tests. Replacing them
-  // per test would leave the booted application holding the previous pair.
+  // per test would leave the booted application holding the previous set.
+  const deleteMany = jest.fn();
   const findUnique = jest.fn();
+  const updateMany = jest.fn();
   const upsert = jest.fn();
 
   /**
@@ -88,7 +101,9 @@ describe('UserDashboardLayoutController', () => {
   const findUser = jest.fn();
 
   beforeEach(() => {
+    deleteMany.mockReset();
     findUnique.mockReset();
+    updateMany.mockReset();
     upsert.mockReset();
     findUser.mockReset();
   });
@@ -144,7 +159,9 @@ describe('UserDashboardLayoutController', () => {
         },
         {
           provide: PrismaService,
-          useValue: { userDashboardLayout: { findUnique, upsert } }
+          useValue: {
+            userDashboardLayout: { deleteMany, findUnique, updateMany, upsert }
+          }
         },
         { provide: UserService, useValue: { user: findUser } }
       ]
@@ -199,7 +216,7 @@ describe('UserDashboardLayoutController', () => {
     app: INestApplication;
     /** Sent verbatim, so a malformed header can be exercised as easily as a valid one. */
     authorization?: string;
-    method: 'GET' | 'PATCH';
+    method: 'DELETE' | 'GET' | 'PATCH';
     path: string;
     payload?: unknown;
   }) {
@@ -271,7 +288,18 @@ describe('UserDashboardLayoutController', () => {
       expect(status).toBe(401);
     });
 
+    it('rejects a discard with 401', async () => {
+      const { status } = await request({
+        app,
+        method: 'DELETE',
+        path: layoutPath
+      });
+
+      expect(status).toBe(401);
+    });
+
     it('never reaches the persistence layer', async () => {
+      await request({ app, method: 'DELETE', path: layoutPath });
       await request({ app, method: 'GET', path: layoutPath });
       await request({
         app,
@@ -280,6 +308,7 @@ describe('UserDashboardLayoutController', () => {
         payload: storedLayout
       });
 
+      expect(deleteMany).not.toHaveBeenCalled();
       expect(findUnique).not.toHaveBeenCalled();
       expect(upsert).not.toHaveBeenCalled();
     });
@@ -549,9 +578,14 @@ describe('UserDashboardLayoutController', () => {
         });
 
         expect(status).toBe(200);
-        expect(json).toEqual(storedLayout);
+
+        // The stored document plus the row's concurrency token, and nothing else off
+        // the row: the token is derived from `updatedAt` so that the next write can
+        // be conditional on the revision this read observed.
+        expect(json).toEqual({ ...storedLayout, revision: writtenRevision });
         expect(Object.keys(json as object).sort()).toEqual([
           'modules',
+          'revision',
           'version'
         ]);
         expect(json).not.toHaveProperty('layoutData');
@@ -707,7 +741,7 @@ describe('UserDashboardLayoutController', () => {
           ({ create }: { create: { layoutData: UserDashboardLayout } }) => {
             return Promise.resolve({
               layoutData: create.layoutData,
-              updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+              updatedAt: new Date(writtenRevision),
               userId: requestUserId
             });
           }
@@ -730,9 +764,14 @@ describe('UserDashboardLayoutController', () => {
         });
 
         expect(status).toBe(200);
-        expect(json).toEqual(payload);
+
+        // The submitted document plus the row's concurrency token, which is
+        // transport-only: it is what the next write is compared against, and it is
+        // never part of the stored `layoutData`.
+        expect(json).toEqual({ ...payload, revision: writtenRevision });
         expect(Object.keys(json as object).sort()).toEqual([
           'modules',
+          'revision',
           'version'
         ]);
       });
@@ -748,7 +787,7 @@ describe('UserDashboardLayoutController', () => {
         });
 
         expect(status).toBe(200);
-        expect(json).toEqual({ modules: [] });
+        expect(json).toEqual({ modules: [], revision: writtenRevision });
         expect(upsert).toHaveBeenCalledTimes(1);
       });
 
@@ -767,7 +806,7 @@ describe('UserDashboardLayoutController', () => {
         });
 
         expect(status).toBe(200);
-        expect(json).toEqual(payload);
+        expect(json).toEqual({ ...payload, revision: writtenRevision });
       });
 
       /**
@@ -818,16 +857,79 @@ describe('UserDashboardLayoutController', () => {
           // read has to be able to interpret.
           findUnique.mockResolvedValue({
             layoutData: create.layoutData,
-            updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date(writtenRevision),
             userId: requestUserId
           });
 
           const read = await request({ app, method: 'GET', path: layoutPath });
 
           expect(read.status).toBe(200);
-          expect(read.json).toEqual(payload);
+          expect(read.json).toEqual({ ...payload, revision: writtenRevision });
         }
       );
+
+      /**
+       * One row, one document - whichever verb is asked.
+       *
+       * The round trip above pins each verb against the payload; this pins the two
+       * verbs against EACH OTHER, which is a different assertion and the one that
+       * failed. The write used to answer with the stored value asserted to be a
+       * layout, while the read answered with the value put through the five-field
+       * projection - so for any row the projection would alter, the same row
+       * returned two different documents depending on how it was asked, and the
+       * write's answer was the one that did not hold to its declared type. Both
+       * verbs now answer through the same projection.
+       *
+       * Asserted on the DOCUMENTS rather than on which function was called, so it
+       * keeps holding however the projection is implemented, and asserted against
+       * a stored value taken from what the write actually persisted rather than
+       * from the payload, so the row the read is served really is the row the write
+       * made.
+       */
+      it('answers a write with the same document a read of that row answers', async () => {
+        const payload = {
+          modules: [
+            { cols: 6, moduleType: 'portfolio-overview', rows: 4, x: 0, y: 0 },
+            { cols: 4, moduleType: 'watchlist', rows: 3, x: 8, y: 0 }
+          ],
+          version: 1
+        };
+
+        respondWithWrittenDocument();
+
+        const written = await request({
+          app,
+          method: 'PATCH',
+          path: layoutPath,
+          payload
+        });
+
+        const [{ create }] = upsert.mock.calls[0] as [
+          { create: { layoutData: Prisma.JsonValue } }
+        ];
+
+        findUnique.mockResolvedValue({
+          layoutData: create.layoutData,
+          updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+          userId: requestUserId
+        });
+
+        const read = await request({ app, method: 'GET', path: layoutPath });
+
+        expect(written.status).toBe(200);
+        expect(read.status).toBe(200);
+
+        // The assertion this test exists for: one row, one document, whichever verb
+        // asked for it - token included, since both verbs read the token off the same
+        // row.
+        expect(written.json).toEqual(read.json);
+
+        // And that document is the submitted arrangement, plus the row's concurrency
+        // token. The token is transport-only - it describes the row rather than the
+        // arrangement and is never part of the stored `layoutData` - so it is the one
+        // member the payload cannot carry.
+        expect(written.json).toEqual({ ...payload, revision: writtenRevision });
+      });
 
       // `watchlist` is spelled at exactly its own declared minimum - four columns
       // by three rows - rather than at the grid-wide 2x2 floor, because the two
@@ -936,7 +1038,7 @@ describe('UserDashboardLayoutController', () => {
           update: { layoutData: payload },
           where: { userId: requestUserId }
         });
-        expect(json).toEqual(payload);
+        expect(json).toEqual({ ...payload, revision: writtenRevision });
       });
 
       it('writes the row keyed by the authenticated user', async () => {
@@ -961,6 +1063,46 @@ describe('UserDashboardLayoutController', () => {
         {
           description: 'a payload without a module list',
           payload: {}
+        },
+        {
+          // The whole non-object category, at the boundary that has to refuse it.
+          //
+          // `@ValidateNested({ each: true })` descends into an element and reports
+          // what the element's own rules report; it does not assert that the
+          // element is an object. An element that is itself an EMPTY array offers
+          // nothing to descend into, so no item rule ran and this exact request
+          // used to answer 200 and reach storage - while the three below it were
+          // always refused, because each of them does have something to descend
+          // into. The read path drops such an entry, so nothing was lost; but the
+          // five-field-per-item contract was not enforced here, and every later
+          // read of that row reported a dropped item. The case that escaped is the
+          // one nobody would have thought to write down, which is why its whole
+          // category is now spelled out.
+          description: 'a module entry that is an empty array',
+          payload: { modules: [[]] }
+        },
+        {
+          description: 'a module entry that is a populated array',
+          payload: { modules: [[1, 2, 3]] }
+        },
+        {
+          description: 'a module entry that is null',
+          payload: { modules: [null] }
+        },
+        {
+          description: 'a module entry that is a string',
+          payload: { modules: ['holdings'] }
+        },
+        {
+          description:
+            'a list in which only one entry among valid ones is not an object',
+          payload: {
+            modules: [
+              { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+              [],
+              { cols: 4, moduleType: 'holdings', rows: 4, x: 4, y: 0 }
+            ]
+          }
         },
         {
           description: 'a module narrower than the two column minimum',
@@ -1078,6 +1220,56 @@ describe('UserDashboardLayoutController', () => {
           }
         },
         {
+          // The five cases below are one defect, and it is the reason `modules`
+          // carries a structural guard as well as nested validation. Nested
+          // validation admits an element that is "object OR array" and, for an
+          // array element, measures that array's MEMBERS instead of refusing the
+          // element - so an element that is an array was reached by no item rule
+          // of its own. An empty one has no members at all, which is how this
+          // exact payload was accepted, stored, and then read back WITHOUT the
+          // entry, because the read projection drops what it cannot interpret:
+          // one row answering a write and a read with different documents.
+          //
+          // Kept as five rather than one because each closes a different half of
+          // the hole and any single one of them could pass while the others did
+          // not: nothing inside, several of them, something VALID inside, one
+          // alongside a genuine item, and nesting a level deeper.
+          description:
+            'a module list holding an empty array where an item belongs',
+          payload: { modules: [[]] }
+        },
+        {
+          description: 'a module list holding several empty arrays',
+          payload: { modules: [[], [], []] }
+        },
+        {
+          // The case a member-level rule cannot catch. Its one member IS a valid
+          // item, so descending into it reports nothing and the element travelled
+          // into the column as a nested array - which is why the guard has to be
+          // about the element's own type rather than about what it contains.
+          description: 'a module list holding an array that wraps a valid item',
+          payload: {
+            modules: [
+              [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }]
+            ]
+          }
+        },
+        {
+          // Mixed with a legitimate item, so the whole request must be refused
+          // rather than the good entry saved and the bad one silently dropped.
+          description: 'a module list holding a valid item alongside an array',
+          payload: {
+            modules: [
+              { cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 },
+              []
+            ]
+          }
+        },
+        {
+          description: 'a module list holding an array of arrays',
+          payload: { modules: [[[]]] }
+        },
+        {
           // One past the declared ceiling. The body parser allows 10 MiB, so
           // without a maximum size a single request could persist hundreds of
           // thousands of items into one document.
@@ -1150,6 +1342,31 @@ describe('UserDashboardLayoutController', () => {
             modules: [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
             userId: 'a-different-user'
           }
+        },
+        {
+          // `@ValidateNested` validates whatever each member turns out to be, and
+          // an array is a member it recurses into rather than refuses - so this
+          // payload used to answer 200, echo its nested arrays back, and sit in the
+          // JSONB column until the owner's next edit, while every subsequent read
+          // reported the document as empty because the reader rebuilds each item
+          // from five named fields and an array has none. Refusing a member that is
+          // not an object is what makes the write and the read describe the same
+          // document.
+          description: 'a module list holding an array instead of a module',
+          payload: {
+            modules: [
+              [{ cols: 4, moduleType: 'holdings', rows: 4, x: 0, y: 0 }]
+            ],
+            version: 1
+          }
+        },
+        {
+          description: 'a module list holding a bare string',
+          payload: { modules: ['holdings'], version: 1 }
+        },
+        {
+          description: 'a module list holding a null',
+          payload: { modules: [null], version: 1 }
         }
       ])('rejects $description with 400', async ({ payload }) => {
         const { status } = await request({
@@ -1162,6 +1379,240 @@ describe('UserDashboardLayoutController', () => {
         expect(status).toBe(400);
         expect(upsert).not.toHaveBeenCalled();
       });
+    });
+
+    /**
+     * The escape from a stored arrangement this build cannot interpret.
+     *
+     * It has to be a DELETE rather than a write, and that is the point being pinned
+     * here: the canvas refuses every write while it holds a layout it could not
+     * read - which is what stops the error state from destroying the document that
+     * caused it - so recovery cannot go through the write path without reopening
+     * exactly the hole that protection exists to close.
+     */
+    describe('discarding the layout', () => {
+      it('answers 204 with no body at all', async () => {
+        deleteMany.mockResolvedValue({ count: 1 });
+
+        const { contentType, status, text } = await request({
+          app,
+          method: 'DELETE',
+          path: layoutPath
+        });
+
+        // 204 rather than an empty 200: Nest's Express adapter answers a nil handler
+        // result with no `Content-Type` at all, which is not valid JSON and fails any
+        // consumer stricter than Angular's `HttpClient`. A 204 states the absence of
+        // a body as part of the status.
+        expect(status).toBe(204);
+        expect(text).toBe('');
+        expect(contentType).toBeNull();
+      });
+
+      it('deletes only the authenticated caller row, keyed by identity rather than by payload', async () => {
+        deleteMany.mockResolvedValue({ count: 1 });
+
+        await request({ app, method: 'DELETE', path: layoutPath });
+
+        expect(deleteMany).toHaveBeenCalledTimes(1);
+        expect(deleteMany).toHaveBeenCalledWith({
+          where: { userId: requestUserId }
+        });
+      });
+
+      it('succeeds when there was nothing saved, so discarding is idempotent', async () => {
+        deleteMany.mockResolvedValue({ count: 0 });
+
+        const { status } = await request({
+          app,
+          method: 'DELETE',
+          path: layoutPath
+        });
+
+        expect(status).toBe(204);
+      });
+
+      it('writes no arrangement, so recovery is not a second write origin', async () => {
+        deleteMany.mockResolvedValue({ count: 1 });
+
+        await request({ app, method: 'DELETE', path: layoutPath });
+
+        expect(updateMany).not.toHaveBeenCalled();
+        expect(upsert).not.toHaveBeenCalled();
+      });
+    });
+
+    /**
+     * What happens when two clients of one account edit the same arrangement.
+     *
+     * Every write is a complete snapshot, so without a revision to compare, a tab
+     * that moved one module would restore every other module to whatever it last
+     * read - silently discarding what another tab had already saved. The token makes
+     * that submission refusable, and the refusal is a 409 so the client can offer its
+     * viewer the choice rather than guess at one.
+     */
+    describe('a write carrying a concurrency token', () => {
+      const staleRevision = '2025-06-01T00:00:00.000Z';
+
+      it('applies the write only while the row still carries the revision it was built on', async () => {
+        updateMany.mockResolvedValue({ count: 1 });
+        findUnique.mockResolvedValue({
+          layoutData: storedLayout,
+          updatedAt: new Date(writtenRevision),
+          userId: requestUserId
+        });
+
+        const { json, status } = await request({
+          app,
+          method: 'PATCH',
+          path: layoutPath,
+          payload: { ...storedLayout, revision: staleRevision }
+        });
+
+        expect(status).toBe(200);
+
+        // The comparison is the WHERE clause of the write itself rather than a read
+        // followed by a write, which is what makes it atomic: two conditional writes
+        // racing on one row cannot both find it current.
+        expect(updateMany).toHaveBeenCalledTimes(1);
+        expect(updateMany).toHaveBeenCalledWith({
+          data: { layoutData: storedLayout },
+          where: {
+            updatedAt: new Date(staleRevision),
+            userId: requestUserId
+          }
+        });
+        expect(upsert).not.toHaveBeenCalled();
+
+        // The token never reaches storage - the stored shape stays exactly the two
+        // envelope members - and the response carries the revision the write produced
+        // so the client's next write is conditional on the row as it now stands.
+        const [{ data }] = updateMany.mock.calls[0] as [
+          { data: { layoutData: Record<string, unknown> } }
+        ];
+
+        expect(data.layoutData).not.toHaveProperty('revision');
+        expect(json).toEqual({ ...storedLayout, revision: writtenRevision });
+      });
+
+      it('refuses a write built on a superseded revision with 409 and persists nothing', async () => {
+        updateMany.mockResolvedValue({ count: 0 });
+
+        const { json, status } = await request({
+          app,
+          method: 'PATCH',
+          path: layoutPath,
+          payload: { ...storedLayout, revision: staleRevision }
+        });
+
+        expect(status).toBe(409);
+        expect(json).toMatchObject({
+          message: 'The dashboard layout was changed elsewhere',
+          statusCode: 409
+        });
+        expect(upsert).not.toHaveBeenCalled();
+      });
+
+      it('writes unconditionally when no token is sent, which is a first save and a deliberate overwrite', async () => {
+        upsert.mockResolvedValue({
+          layoutData: storedLayout,
+          updatedAt: new Date(writtenRevision),
+          userId: requestUserId
+        });
+
+        const { status } = await request({
+          app,
+          method: 'PATCH',
+          path: layoutPath,
+          payload: storedLayout
+        });
+
+        expect(status).toBe(200);
+        expect(upsert).toHaveBeenCalledTimes(1);
+        expect(updateMany).not.toHaveBeenCalled();
+      });
+
+      it('rejects a token that is not a date with 400, rather than treating it as no token', async () => {
+        const { status } = await request({
+          app,
+          method: 'PATCH',
+          path: layoutPath,
+          payload: { ...storedLayout, revision: 'not-a-date' }
+        });
+
+        // Left unvalidated, `new Date('not-a-date')` would match no row and every
+        // write would be refused as a conflict - a 409 for a client mistake that has
+        // nothing to do with concurrency.
+        expect(status).toBe(400);
+        expect(updateMany).not.toHaveBeenCalled();
+        expect(upsert).not.toHaveBeenCalled();
+      });
+    });
+
+    /**
+     * A stored document this build cannot interpret, answered as a conflict rather
+     * than as a server error.
+     *
+     * The distinction is what the client acts on. A 500 says the server failed and
+     * invites a retry; nothing failed here and no retry can succeed, because the row
+     * holds the same document on every request. Answering with a retryable status
+     * left a viewer whose stored `version` had moved ahead of their client locked out
+     * of their own dashboard with nothing to press but "Try again" - six times, to the
+     * same 500. A 409 is distinguishable, so the client can say what is wrong and
+     * offer the one action that resolves it.
+     */
+    describe('a stored document this build cannot interpret', () => {
+      let loggerError: jest.SpyInstance;
+
+      beforeEach(() => {
+        loggerError = jest
+          .spyOn(Logger, 'error')
+          .mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        loggerError.mockRestore();
+      });
+
+      it.each([
+        {
+          description: 'a version this build does not know',
+          layoutData: { modules: [], version: 2 }
+        },
+        { description: 'an envelope that is not an object', layoutData: '' },
+        {
+          description: 'an envelope holding no modules array',
+          layoutData: { version: 1 }
+        }
+      ])(
+        'answers 409 for $description, and stores nothing',
+        async ({ layoutData }) => {
+          findUnique.mockResolvedValue({
+            layoutData,
+            updatedAt: new Date(writtenRevision),
+            userId: requestUserId
+          });
+
+          const { json, status } = await request({
+            app,
+            method: 'GET',
+            path: layoutPath
+          });
+
+          expect(status).toBe(409);
+          expect(json).toMatchObject({
+            message: 'The stored dashboard layout could not be read',
+            statusCode: 409
+          });
+
+          // The row survives for an operator to look at, and the reason category is
+          // reported without any part of what was stored.
+          expect(updateMany).not.toHaveBeenCalled();
+          expect(upsert).not.toHaveBeenCalled();
+          expect(deleteMany).not.toHaveBeenCalled();
+          expect(loggerError).toHaveBeenCalled();
+        }
+      );
     });
 
     describe('when the persistence layer fails', () => {
@@ -1231,12 +1682,16 @@ describe('UserDashboardLayoutController', () => {
     // itself, and its guards read it back off `context.getHandler()`, so every
     // assertion below is made against that same function object.
     function handlerOf(
-      name: 'getUserDashboardLayout' | 'updateUserDashboardLayout'
+      name:
+        | 'deleteUserDashboardLayout'
+        | 'getUserDashboardLayout'
+        | 'updateUserDashboardLayout'
     ) {
       return UserDashboardLayoutController.prototype[name];
     }
 
     it.each([
+      { handler: 'deleteUserDashboardLayout' },
       { handler: 'getUserDashboardLayout' },
       { handler: 'updateUserDashboardLayout' }
     ] as const)(
@@ -1254,6 +1709,7 @@ describe('UserDashboardLayoutController', () => {
     );
 
     it.each([
+      { handler: 'deleteUserDashboardLayout' },
       { handler: 'getUserDashboardLayout' },
       { handler: 'updateUserDashboardLayout' }
     ] as const)(
@@ -1283,7 +1739,10 @@ describe('UserDashboardLayoutController', () => {
     // function itself, and naming that function directly would be an unbound
     // method reference.
     function handlerOf(
-      name: 'getUserDashboardLayout' | 'updateUserDashboardLayout'
+      name:
+        | 'deleteUserDashboardLayout'
+        | 'getUserDashboardLayout'
+        | 'updateUserDashboardLayout'
     ) {
       return UserDashboardLayoutController.prototype[name];
     }
@@ -1297,6 +1756,25 @@ describe('UserDashboardLayoutController', () => {
       );
       expect(Reflect.getMetadata('providers', UserModule)).toContain(
         UserDashboardLayoutService
+      );
+    });
+
+    // Registration order is load-bearing here, so it is pinned rather than left to
+    // whichever order reads tidily. `UserController` declares `@Delete(':id')`
+    // annotated with the `deleteUser` permission; Nest registers controllers in the
+    // order given and the router matches the first fitting declaration, so with that
+    // controller first the discard resolved to `deleteUser` with `id: 'layout'` and
+    // answered 403 to every viewer without administrative rights - which is every
+    // viewer the recovery exists for. Nothing about it is visible in a type or at
+    // build time; it only shows up as a status code at request time.
+    it('declares the layout routes ahead of the parameterised user routes', () => {
+      const controllers = Reflect.getMetadata(
+        'controllers',
+        UserModule
+      ) as unknown[];
+
+      expect(controllers.indexOf(UserDashboardLayoutController)).toBeLessThan(
+        controllers.indexOf(UserController)
       );
     });
 
@@ -1323,6 +1801,15 @@ describe('UserDashboardLayoutController', () => {
         Reflect.getMetadata(
           '__interceptors__',
           handlerOf('updateUserDashboardLayout')
+        )
+      ).toBeUndefined();
+
+      // The discard carries no latency budget either, so timing it would add a line
+      // per recovery that says nothing about anything a budget is stated for.
+      expect(
+        Reflect.getMetadata(
+          '__interceptors__',
+          handlerOf('deleteUserDashboardLayout')
         )
       ).toBeUndefined();
     });

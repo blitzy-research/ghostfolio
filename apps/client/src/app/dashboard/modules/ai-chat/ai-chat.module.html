@@ -34,9 +34,17 @@
   <!-- One live region that outlives every state swap, so a screen reader
        announces the outcome of a mode change. `aria-busy` suppresses the
        placeholder while the request is still in flight. -->
+  <!--
+    `overflow-hidden` was dropped from this wrapper along with the scroll regions
+    inside it. It was there to make the prompt box's own scrollbar engage, and while
+    it did that it also CLIPPED anything taller than the box outright - hidden
+    overflow is unreachable, so a prompt longer than the cell simply ended
+    mid-sentence with no bar, no fade and no ellipsis to say so. With the inner
+    scrollers retired it would have hidden the overflow instead of passing it on.
+  -->
   <div
     aria-live="polite"
-    class="d-flex flex-column flex-grow-1 overflow-hidden"
+    class="d-flex flex-column flex-grow-1"
     [attr.aria-busy]="isLoading"
   >
     @if (hasImpersonationId) {
@@ -73,7 +81,27 @@
         <div i18n>Please try again later.</div>
       </div>
     } @else if (prompt) {
-      <div class="flex-grow-1 m-3 p-3 prompt-container">{{ prompt }}</div>
+      <!--
+        `pre`, not `div`, because this IS preformatted text.
+
+        The prompt is a markdown document and, in portfolio mode, is nothing but a
+        markdown pipe table - and a pipe table is aligned by padding cells with
+        spaces, so it only reads as a table in a face where every character is the
+        same width. Rendered in the app's proportional face the pipes landed at a
+        different offset on every row and the dash separator broke mid-token, so the
+        table looked corrupted rather than merely narrow.
+
+        Using the element the language provides for preformatted text gets that face
+        from the design system's own reboot layer, which sets the monospace stack on
+        `pre` - no font stack is hardcoded here, and the semantics are now honest
+        about what the box holds. Both margins and the padding are supplied by the
+        utility classes, which override reboot's own.
+
+        The face alone was not enough: a table row is 126 characters and no width this
+        module reaches can hold that, so the box keeps the document at its natural
+        width and scrolls sideways instead of wrapping. See the stylesheet.
+      -->
+      <pre class="flex-grow-1 m-3 p-3 prompt-container">{{ prompt }}</pre>
     } @else {
       <div
         class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
