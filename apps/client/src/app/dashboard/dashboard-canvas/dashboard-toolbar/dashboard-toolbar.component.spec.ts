@@ -1440,6 +1440,186 @@ describe('GfDashboardToolbarComponent', () => {
     });
   });
 
+  /**
+   * The separators inside the identity menu, counted from the rendered menu rather
+   * than from the template.
+   *
+   * A divider belongs to the group above it, and this menu has four groups of which
+   * two are conditional: the plan row, the identities the viewer may borrow, the
+   * appearance radios, and signing out. Each of the first three is followed by its
+   * own rule - the two conditional ones from inside their own `@if` - and a fourth,
+   * unconditional rule had been written between the identities and the appearance
+   * radios as well. So a viewer with no plan row and no grants opened the menu onto
+   * a horizontal line with nothing above it, and a viewer with grants saw two lines
+   * a pixel apart.
+   *
+   * Counted here across all four combinations, because either symptom is invisible
+   * to a test of only one of them: the duplicate needs a viewer WITH grants and the
+   * orphan needs a viewer with neither, and the template reads plausibly in both
+   * cases. The rule is one divider per populated group that has another group after
+   * it, and never one before the first row.
+   */
+  describe('the identity menu separators', () => {
+    /**
+     * Opens the identity menu, which is what renders its rows at all.
+     *
+     * Material projects menu content into an overlay only while the menu is open, so
+     * nothing below can be read from the component's own element. The trigger is
+     * found by its glyph rather than by a selector on `matMenuTriggerFor`, which is
+     * a property binding and therefore leaves no attribute in the DOM.
+     */
+    const openIdentityMenu = () => {
+      const trigger = Array.from(
+        host().querySelectorAll<HTMLElement>('mat-toolbar button')
+      ).find((button) => {
+        return !!button.querySelector('ion-icon[name="person-circle-outline"]');
+      });
+
+      expect(trigger).toBeTruthy();
+
+      trigger.click();
+
+      fixture.detectChanges();
+    };
+
+    /**
+     * The open panel.
+     *
+     * A dismissed panel lingers in the overlay container for the length of its exit
+     * animation, so the one being read is the one that is not leaving.
+     */
+    const menuPanel = () => {
+      return document.querySelector(
+        '.mat-mdc-menu-panel:not(.mat-menu-panel-exit-animation)'
+      );
+    };
+
+    /** Every rule the open menu paints, in the order it paints them. */
+    const menuSeparators = () => {
+      return Array.from(menuPanel()?.querySelectorAll<HTMLElement>('hr') ?? []);
+    };
+
+    /**
+     * The rows and rules of the open menu as one ordered list, so that a rule with
+     * nothing above it and two rules in a row are both readable from the sequence.
+     */
+    const menuSequence = () => {
+      return Array.from(
+        menuPanel()?.querySelectorAll('hr, [mat-menu-item]') ?? []
+      ).map((element) => {
+        return element.tagName === 'HR' ? 'divider' : 'row';
+      });
+    };
+
+    /**
+     * Dismisses the menu through its own backdrop.
+     *
+     * Left open, its panel would still be in the overlay container while the next
+     * test counted rules there - and every count below reads the document rather
+     * than the component, so a leaked panel would be counted as if it were this
+     * viewer's.
+     */
+    const closeIdentityMenu = () => {
+      document.querySelector<HTMLElement>('.cdk-overlay-backdrop')?.click();
+
+      fixture.detectChanges();
+    };
+
+    afterEach(() => {
+      closeIdentityMenu();
+    });
+
+    it('draws no rule above the first row for a viewer with neither group', () => {
+      renderWithUser(
+        createUser({ access: [], subscription: null, permissions: [] })
+      );
+
+      openIdentityMenu();
+
+      const sequence = menuSequence();
+
+      expect(sequence[0]).toBe('row');
+      expect(menuSeparators()).toHaveLength(1);
+    });
+
+    it('draws one rule per populated group for a viewer with grants', () => {
+      renderWithUser(
+        createUser({
+          access: [{ alias: 'Borrowed', id: 'ACCESS_ID' }],
+          permissions: []
+        } as unknown as Partial<User>)
+      );
+
+      openIdentityMenu();
+
+      const sequence = menuSequence();
+
+      // The pair a pixel apart is exactly a `divider` immediately followed by
+      // another `divider`, so the sequence is what has to be free of it.
+      expect(sequence).not.toContain('divider,divider');
+
+      for (let index = 1; index < sequence.length; index += 1) {
+        expect([sequence[index - 1], sequence[index]]).not.toEqual([
+          'divider',
+          'divider'
+        ]);
+      }
+
+      expect(sequence[0]).toBe('row');
+      expect(menuSeparators()).toHaveLength(2);
+    });
+
+    it('draws one rule per populated group for a viewer with a plan row', () => {
+      dataServiceMock.fetchInfo.mockReturnValue(
+        createInfo({ globalPermissions: [permissions.enableSubscription] })
+      );
+
+      createComponent();
+
+      renderWithUser(
+        createUser({
+          access: [],
+          subscription: { offer: createOffer(), type: 'Basic' }
+        } as unknown as Partial<User>)
+      );
+
+      openIdentityMenu();
+
+      expect(menuSequence()[0]).toBe('row');
+      expect(menuSeparators()).toHaveLength(2);
+    });
+
+    it('draws one rule per populated group for a viewer with both', () => {
+      dataServiceMock.fetchInfo.mockReturnValue(
+        createInfo({ globalPermissions: [permissions.enableSubscription] })
+      );
+
+      createComponent();
+
+      renderWithUser(
+        createUser({
+          access: [{ alias: 'Borrowed', id: 'ACCESS_ID' }],
+          subscription: { offer: createOffer(), type: 'Basic' }
+        } as unknown as Partial<User>)
+      );
+
+      openIdentityMenu();
+
+      const sequence = menuSequence();
+
+      expect(sequence[0]).toBe('row');
+
+      for (let index = 1; index < sequence.length; index += 1) {
+        expect([sequence[index - 1], sequence[index]]).not.toEqual([
+          'divider',
+          'divider'
+        ]);
+      }
+
+      expect(menuSeparators()).toHaveLength(3);
+    });
+  });
+
   describe('impersonateAccount', () => {
     it('adopts the identity it was given', () => {
       component.impersonateAccount('ACCESS_ID');

@@ -18,6 +18,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  OnInit,
   computed,
   effect,
   inject,
@@ -63,7 +64,7 @@ import { BenchmarkDetailDialogParams } from './benchmark-detail-dialog/interface
   styleUrls: ['./benchmark.component.scss'],
   templateUrl: './benchmark.component.html'
 })
-export class GfBenchmarkComponent {
+export class GfBenchmarkComponent implements OnInit {
   public readonly benchmarks = input.required<Benchmark[]>();
   public readonly deviceType = input.required<string>();
 
@@ -135,6 +136,33 @@ export class GfBenchmarkComponent {
       }
     });
 
+    addIcons({ ellipsisHorizontal, trashOutline });
+  }
+
+  /**
+   * Observes the shared query stream, and does so from HERE rather than from the
+   * constructor.
+   *
+   * The distinction is load-bearing rather than stylistic. `route.queryParams`
+   * delivers its current value synchronously the moment it is subscribed to, and
+   * the guard below reads {@link dialogModule}, which is a REQUIRED signal input.
+   * Subscribed in the constructor, that read happens before Angular has run its
+   * first input-binding pass, so a request already sitting on the URL threw
+   * `NG0950` once per mounted instance instead of opening anything - and because
+   * the throw happened while the guard was being computed, {@link
+   * servedDialogAddress} was never assigned, which left the request on the URL
+   * still looking unserved. Every producer on this canvas merges, so the next
+   * ordinary interaction re-delivered those parameters alongside its own and
+   * opened this dialog over the one the viewer had actually asked for.
+   *
+   * That is the shape of a link arriving cold: on the single-canvas shell a module
+   * is materialised lazily *in response to* parameters that are already there, so
+   * the first emission carries a real request rather than an empty object. Angular
+   * sets inputs before `ngOnInit`, which is what makes the discriminator readable
+   * at the first emission, and the stream's synchronous delivery is what makes the
+   * request served on that same first pass rather than a frame later.
+   */
+  public ngOnInit() {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
@@ -167,8 +195,6 @@ export class GfBenchmarkComponent {
           });
         }
       });
-
-    addIcons({ ellipsisHorizontal, trashOutline });
   }
 
   /**

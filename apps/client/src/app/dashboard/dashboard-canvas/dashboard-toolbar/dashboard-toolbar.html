@@ -329,8 +329,17 @@
             theme - the shell already watches the viewer's `colorScheme` and paints
             from it. Nothing here touches the document classes itself, so there is one
             mechanism rather than two.
+
+            No divider of its own, and that is the fix rather than an omission. A
+            divider belongs to the group ABOVE it - each of the two optional groups
+            emits its own inside its own `@if`, and the sign-out row below emits one
+            too - so a third, unconditional rule here was a second separator wherever
+            a group had already drawn one, and a rule with nothing above it wherever
+            neither group was rendered. A viewer on the free plan with no access
+            grants opened this menu onto a horizontal line; a viewer with grants saw
+            two lines a pixel apart. Guarding this one rule fixes both, because the
+            groups that can precede it already carry theirs.
           -->
-          <hr class="m-0" />
           <div aria-label="Appearance" i18n-aria-label role="group">
             @for (option of colorSchemeOptions; track option.value) {
               <button

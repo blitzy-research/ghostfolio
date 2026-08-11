@@ -1,5 +1,8 @@
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { DashboardModuleType } from '@ghostfolio/common/dashboard';
+import {
+  DashboardModuleType,
+  getQualifiedDashboardModuleName
+} from '@ghostfolio/common/dashboard';
 import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { hasPermission } from '@ghostfolio/common/permissions';
 
@@ -319,13 +322,33 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
   // module the viewer may not place. `context` is a key alongside `name`
   // because two modules can share a display name and the qualifier is what
   // tells them apart.
+  //
+  // The third key is neither of those two fields but the string the row actually
+  // PAINTS, composed from both. Indexing the fields alone made the label a viewer
+  // can read off the screen unsearchable: `Markets · Highlights` matched nothing
+  // at all, because no single indexed value contained it and Fuse scores each key
+  // separately rather than the record as a whole. Derived through the one shared
+  // spelling of that composition rather than re-joined here, so what is searched
+  // and what is rendered cannot drift apart. Held as a derivation rather than a
+  // stored field because the definition is the registry's own object, shared by
+  // reference with the canvas, and writing to it would be a mutation of somebody
+  // else's state.
   private searchModules(searchTerm: string): DashboardModuleDefinition[] {
     if (!searchTerm) {
       return this.eligibleModules;
     }
 
     const fuse = new Fuse(this.eligibleModules, {
-      keys: ['name', 'context'],
+      keys: [
+        { name: 'name' },
+        { name: 'context' },
+        {
+          getFn: (definition) => {
+            return getQualifiedDashboardModuleName(definition) ?? '';
+          },
+          name: 'qualifiedName'
+        }
+      ],
       threshold: 0.3
     });
 

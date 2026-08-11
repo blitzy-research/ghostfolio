@@ -106,11 +106,16 @@ describe('GfBenchmarkComponent', () => {
    * Mounts one instance standing for one module.
    *
    * The inputs are set before the first change detection because two of them are
-   * required: `benchmarks` is read inside an effect, which runs on that first
-   * pass, and `dialogModule` is read by the query-parameter handler, which the
-   * constructor subscribes synchronously. The stream therefore starts empty - an
-   * initial emission carrying no request short-circuits before the discriminator
-   * is read, which is what makes constructing the instance safe at all.
+   * required: `benchmarks` is read inside an effect and `dialogModule` is read by
+   * the query-parameter handler, and both of those run on that first pass - the
+   * effect because that is when effects flush, the handler because it subscribes
+   * from `ngOnInit`.
+   *
+   * That the stream starts empty here is a convenience of this harness and nothing
+   * the component may rely on. It used to be load-bearing: while the handler
+   * subscribed from the constructor, an initial emission carrying a real request
+   * read the discriminator before Angular had set it and threw. The cold-load
+   * group below seeds a request BEFORE mounting for exactly that reason.
    */
   const mount = (owner: DashboardModuleType) => {
     const fixture = TestBed.createComponent(GfBenchmarkComponent);
@@ -445,6 +450,105 @@ describe('GfBenchmarkComponent', () => {
       // Opening in response to the URL must not rewrite the URL: that would put
       // the consumer and the producer in a loop.
       expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * A request that is already on the URL before this component exists - a deep
+   * link, a reload, a shared address.
+   *
+   * This is the ordinary case on the single-canvas shell rather than an exotic one:
+   * the module hosting this component is materialised lazily *in response to* the
+   * parameters, so the very first emission this instance sees carries a real
+   * request instead of an empty object. Every case in the group above seeds the
+   * request AFTER mounting and so cannot observe it.
+   *
+   * Two defects live here, and neither is visible to any assertion about a dialog
+   * that did open. Both come from the same cause: the handler used to subscribe
+   * from the CONSTRUCTOR, and `queryParams` delivers its current value
+   * synchronously on subscribe, so the guard read `dialogModule` - a required
+   * signal input - before Angular's first input-binding pass had set it.
+   *
+   * 1. **Nothing opened.** The read threw `NG0950`, once per mounted instance. RxJS
+   *    routes that to the global error handler on a macrotask, so the failure was
+   *    silent: no dialog, and a canvas pixel-identical to a healthy one.
+   * 2. **The request stayed armed.** The throw happened WHILE the guard was being
+   *    computed, so the served-address field was never assigned. The parameters
+   *    stayed on the URL looking unserved, and because every producer here merges,
+   *    the next ordinary interaction re-delivered them alongside its own request
+   *    and opened this dialog on top of the one the viewer had asked for.
+   */
+  describe('a request that arrives before the instance does', () => {
+    it('opens on the instance the request names, and on no other', () => {
+      // Seeded before any instance exists, which is what a deep link does.
+      queryParams.next(requestFor({ owner: DashboardModuleType.WATCHLIST }));
+
+      mountEveryHost();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+
+      const [request] = dialogRequests;
+
+      expect(request.component).toBe(GfBenchmarkDetailDialogComponent);
+      expect(request.config.data).toEqual(
+        expect.objectContaining({ dataSource, symbol })
+      );
+    });
+
+    it('records the request it served, so a re-observation does not stack a copy', () => {
+      queryParams.next(requestFor({ owner: DashboardModuleType.WATCHLIST }));
+
+      mountEveryHost();
+
+      // Asserted here as well as at the end, and that is the whole point of the
+      // case: a single count of one at the end cannot tell a request served on
+      // arrival from one that was dropped on arrival and then served by the
+      // re-observation instead - which is precisely what the defect did.
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+
+      // A sibling module writing its own parameter re-emits this request
+      // unchanged, because every producer on the canvas merges. Serving it a
+      // second time is the "armed link" half of the defect: the copy lands over
+      // whatever the viewer had actually asked for.
+      queryParams.next({
+        ...requestFor({ owner: DashboardModuleType.WATCHLIST }),
+        createWatchlistItemDialog: true
+      });
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads the discriminator no earlier than the first binding pass', () => {
+      const fixture = TestBed.createComponent(GfBenchmarkComponent);
+
+      fixtures.push(fixture);
+
+      // Constructed, but not yet bound. An emission now must reach no guard at
+      // all: `dialogModule` has no value, and reading it here is what threw.
+      queryParams.next(requestFor({ owner: DashboardModuleType.MARKETS }));
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+
+      fixture.componentRef.setInput('benchmarks', []);
+      fixture.componentRef.setInput('deviceType', 'desktop');
+      fixture.componentRef.setInput(
+        'dialogModule',
+        DashboardModuleType.MARKETS
+      );
+
+      fixture.detectChanges();
+
+      // Bound, and the request - still on the URL, because nothing consumed it -
+      // is served on that same pass rather than a frame later.
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens nothing when the waiting request names another module', () => {
+      queryParams.next(requestFor({ owner: DashboardModuleType.X_RAY }));
+
+      mountEveryHost();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
     });
   });
 

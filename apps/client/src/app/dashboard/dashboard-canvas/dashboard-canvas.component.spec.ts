@@ -51,6 +51,8 @@ import { GfDashboardLayoutService } from '../services/dashboard-layout.service';
 import { GfDashboardCanvasComponent } from './dashboard-canvas.component';
 import {
   createDashboardCanvasConfig,
+  GRID_COLUMNS,
+  GRID_ROWS,
   itemValidateCallback
 } from './dashboard-canvas.config';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host/dashboard-module-host.component';
@@ -378,6 +380,87 @@ describe('itemValidateCallback', () => {
     expect(
       itemValidateCallback({ cols: 4, minItemRows: 2, rows: 4, x: 0, y: 0 })
     ).toBe(true);
+  });
+});
+
+/**
+ * The ceiling a viewer can reach has to be the ceiling the server advertises.
+ *
+ * Gridster decides whether a footprint may be placed by testing it against
+ * `maxItemCols`/`maxItemRows` - the *per-item* ceilings - and defaults both to 50.
+ * `maxCols`/`maxRows` bound the grid and are not consulted for this. So a
+ * configuration that states only the grid-wide pair leaves the engine refusing
+ * anything past 50 rows while the grid, the hydration clamp and the DTO all say
+ * 100. The server accepts such a module, the canvas hydrates it, and the engine
+ * then marks it `notPlaced` and paints it `display: none`: it disappears with no
+ * notice and no way for a viewer to get it back.
+ *
+ * These assertions pin the agreement rather than the numbers - each is expressed
+ * against `GRID_COLUMNS`/`GRID_ROWS`, so widening the grid one day cannot leave the
+ * per-item ceilings behind and silently reintroduce the gap.
+ */
+describe('the grid ceilings', () => {
+  const config = () =>
+    createDashboardCanvasConfig({
+      onEmptyCellDrop: () => undefined,
+      onGridsterDestroy: () => undefined,
+      onGridsterInit: () => undefined,
+      onItemGeometryChange: () => undefined,
+      onItemInit: () => undefined,
+      onLayoutChange: () => undefined,
+      onResizeGestureEnd: () => undefined,
+      onResizeGestureStart: () => undefined
+    });
+
+  it('should cap one module at exactly the grid it lives in', () => {
+    // Stated explicitly, because leaving either to the library is the defect:
+    // both would silently become 50.
+    expect(config().maxItemCols).toBe(GRID_COLUMNS);
+    expect(config().maxItemRows).toBe(GRID_ROWS);
+  });
+
+  it('should not let the per-item ceilings drift from the grid-wide ones', () => {
+    const { maxCols, maxItemCols, maxItemRows, maxRows } = config();
+
+    expect(maxItemCols).toBe(maxCols);
+    expect(maxItemRows).toBe(maxRows);
+  });
+
+  it('should leave the full-height footprint the server accepts reachable', () => {
+    // A module occupying the whole grid is the widest and tallest thing the DTO
+    // admits - `cols @Max(12)`, `rows @Max(100)`, and `x + cols <= 12` with
+    // `y + rows <= 100`. It has to survive every client-side gate too, or the two
+    // layers describe different grids again.
+    const fullHeight: GridsterItemConfig = {
+      cols: GRID_COLUMNS,
+      minItemCols: 2,
+      minItemRows: 2,
+      rows: GRID_ROWS,
+      x: 0,
+      y: 0
+    };
+
+    expect(fullHeight.cols).toBeLessThanOrEqual(config().maxItemCols);
+    expect(fullHeight.rows).toBeLessThanOrEqual(config().maxItemRows);
+    expect(itemValidateCallback(fullHeight)).toBe(true);
+
+    // And the area ceiling cannot bind before the dimensional ones do: the library
+    // defaults `maxItemArea` to 2500 and the whole grid is 1200 cells, so it is
+    // left alone rather than restated. This asserts that remains true.
+    expect(GRID_COLUMNS * GRID_ROWS).toBeLessThanOrEqual(
+      config().maxItemArea ?? 2500
+    );
+  });
+
+  it('should still admit the row heights that were previously refused', () => {
+    // 51 through 100 is the band the library's default silently swallowed: the DTO
+    // accepted it, the engine did not.
+    for (const rows of [51, 60, 75, 99, GRID_ROWS]) {
+      expect(rows).toBeLessThanOrEqual(config().maxItemRows);
+      expect(
+        itemValidateCallback({ cols: GRID_COLUMNS, rows, x: 0, y: 0 })
+      ).toBe(true);
+    }
   });
 });
 
@@ -4853,6 +4936,13 @@ describe('GfDashboardCanvasComponent', () => {
       expect(component.options.maxCols).toBe(12);
       expect(component.options.mobileBreakpoint).toBe(0);
       expect(component.options.enableEmptyCellDrop).toBe(true);
+
+      // The per-item ceilings belong in this list too. The swap raises the drop
+      // preview's default footprint and must touch nothing else; were it to drop
+      // these, the engine would fall back to its own 50 and start refusing tall
+      // modules for the duration of a catalog drag.
+      expect(component.options.maxItemCols).toBe(GRID_COLUMNS);
+      expect(component.options.maxItemRows).toBe(GRID_ROWS);
     });
 
     it('should return to the engine default when the drag ends', async () => {

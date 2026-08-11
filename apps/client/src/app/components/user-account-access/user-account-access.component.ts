@@ -23,7 +23,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { addOutline, eyeOffOutline, eyeOutline } from 'ionicons/icons';
@@ -77,6 +77,25 @@ export class GfUserAccountAccessComponent implements OnInit {
   });
   public user: User;
 
+  /**
+   * The dialog request this module has already served, or `null` for none.
+   *
+   * A string rather than a boolean so that a request to edit a *different* grant
+   * is still honoured while one is open. Reset by the query parameters ceasing to
+   * ask for anything rather than by a dialog closing - see
+   * {@link serveDialogRequest} for why that distinction matters.
+   */
+  private openedDialogAddress: string = null;
+
+  /**
+   * The query parameters as they stand, held rather than consumed on arrival.
+   *
+   * They can reach this module before it is able to act on them - see
+   * {@link applyQueryParams} - so the most recent set is kept and re-evaluated
+   * whenever a prerequisite arrives.
+   */
+  private queryParams: Params;
+
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
     private dataService: DataService,
@@ -118,25 +137,24 @@ export class GfUserAccountAccessComponent implements OnInit {
           );
 
           this.changeDetectorRef.markForCheck();
+
+          this.applyQueryParams();
         }
       });
 
+    // Recorded rather than acted on. Both dialogs this module opens are sized from
+    // `deviceType`, which resolves in `ngOnInit` - after this. On the
+    // route-per-screen shell that never mattered, because a screen was constructed
+    // by a navigation that had already happened and its parameters arrived
+    // afterwards. On one canvas a module is materialised lazily *in response to* a
+    // request that is already on the URL, so `queryParams` delivers its current
+    // value here, in the constructor, before any prerequisite exists.
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
-        // The generic dialog flags are honoured only when the producer addressed
-        // this module. Bailing out first makes the handler fail-safe: an
-        // unqualified `createDialog` or `editDialog` raised by any other module
-        // opens nothing here. See `GfAppQueryParams`.
-        if (params['dialogModule'] !== DashboardModuleType.ACCOUNT_ACCESS) {
-          return;
-        }
+        this.queryParams = params;
 
-        if (params['createDialog']) {
-          this.openCreateAccessDialog();
-        } else if (params['editDialog'] && params['accessId']) {
-          this.openUpdateAccessDialog(params['accessId']);
-        }
+        this.applyQueryParams();
       });
 
     addIcons({ addOutline, eyeOffOutline, eyeOutline });
@@ -144,6 +162,8 @@ export class GfUserAccountAccessComponent implements OnInit {
 
   public ngOnInit() {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
+
+    this.applyQueryParams();
 
     this.update();
   }
@@ -206,6 +226,84 @@ export class GfUserAccountAccessComponent implements OnInit {
   }
 
   /**
+   * Opens whatever the current query parameters ask of this module, once it is
+   * able to.
+   *
+   * Reached from four places - a parameter change, the device becoming known, the
+   * viewer arriving and the grants arriving - because any of them can be the last
+   * one to arrive. That makes idempotence a requirement rather than a nicety, and
+   * {@link serveDialogRequest} is what provides it: without it, this module was
+   * the only one of the fifteen query-parameter consumers on the canvas with no
+   * served-request dedup, and every re-emission of an unchanged request minted
+   * another copy of a dialog that was already open. Because every producer here
+   * merges, any *other* module writing to the URL is such a re-emission - so the
+   * count climbed without bound and each dismissal, being a navigation of its
+   * own, was itself another trigger.
+   */
+  private applyQueryParams() {
+    if (!this.deviceType || !this.user) {
+      return;
+    }
+
+    const { accessId, createDialog, dialogModule, editDialog } =
+      this.queryParams ?? {};
+
+    // Neither flag names a dialog of its own, so both are honoured only when the
+    // producer addressed this module. That makes the handler fail-safe: an
+    // unqualified `createDialog` or `editDialog` raised by any other module opens
+    // nothing here. See `GfAppQueryParams`.
+    const isAddressed = dialogModule === DashboardModuleType.ACCOUNT_ACCESS;
+
+    if (isAddressed && createDialog && this.hasPermissionToCreateAccess) {
+      this.serveDialogRequest('createDialog', () => {
+        this.openCreateAccessDialog();
+      });
+    } else if (isAddressed && editDialog && accessId) {
+      const access = this.accessesGive?.find(({ id }) => {
+        return id === accessId;
+      });
+
+      if (access) {
+        this.serveDialogRequest(`editDialog:${access.id}`, () => {
+          this.openUpdateAccessDialog(access);
+        });
+      } else if (this.accessesGive) {
+        // Only once the grants are known. Before that an `editDialog` is a request
+        // this module cannot yet resolve, and clearing it would discard the request
+        // instead of waiting for the data that would satisfy it. Deliberately not
+        // recorded as served either, so it is still honoured when they arrive.
+        this.clearDialogQueryParams();
+      }
+    } else {
+      // Nothing is being asked of this module - either the parameters are gone or
+      // they name somebody else. Forgetting what was last served is what lets the
+      // viewer ask for the same dialog a second time: the close handler removes the
+      // parameters it travelled on, this branch observes their absence, and the next
+      // identical request is therefore new again.
+      this.serveDialogRequest(null);
+    }
+  }
+
+  /**
+   * Opens a dialog unless the same request has already been served.
+   *
+   * Keyed on the request the URL is making rather than on the dialog's own
+   * lifecycle: the close handler removes the parameters through a navigation, and
+   * until that navigation is applied the parameters still ask for the dialog that
+   * has just been dismissed. Keying on the dialog instead is what made a dismissal
+   * a duplication trigger.
+   */
+  private serveDialogRequest(aAddress: string, aOpen?: () => void) {
+    if (this.openedDialogAddress === aAddress) {
+      return;
+    }
+
+    this.openedDialogAddress = aAddress;
+
+    aOpen?.();
+  }
+
+  /**
    * Removes the query parameters this module's dialogs travel on, and only
    * those.
    *
@@ -257,15 +355,11 @@ export class GfUserAccountAccessComponent implements OnInit {
     });
   }
 
-  private openUpdateAccessDialog(accessId: string) {
-    const access = this.accessesGive?.find(({ id }) => {
-      return id === accessId;
-    });
-
-    if (!access) {
-      return;
-    }
-
+  // Takes the grant itself rather than its identifier, because the caller has
+  // already had to resolve it: an `editDialog` naming a grant that is not there is
+  // an outcome {@link applyQueryParams} has to tell apart from one that simply has
+  // not loaded yet, and only it knows which.
+  private openUpdateAccessDialog(access: Access) {
     const dialogRef = this.dialog.open<
       GfCreateOrUpdateAccessDialogComponent,
       CreateOrUpdateAccessDialogParams
@@ -310,6 +404,10 @@ export class GfUserAccountAccessComponent implements OnInit {
         this.accessesGive = accesses;
 
         this.changeDetectorRef.markForCheck();
+
+        // An `editDialog` that arrived before the grants did is a request this
+        // module could not resolve at the time; this is the moment it can.
+        this.applyQueryParams();
       });
   }
 }

@@ -121,7 +121,11 @@ const MINIMUM_ITEM_ROWS = 2;
 // Exported because the canvas needs the same two numbers to fit a *stored*
 // geometry back inside the grid as it hydrates, and reading them from here is
 // what stops that normalization and the engine's own
-// `minCols`/`maxCols`/`maxRows` from ever describing different grids.
+// `minCols`/`maxCols`/`maxRows`/`maxItemCols`/`maxItemRows` from ever describing
+// different grids. The per-item pair belongs in that list and not just the
+// grid-wide pair: the engine tests a footprint against the per-item ceilings
+// alone, so leaving those to the library's own defaults is precisely how the two
+// layers came to disagree.
 export const GRID_COLUMNS = 12;
 
 export const GRID_ROWS = 100;
@@ -247,6 +251,21 @@ export function createDashboardCanvasConfig(
     itemValidateCallback,
     margin: 10,
     maxCols: GRID_COLUMNS,
+
+    // The per-item ceilings, and they have to be stated rather than left to the
+    // library, which defaults both to 50. `maxCols`/`maxRows` bound the grid;
+    // these bound one module inside it, and `checkGridCollision` reads only
+    // these two when it decides whether a footprint may be placed at all. Omit
+    // them and the grid says a module may be 100 rows tall while the engine
+    // quietly refuses anything past 50: a taller stored module is admitted by
+    // the server, hydrated by the canvas, then marked `notPlaced` and painted
+    // `display: none`, so the module vanishes with no notice and no way for a
+    // viewer to recover it. Deriving them from the same two constants is what
+    // makes the ceiling a viewer can reach the ceiling the server already
+    // advertises - its own validator message names the `12 x 100` grid - so the
+    // engine, the hydration clamp and the DTO all describe one grid.
+    maxItemCols: GRID_COLUMNS,
+    maxItemRows: GRID_ROWS,
     maxRows: GRID_ROWS,
     minCols: GRID_COLUMNS,
 

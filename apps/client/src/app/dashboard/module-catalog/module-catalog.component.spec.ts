@@ -862,6 +862,85 @@ describe('GfModuleCatalogComponent', () => {
 
       expect(displayedModuleTypes()).toEqual([DashboardModuleType.WATCHLIST]);
     });
+
+    /**
+     * The label a qualified row actually paints, typed in full.
+     *
+     * Two modules can share a display name, and the qualifier is what a viewer
+     * reads to tell them apart - so the qualified label is the most natural thing
+     * to type, and it is the one string that matched nothing at all. The name and
+     * the qualifier were indexed as two separate keys and Fuse scores each key on
+     * its own, so no indexed value ever contained the composition. The row was
+     * there on screen, spelled exactly as typed, and the panel answered "no
+     * results".
+     *
+     * Asserted through the rendered rows rather than through the search helper,
+     * because what has to match is what the viewer can see.
+     */
+    it('should match the qualified label a row displays', () => {
+      emitViewerState({
+        user: { permissions: [permissions.readMarketDataOfMarkets] }
+      });
+      advance();
+
+      setSearchTerm('Markets · Market Data');
+      advance();
+
+      expect(displayedModuleTypes()).toEqual([
+        DashboardModuleType.MARKETS_PREMIUM
+      ]);
+      expect(renderedModuleNames()).toEqual(['Markets · Market Data']);
+    });
+
+    it('should still match each half of a qualified label on its own', () => {
+      emitViewerState({
+        user: { permissions: [permissions.readMarketDataOfMarkets] }
+      });
+      advance();
+
+      // The shared name reaches both modules that carry it, and the qualifier
+      // reaches only the one it belongs to. Composing the label into a third
+      // indexed value must not have cost either.
+      //
+      // The order is registry order, which is also the order of the unnarrowed
+      // list - so narrowing to a shared name no longer reshuffles the two rows
+      // relative to how the viewer just saw them. Relevance decides it and both
+      // matches are exact, so this is a consequence of the composed key rather
+      // than a sort imposed here; it is pinned because result order is something
+      // a viewer sees.
+      setSearchTerm('Markets');
+      advance();
+
+      expect(displayedModuleTypes()).toEqual([
+        DashboardModuleType.MARKETS,
+        DashboardModuleType.MARKETS_PREMIUM
+      ]);
+
+      setSearchTerm('Market Data');
+      advance();
+
+      expect(displayedModuleTypes()).toEqual([
+        DashboardModuleType.MARKETS_PREMIUM
+      ]);
+    });
+
+    it('should leave the definitions it searched untouched', () => {
+      emitViewerState({
+        user: { permissions: [permissions.readMarketDataOfMarkets] }
+      });
+      advance();
+
+      setSearchTerm('Markets · Market Data');
+      advance();
+
+      // The qualified label is derived for the search rather than written onto the
+      // definition, because the registry shares these objects by reference with
+      // the canvas - which compares them by identity to decide whether it still
+      // has to fetch a component class.
+      for (const definition of definitions) {
+        expect(Object.keys(definition)).not.toContain('qualifiedName');
+      }
+    });
   });
 
   describe('permission filtering', () => {
