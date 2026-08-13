@@ -20,7 +20,22 @@ import { Subject } from 'rxjs';
 export abstract class AbstractMatFormField<T>
   implements ControlValueAccessor, DoCheck, MatFormFieldControl<T>, OnDestroy
 {
-  @HostBinding()
+  /**
+   * The identifier `mat-form-field` points its `<label for>` at.
+   *
+   * Deliberately NOT host-bound, and that is the fix for a whole class of unnamed
+   * fields. `mat-form-field` renders `<label [attr.for]="control.id">`, and `for` only
+   * associates with a LABELABLE element - an input, select, textarea, button. While this
+   * sat on the host it named `<gf-symbol-autocomplete>`, a custom element, which is not
+   * labelable: the association failed silently, and the inner input a viewer actually
+   * focused had no accessible name at all. Nothing pointed at the failure because the
+   * label still rendered and still looked right.
+   *
+   * Each subclass now puts this on its own inner control with `[id]="id"`, so `for`
+   * resolves to a real labelable element. Native label behaviour comes back with it:
+   * clicking the label focuses the field, and the accessible name is the visible one
+   * rather than a duplicate stated in ARIA.
+   */
   public id = `${this.controlType}-${AbstractMatFormField.nextId++}`;
 
   @HostBinding('attr.aria-describedBy') public describedBy = '';
@@ -131,6 +146,37 @@ export abstract class AbstractMatFormField<T>
 
   public abstract focus(): void;
 
+  /**
+   * Adopts the value the model already holds, without reporting it as a user edit.
+   *
+   * Assigning `value` runs the `onChange` callback, which is how a real edit reaches the
+   * outer form - and Angular treats that callback as evidence of interaction, so it marks
+   * the bound control DIRTY. That is correct for a keystroke and wrong for initialisation,
+   * and these controls initialise themselves: each reads the value out of its parent form
+   * during `ngOnInit`, which meant every form containing one was born dirty before the
+   * viewer had touched anything.
+   *
+   * The consequence was not theoretical. The unsaved-changes guard asks whether a form has
+   * been edited before letting a dismissal through, so a dialog holding a currency
+   * selector interrogated the viewer on the way out of a form they had never typed in -
+   * measured at runtime as `ng-dirty` alongside `ng-untouched`, with the currency control
+   * the only dirty one in the group.
+   *
+   * Dirtiness is restored rather than blanket-cleared, so a control that was ALREADY dirty
+   * when this runs stays dirty: the guarantee is that adopting a value changes nothing
+   * about whether the form has been edited, in either direction.
+   */
+  protected adoptModelValue(value: T) {
+    const control = this.ngControl?.control;
+    const wasPristine = control?.pristine ?? true;
+
+    this.value = value;
+
+    if (wasPristine) {
+      control?.markAsPristine();
+    }
+  }
+
   public get shouldLabelFloat(): boolean {
     return this.focused || !this.empty;
   }
@@ -159,8 +205,18 @@ export abstract class AbstractMatFormField<T>
     this.describedBy = ids.join(' ');
   }
 
+  /**
+   * Receives a value FROM the model, which by the `ControlValueAccessor` contract is the
+   * one direction that must never report a change back.
+   *
+   * Angular calls this while binding the control and again whenever the model is set
+   * programmatically. It used to assign `value` directly, and that runs `onChange` - the
+   * view-to-model callback - so the framework recorded an edit for a value it had just
+   * handed in itself, and every form opened on existing data was dirty before the viewer
+   * arrived. An edit dialog therefore looked exactly like an edited one.
+   */
   public writeValue(value: T) {
-    this.value = value;
+    this.adoptModelValue(value);
   }
 
   @HostListener('focusout')

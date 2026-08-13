@@ -3,6 +3,7 @@ import {
   ghostfolioPrefix,
   PROPERTY_CURRENCIES
 } from '@ghostfolio/common/config';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import type { AssetProfileIdentifier } from '@ghostfolio/common/interfaces';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 import { GfSymbolAutocompleteComponent } from '@ghostfolio/ui/symbol-autocomplete';
@@ -58,6 +59,17 @@ import type {
   templateUrl: 'create-asset-profile-dialog.html'
 })
 export class GfCreateAssetProfileDialogComponent implements OnInit {
+  /**
+   * Whether a submission is already under way.
+   *
+   * Explicit, and load-bearing for one of the three modes: adding a currency writes an
+   * administration setting and then asks for market data to be gathered, so two presses
+   * do both twice. The other two modes only close, where `MatDialogRef.close` happens to
+   * ignore its second call - which is what made the safety here look adequate while
+   * covering the one branch that needed it least.
+   */
+  protected isSubmitting = false;
+
   protected createAssetProfileForm: CreateAssetProfileForm;
   protected readonly ghostfolioPrefix = `${ghostfolioPrefix}_`;
   protected mode: CreateAssetProfileDialogMode;
@@ -116,6 +128,12 @@ export class GfCreateAssetProfileDialogComponent implements OnInit {
   }
 
   public onSubmit() {
+    if (this.isSubmitting) {
+      return;
+    }
+
+    this.isSubmitting = true;
+
     if (this.mode === 'auto') {
       this.dialogRef.close({
         addAssetProfile: true,
@@ -143,12 +161,24 @@ export class GfCreateAssetProfileDialogComponent implements OnInit {
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe(() => {
-          this.dialogRef.close({
-            addAssetProfile: false,
-            dataSource: this.dataSourceForExchangeRates,
-            symbol: `${DEFAULT_CURRENCY}${currency}`
-          });
+        .subscribe({
+          error: (error: unknown) => {
+            // The dialog stays open, so the guard is released and the reason is stated.
+            // With neither, a refused currency left this form sitting there with a dead
+            // Save control and nothing said.
+            this.isSubmitting = false;
+
+            reportSanitizedError('GF-ADMIN-CURRENCY-ADD-FAILED', error);
+
+            this.changeDetectorRef.markForCheck();
+          },
+          next: () => {
+            this.dialogRef.close({
+              addAssetProfile: false,
+              dataSource: this.dataSourceForExchangeRates,
+              symbol: `${DEFAULT_CURRENCY}${currency}`
+            });
+          }
         });
     } else if (this.mode === 'manual') {
       this.dialogRef.close({

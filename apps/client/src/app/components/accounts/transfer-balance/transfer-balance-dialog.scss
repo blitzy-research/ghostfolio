@@ -5,3 +5,11 @@
     max-height: unset;
   }
 }
+
+// The failure reported beside the fields that produced it. The error token is the one
+// Material itself uses for a form error, so this reads as the same kind of message as a
+// field validation failure rather than as a second visual language.
+.transfer-balance-error {
+  color: var(--mat-sys-error, #ba1a1a);
+  font-size: 75%;
+}

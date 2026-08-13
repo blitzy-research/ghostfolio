@@ -167,9 +167,11 @@ export class GfUserAccountMembershipComponent {
           .subscribe(({ apiKey }) => {
             this.notificationService.alert({
               discardLabel: $localize`Okay`,
+              // See `portfolio-performance`: the dialog renders text, so the break
+              // between the instruction and the key is a newline.
               message:
                 $localize`Set this API key in your self-hosted environment:` +
-                '<br />' +
+                '\n' +
                 apiKey,
               title: $localize`Ghostfolio Premium Data Provider API Key`
             });
@@ -227,7 +229,8 @@ export class GfUserAccountMembershipComponent {
             });
         }
       },
-      title: $localize`Please enter your coupon code.`
+      title: $localize`Please enter your coupon code.`,
+      valueLabel: $localize`Coupon code`
     });
   }
 }

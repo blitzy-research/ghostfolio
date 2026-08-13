@@ -51,10 +51,13 @@ import { AbstractMatFormField } from '../shared/abstract-mat-form-field';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '[attr.aria-describedBy]': 'describedBy',
-    '[id]': 'id'
-  },
+  // No `id` and no `aria-describedby` host binding: both are bound on the inner input
+  // instead. While they sat here they named `<gf-symbol-autocomplete>`, which is not a
+  // labelable element, so `mat-form-field`'s `<label for>` resolved to the host and the
+  // input a viewer actually focused had no accessible name at all - the label rendered
+  // and looked right, which is why nothing pointed at the failure. Leaving the host
+  // binding in place while ALSO binding the input produced two elements sharing one id,
+  // and the host wins that lookup because it comes first in document order.
   imports: [
     FormsModule,
     GfPremiumIndicatorComponent,

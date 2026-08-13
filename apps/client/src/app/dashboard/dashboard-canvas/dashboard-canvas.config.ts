@@ -59,6 +59,22 @@ export interface DashboardCanvasConfigHandlers {
    */
   onItemGeometryChange: (item: GridsterItemConfig) => void;
 
+  /**
+   * The start of a pointer DRAG gesture.
+   *
+   * Exists for one reason: the engine's edge auto-scroll is a single grid-wide
+   * option, and the two gestures need opposite answers from it. Dragging a module
+   * onto a part of the canvas below the fold needs the scroll; resizing against
+   * the bottom edge must not have it, because there the scroll compounds - each
+   * frame scrolls, which moves the edge, which grows the item, which lengthens
+   * the grid - and a hold of a couple of seconds committed a module ninety-five
+   * rows tall. So the answer is set per gesture, at the start of each, and the
+   * canvas is the only place that knows which gesture began.
+   *
+   * Carries no write and is not a persistence trigger.
+   */
+  onDragGestureStart: () => void;
+
   // Intentionally argument-free: every trigger reports the same fact, and the
   // grid item array the canvas owns is the single source of truth for what
   // changed.
@@ -205,8 +221,20 @@ export function createDashboardCanvasConfig(
       // loaded component inside `.gridster-item-content` for exactly this
       // reason.
       ignoreContent: true,
-      ignoreContentClass: MODULE_CONTENT_CLASS
+      ignoreContentClass: MODULE_CONTENT_CLASS,
+
+      // The engine hands this hook the item and its component; neither is wanted
+      // here - the canvas only needs to know that a drag started - so both are
+      // named out of the way, which `noUnusedParameters` requires.
+      start: () => handlers.onDragGestureStart()
     },
+
+    // Stated rather than left to the library's own `false`, because these two are
+    // the values a DRAG runs with and the canvas raises them for the duration of
+    // a RESIZE. Naming them here is what makes the pair visible in the one place
+    // grid policy is declared, instead of appearing only as a runtime override.
+    disableScrollHorizontal: false,
+    disableScrollVertical: false,
     emptyCellDropCallback: (event: DragEvent, item: GridsterItemConfig) =>
       handlers.onEmptyCellDrop(event, item),
 

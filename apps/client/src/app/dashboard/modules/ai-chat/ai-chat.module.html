@@ -100,8 +100,22 @@
         The face alone was not enough: a table row is 126 characters and no width this
         module reaches can hold that, so the box keeps the document at its natural
         width and scrolls sideways instead of wrapping. See the stylesheet.
+
+        It is focusable, named and given a role for one reason: it SCROLLS. A scroll
+        container that cannot take focus cannot be scrolled from the keyboard at all,
+        so the part of the table beyond the right edge was reachable with a pointer
+        and by no other means - the horizontal bar was an affordance offered only to
+        people who could use a mouse to take it up. Focusable, it responds to the
+        arrow keys, and the name says what the region holds so it is worth landing on.
       -->
-      <pre class="flex-grow-1 m-3 p-3 prompt-container">{{ prompt }}</pre>
+      <pre
+        aria-label="Generated AI prompt"
+        class="flex-grow-1 m-3 p-3 prompt-container"
+        i18n-aria-label
+        role="region"
+        tabindex="0"
+        >{{ prompt }}</pre
+      >
     } @else {
       <div
         class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
@@ -130,12 +144,18 @@
       <button
         class="mr-1"
         mat-stroked-button
+        [attr.aria-busy]="isLoading ? 'true' : null"
         [disabled]="hasImpersonationId || isLoading || !prompt"
         (click)="onCopyPromptToClipboard()"
       >
         <span class="align-items-center d-flex">
           @if (isLoading) {
-            <mat-spinner class="mr-2" color="accent" [diameter]="16" />
+            <mat-spinner
+              aria-hidden="true"
+              class="mr-2"
+              color="accent"
+              [diameter]="16"
+            />
           } @else {
             <ion-icon aria-hidden="true" class="mr-2" name="copy-outline" />
           }

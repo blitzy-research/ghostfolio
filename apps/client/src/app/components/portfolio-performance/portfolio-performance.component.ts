@@ -91,7 +91,11 @@ export class GfPortfolioPerformanceComponent implements OnChanges {
     }
 
     this.notificationService.alert({
-      message: errorMessageParts.join('<br />'),
+      // Joined with newlines rather than with `<br />`. The dialog renders its
+      // message as text now - the change that stopped a stored note becoming real
+      // DOM - so markup would be shown literally, while the newline is honoured by
+      // the dialog's own `pre-wrap`.
+      message: errorMessageParts.join('\n'),
       title: $localize`Market data is delayed for`
     });
   }

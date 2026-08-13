@@ -16,6 +16,7 @@ import { PromptDialogParams } from './interfaces/interfaces';
     ReactiveFormsModule
   ],
   selector: 'gf-prompt-dialog',
+  styleUrls: ['./prompt-dialog.scss'],
   templateUrl: './prompt-dialog.html'
 })
 export class GfPromptDialogComponent {

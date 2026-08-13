@@ -335,9 +335,35 @@
           </td>
         </ng-container>
 
-        <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+        <tr
+          *matHeaderRowDef="displayedColumns; sticky: true"
+          mat-header-row
+        ></tr>
         <tr *matRowDef="let row; columns: displayedColumns" mat-row></tr>
       </table>
+      <!--
+        The finite state a failed read ends in. It sits BELOW the table rather than
+        replacing it, unlike the single-purpose modules: this screen carries a status
+        filter above the table, and removing the table would remove the context that
+        explains which read failed.
+      -->
+      @if (hasError) {
+        <div
+          class="align-items-center d-flex flex-column py-4 text-center"
+          role="alert"
+        >
+          <div class="mb-3" i18n>The queue could not be loaded.</div>
+          <button
+            color="primary"
+            i18n
+            mat-flat-button
+            type="button"
+            (click)="onRetry()"
+          >
+            Try again
+          </button>
+        </div>
+      }
       @if (isLoading) {
         <ngx-skeleton-loader
           animation="pulse"

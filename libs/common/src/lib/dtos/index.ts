@@ -7,10 +7,12 @@ import { CreateAssetProfileWithMarketDataDto } from './create-asset-profile-with
 import { CreateAssetProfileDto } from './create-asset-profile.dto';
 import { CreateOrderDto } from './create-order.dto';
 import { CreatePlatformDto } from './create-platform.dto';
+import { CreateStripeCheckoutSessionDto } from './create-stripe-checkout-session.dto';
 import { CreateTagDto } from './create-tag.dto';
 import { CreateWatchlistItemDto } from './create-watchlist-item.dto';
 import { DashboardModuleLayoutItemDto } from './dashboard-module-layout-item.dto';
 import { DeleteOwnUserDto } from './delete-own-user.dto';
+import { RedeemCouponDto } from './redeem-coupon.dto';
 import { TransferBalanceDto } from './transfer-balance.dto';
 import { UpdateAccessDto } from './update-access.dto';
 import { UpdateAccountDto } from './update-account.dto';
@@ -42,10 +44,12 @@ export {
   CreateAssetProfileWithMarketDataDto,
   CreateOrderDto,
   CreatePlatformDto,
+  CreateStripeCheckoutSessionDto,
   CreateTagDto,
   CreateWatchlistItemDto,
   DashboardModuleLayoutItemDto,
   DeleteOwnUserDto,
+  RedeemCouponDto,
   TransferBalanceDto,
   UpdateAccessDto,
   UpdateAccountDto,

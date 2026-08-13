@@ -3,10 +3,17 @@ import { reportSanitizedError } from '@ghostfolio/common/helper';
 import { validateObjectForForm } from '@ghostfolio/common/utils';
 import { GfCurrencySelectorComponent } from '@ghostfolio/ui/currency-selector';
 import { GfEntityLogoComponent } from '@ghostfolio/ui/entity-logo';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
+import { confirmDismissWhenDirty } from '@ghostfolio/ui/shared/confirm-dismiss-when-dirty';
 
 import { CommonModule, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  inject
+} from '@angular/core';
 import {
   AbstractControl,
   FormBuilder,
@@ -52,6 +59,18 @@ import { CreateOrUpdateAccountDialogParams } from './interfaces/interfaces';
   templateUrl: 'create-or-update-account-dialog.html'
 })
 export class GfCreateOrUpdateAccountDialogComponent {
+  /**
+   * Whether a submission is already under way.
+   *
+   * Explicit, because the safety that stood in for it was accidental. Every one of these
+   * dialogs validates asynchronously before closing, so a second press lands in that gap
+   * and runs the whole submission again - and the only thing that stopped two of them
+   * taking effect was `MatDialogRef.close` ignoring its second call. That is a detail of
+   * a library this code does not own, it is invisible where the risk is, and it protects
+   * nothing on the paths that do their own writing.
+   */
+  protected isSubmitting = false;
+
   protected accountForm: FormGroup;
   protected currencies: string[] = [];
   protected filteredPlatforms: Observable<Platform[]> | undefined;
@@ -60,9 +79,11 @@ export class GfCreateOrUpdateAccountDialogComponent {
   protected readonly data =
     inject<CreateOrUpdateAccountDialogParams>(MAT_DIALOG_DATA);
   private readonly dataService = inject(DataService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly dialogRef =
     inject<MatDialogRef<GfCreateOrUpdateAccountDialogComponent>>(MatDialogRef);
   private readonly formBuilder = inject(FormBuilder);
+  private readonly notificationService = inject(NotificationService);
 
   public ngOnInit() {
     const { currencies } = this.dataService.fetchInfo();
@@ -102,6 +123,15 @@ export class GfCreateOrUpdateAccountDialogComponent {
           })
         );
     });
+
+    // Asked before the form is thrown away. A backdrop click or Escape used to discard
+    // whatever had been typed here silently and irreversibly.
+    confirmDismissWhenDirty({
+      destroyRef: this.destroyRef,
+      dialogRef: this.dialogRef,
+      isDirty: () => this.accountForm?.dirty === true,
+      notificationService: this.notificationService
+    });
   }
 
   protected autoCompleteCheck() {
@@ -127,6 +157,12 @@ export class GfCreateOrUpdateAccountDialogComponent {
   }
 
   protected async onSubmit() {
+    if (this.isSubmitting) {
+      return;
+    }
+
+    this.isSubmitting = true;
+
     const account: CreateAccountDto | UpdateAccountDto = {
       balance: this.accountForm.get('balance')?.value,
       comment: this.accountForm.get('comment')?.value || null,
@@ -160,6 +196,10 @@ export class GfCreateOrUpdateAccountDialogComponent {
         this.dialogRef.close(account as CreateAccountDto);
       }
     } catch (error) {
+      // Released, because this dialog stays open: the validation failure is reported
+      // into the form and the viewer is expected to correct it and submit again.
+      this.isSubmitting = false;
+
       reportSanitizedError('GF-ACCOUNT-DIALOG-VALIDATION-FAILED', error);
     }
   }

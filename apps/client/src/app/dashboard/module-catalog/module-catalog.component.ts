@@ -24,9 +24,13 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { IonIcon } from '@ionic/angular/standalone';
 import Fuse from 'fuse.js';
+import { addIcons } from 'ionicons';
+import { closeOutline } from 'ionicons/icons';
 import { of } from 'rxjs';
 import {
   debounceTime,
@@ -75,6 +79,8 @@ import { GfModuleCatalogItemComponent } from './module-catalog-item/module-catal
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     GfModuleCatalogItemComponent,
+    IonIcon,
+    MatButtonModule,
     MatFormFieldModule,
     MatInputModule,
     ReactiveFormsModule
@@ -125,7 +131,9 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
     private destroyRef: DestroyRef,
     private moduleRegistryService: GfModuleRegistryService,
     private userService: UserService
-  ) {}
+  ) {
+    addIcons({ closeOutline });
+  }
 
   // Bound on the host rather than on the list, because the search field sits
   // above the rows and a viewer typing into it must still be able to step
@@ -206,6 +214,22 @@ export class GfModuleCatalogComponent implements AfterViewInit, OnInit {
 
     // Primes the stream so the full list is rendered before anything is typed.
     this.searchFormControl.setValue('');
+  }
+
+  /**
+   * Empties the search field and hands the caret straight back to it.
+   *
+   * Returning focus is the half that matters: the control removes itself the
+   * instant the field is empty, so without this focus would be left on an element
+   * that no longer exists and the browser would drop it to the document body -
+   * putting the viewer outside the panel they are searching in. Clearing through
+   * the form control rather than the element keeps the one debounced search stream
+   * as the only path a result set changes by.
+   */
+  public onClearSearch() {
+    this.searchFormControl.setValue('');
+
+    this.focusSearchField();
   }
 
   /**

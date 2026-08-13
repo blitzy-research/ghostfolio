@@ -10,6 +10,7 @@ import {
   Component,
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
+  ElementRef,
   Inject,
   ViewChild
 } from '@angular/core';
@@ -70,7 +71,29 @@ const USER_ACCOUNT_CREATION_FAILED_EVENT = 'GF-USER-ACCOUNT-CREATION-FAILED';
 export class GfUserAccountRegistrationDialogComponent {
   @ViewChild(MatStepper) stepper!: MatStepper;
 
+  /**
+   * The field holding the security token.
+   *
+   * Read so the token can be given focus the moment it appears, and so the visitor
+   * lands on the one thing this step exists to hand over. Optional in practice: the
+   * field belongs to a step that does not exist until the account does.
+   */
+  @ViewChild('accessTokenField')
+  accessTokenField?: ElementRef<HTMLTextAreaElement>;
+
   public accessToken: string;
+
+  /**
+   * What was last announced about the security token, for assistive technology.
+   *
+   * Copying used to report nothing at all. The token is disclosed exactly once and
+   * copying it is the only realistic way to keep it, so a visitor who could not see
+   * the button change had no way to tell a copy that worked from one that silently
+   * did not - and the consequence of getting that wrong is an account that cannot
+   * be recovered.
+   */
+  public accessTokenAnnouncement = '';
+
   public authToken: string;
 
   /**
@@ -168,6 +191,8 @@ export class GfUserAccountRegistrationDialogComponent {
           this.stepper.next();
 
           this.changeDetectorRef.markForCheck();
+
+          this.focusAccessToken();
         }
       });
   }
@@ -176,7 +201,48 @@ export class GfUserAccountRegistrationDialogComponent {
     this.isCreateAccountButtonDisabled = false;
   }
 
+  /**
+   * Reports the outcome of copying the security token.
+   *
+   * Both outcomes are reported, because the failure is the one that matters: the
+   * copy can be refused by the platform - a document without focus, or a browser
+   * withholding clipboard access - and it fails silently when it does. A visitor
+   * who believes they have saved this token and has not cannot recover the account
+   * it belongs to, so an unreported failure here is unrecoverable rather than
+   * merely unhelpful.
+   *
+   * Announced through a live region rather than a notification, because the token
+   * is on screen and being told about it must not move the visitor away from it.
+   */
+  public onAccessTokenCopied(aIsCopied: boolean) {
+    this.accessTokenAnnouncement = aIsCopied
+      ? $localize`The security token was copied to the clipboard.`
+      : $localize`The security token could not be copied. Please select it and copy it manually.`;
+
+    this.changeDetectorRef.markForCheck();
+  }
+
   public onChangeDislaimerChecked() {
     this.isDisclaimerChecked = !this.isDisclaimerChecked;
+  }
+
+  /**
+   * Moves focus to the security token once the step showing it is rendered.
+   *
+   * Deferred by a frame rather than called directly: the step is created by the
+   * advance immediately above, so the field does not exist yet at the point the
+   * response is handled. Wrapped defensively because focus is a courtesy - a
+   * platform that refuses it must not turn a created account into a thrown error on
+   * the one screen showing an unrecoverable token.
+   */
+  private focusAccessToken() {
+    requestAnimationFrame(() => {
+      try {
+        this.accessTokenField?.nativeElement?.focus();
+      } catch {
+        // Intentionally ignored. The token is rendered and selectable either way,
+        // and reporting a refused focus call would say nothing anybody can act on.
+      }
+    });
   }
 }

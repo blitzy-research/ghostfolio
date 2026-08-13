@@ -1,6 +1,6 @@
 @if (hasPermissionToUpdateOwnAccessToken) {
   <div class="container">
-    <h1 class="h6 mb-3 text-center" i18n>Security Token</h1>
+    <h3 class="h6 mb-3 text-center" i18n>Security Token</h3>
     <form
       class="w-100"
       [formGroup]="updateOwnAccessTokenForm"
@@ -53,15 +53,15 @@
 
 <div class="container">
   @if (accessesGet.length > 0) {
-    <h1 class="h6 mb-3 text-center" i18n>Received Access</h1>
+    <h3 class="h6 mb-3 text-center" i18n>Received Access</h3>
     <gf-access-table class="mb-5" [accesses]="accessesGet" [user]="user" />
   }
-  <h1 class="align-items-center d-flex h6 justify-content-center mb-3">
+  <h3 class="align-items-center d-flex h6 justify-content-center mb-3">
     <span i18n>Granted Access</span>
     @if (user?.subscription?.type === 'Basic') {
       <gf-premium-indicator class="ml-1" />
     }
-  </h1>
+  </h3>
   <gf-access-table
     [accesses]="accessesGive"
     [showActions]="hasPermissionToDeleteAccess"

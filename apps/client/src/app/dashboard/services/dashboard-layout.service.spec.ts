@@ -2146,6 +2146,99 @@ describe('GfDashboardLayoutService', () => {
       ]);
     });
 
+    it('sends the revision the previous write returned, not the one the snapshot was queued with', () => {
+      jest.useFakeTimers();
+
+      dataServiceMock.fetchUserDashboardLayout.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          revision: 'revision-1',
+          version: 1
+        })
+      );
+
+      service.get(true).subscribe();
+
+      // Each acknowledgement advances the row's token, exactly as the server does.
+      let revisionCount = 1;
+
+      dataServiceMock.patchUserDashboardLayout.mockImplementation(
+        (aData: UpdateUserDashboardLayoutDto) => {
+          revisionCount += 1;
+
+          return of({
+            modules: aData.modules,
+            revision: `revision-${revisionCount}`,
+            version: 1
+          });
+        }
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 6 })]);
+
+      jest.advanceTimersByTime(500);
+
+      // A second accepted edit, queued while the first write's token is already
+      // superseded. This is the ordinary case rather than an exotic one: two drags
+      // half a second apart produce it.
+      service.scheduleSave(VIEWER_ID, [createGridItem({ cols: 8 })]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(dataServiceMock.patchUserDashboardLayout).toHaveBeenCalledTimes(2);
+
+      expect(readPatchedDto(0).revision).toBe('revision-1');
+
+      // The point of the whole fix. Captured at queue time this was still
+      // `revision-1`, which the first write had already replaced - so the server
+      // refused the second write and the canvas told the viewer another tab had
+      // changed their dashboard, when nothing else had touched it.
+      expect(readPatchedDto(1).revision).toBe('revision-2');
+    });
+
+    it('never reports a failure and a refusal about the same write', () => {
+      jest.useFakeTimers();
+
+      const conflicts: boolean[] = [];
+      const failures: boolean[] = [];
+
+      service.getHasConflict().subscribe((hasConflict) => {
+        conflicts.push(hasConflict);
+      });
+
+      service.getHasSaveError().subscribe((hasSaveError) => {
+        failures.push(hasSaveError);
+      });
+
+      // A write that does not land - the network dropped it, or the reply never
+      // came back - which is the state the retry affordance exists for.
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createRequestFailure({ status: 500 }))
+      );
+
+      service.scheduleSave(VIEWER_ID, [createGridItem()]);
+
+      jest.advanceTimersByTime(500);
+
+      expect(failures).toEqual([false, true]);
+      expect(conflicts).toEqual([false]);
+
+      // The retry is then refused, because the server had in fact committed the
+      // first attempt and moved the token on. Two independent flags left both
+      // notices on screen at once: two diagnoses of one write, and three controls
+      // between them.
+      dataServiceMock.patchUserDashboardLayout.mockReturnValue(
+        throwError(() => createConflict())
+      );
+
+      service.retryFailedSave();
+
+      jest.advanceTimersByTime(500);
+
+      expect(conflicts).toEqual([false, true]);
+      expect(failures).toEqual([false, true, false]);
+    });
+
     it('clears the conflict when it is dismissed', () => {
       jest.useFakeTimers();
 
@@ -2458,9 +2551,9 @@ describe('GfDashboardLayoutService', () => {
       // The three public entry points that re-send an arrangement - the release
       // before a departure, the retry after a failure, and the overwrite after a
       // refusal - all hand the pending snapshot back to a subject the one dispatcher
-      // drains, and stop there. The overwrite differs only in dropping the
-      // concurrency token, which is what makes it unconditional; it builds no body
-      // of its own and issues no request of its own.
+      // drains, and stop there. The overwrite differs only in marking the snapshot
+      // unconditional, so the token is left off when the request is built; it
+      // builds no body of its own and issues no request of its own.
       expect(source).toContain('public releasePendingSave(): Observable<void>');
       expect(source).toContain('public retryFailedSave()');
       expect(source).toContain('public overwriteAfterConflict()');

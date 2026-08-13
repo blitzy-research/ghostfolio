@@ -40,6 +40,30 @@
       type="text"
       [formControl]="searchFormControl"
     />
+    <!--
+      Rendered only while there is something to clear, so the field is not carrying
+      a control that would do nothing. Clearing was previously reachable only by
+      selecting the text and deleting it, or by pressing Escape - which on a drawer
+      the library also closes, so the one keyboard shortcut for it took the whole
+      panel away.
+
+      It is named rather than left to be inferred from the glyph, and the name says
+      what it clears. `type="button"` keeps it from submitting anything, and
+      focus is returned to the field afterwards so clearing does not strand the
+      caret outside the control the viewer is typing in.
+    -->
+    @if (searchFormControl.value) {
+      <button
+        aria-label="Clear the module search"
+        i18n-aria-label
+        mat-icon-button
+        matSuffix
+        type="button"
+        (click)="onClearSearch()"
+      >
+        <ion-icon name="close-outline" />
+      </button>
+    }
   </mat-form-field>
 </div>
 

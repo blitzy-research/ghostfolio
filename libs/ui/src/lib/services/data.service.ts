@@ -92,8 +92,8 @@ import {
 } from '@prisma/client';
 import { format, parseISO } from 'date-fns';
 import { cloneDeep, groupBy, isNumber } from 'lodash';
-import { Observable } from 'rxjs';
-import { finalize, map, shareReplay } from 'rxjs/operators';
+import { EMPTY, Observable } from 'rxjs';
+import { catchError, finalize, map, shareReplay } from 'rxjs/operators';
 
 /**
  * The spellings a URL parser treats as a relative path segment rather than as a
@@ -645,6 +645,20 @@ export class DataService {
     );
   }
 
+  /**
+   * Whether the published public configuration is the offline fallback rather
+   * than the server's own answer.
+   *
+   * Read from the same global the configuration itself is published on, because
+   * it is a property of that publication: `main.ts` sets it when the pre-bootstrap
+   * read failed, and {@link updateInfo} clears it the moment a later read
+   * succeeds. That is what makes the degraded state recoverable without a reload -
+   * a caller can ask again, and the answer changes.
+   */
+  public isPublicInfoUnavailable(): boolean {
+    return (window as any).isPublicInfoUnavailable === true;
+  }
+
   public fetchInfo(): InfoItem {
     const info = cloneDeep((window as any).info);
     const utmSource = window.localStorage.getItem('utm_source') as
@@ -1155,8 +1169,20 @@ export class DataService {
 
             (window as any).info = info;
 
+            // Lowered only on a successful read, which is what makes this method
+            // the recovery from a boot that had to run on the fallback: whatever
+            // the shell says about missing features stops being said the moment
+            // the real configuration arrives.
+            (window as any).isPublicInfoUnavailable = false;
+
             return info;
-          })
+          }),
+          // A failed retry leaves the flag exactly as it was and terminates
+          // quietly. It matters that it does not rethrow: the caller is a fire and
+          // forget refresh with no error channel of its own, so an unhandled
+          // rejection here would be reported as an application fault when the only
+          // fact available is that the server is still unreachable.
+          catchError(() => EMPTY)
         )
     ).subscribe();
   }

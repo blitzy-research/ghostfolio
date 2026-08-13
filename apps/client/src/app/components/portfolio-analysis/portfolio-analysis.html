@@ -1,3 +1,26 @@
+<!--
+  The finite state a failed read ends in. It sits ABOVE the screen rather than
+  replacing it: six independent reads draw this module, and the ones that succeeded are
+  still worth showing - so this explains the gaps the failed ones left instead of
+  discarding the charts beside them.
+-->
+@if (hasError) {
+  <div
+    class="align-items-center d-flex flex-column mb-3 py-4 text-center"
+    role="alert"
+  >
+    <div class="mb-3" i18n>Some of your analysis could not be loaded.</div>
+    <button
+      color="primary"
+      i18n
+      mat-flat-button
+      type="button"
+      (click)="onRetry()"
+    >
+      Try again
+    </button>
+  </div>
+}
 @if (user?.settings?.isExperimentalFeatures) {
   <div class="mb-3 row">
     <div class="col-lg">
@@ -21,6 +44,7 @@
           <div (click)="$event.stopPropagation()">
             <button
               mat-menu-item
+              [attr.aria-busy]="isLoadingPortfolioPrompt ? 'true' : null"
               [disabled]="!hasPermissionToReadAiPrompt"
               (click)="onCopyPromptToClipboard('portfolio')"
             >
@@ -29,7 +53,12 @@
                   <gf-premium-indicator class="mr-2" />
                 } @else {
                   @if (isLoadingPortfolioPrompt) {
-                    <mat-spinner class="mr-2" color="accent" [diameter]="16" />
+                    <mat-spinner
+                      aria-hidden="true"
+                      class="mr-2"
+                      color="accent"
+                      [diameter]="16"
+                    />
                   } @else {
                     <ion-icon
                       aria-hidden="true"
@@ -45,6 +74,7 @@
             </button>
             <button
               mat-menu-item
+              [attr.aria-busy]="isLoadingAnalysisPrompt ? 'true' : null"
               [disabled]="!hasPermissionToReadAiPrompt"
               (click)="onCopyPromptToClipboard('analysis')"
             >
@@ -53,7 +83,12 @@
                   <gf-premium-indicator class="mr-2" />
                 } @else {
                   @if (isLoadingAnalysisPrompt) {
-                    <mat-spinner class="mr-2" color="accent" [diameter]="16" />
+                    <mat-spinner
+                      aria-hidden="true"
+                      class="mr-2"
+                      color="accent"
+                      [diameter]="16"
+                    />
                   } @else {
                     <ion-icon
                       aria-hidden="true"

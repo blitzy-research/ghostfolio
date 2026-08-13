@@ -9,15 +9,39 @@
   </h1>
   <div class="row">
     <div class="col-xs-12 col-md-10 offset-md-1">
-      <gf-benchmark
-        [benchmarks]="watchlist"
-        [deviceType]="deviceType()"
-        [dialogModule]="benchmarkDialogModule"
-        [hasPermissionToDeleteItem]="hasPermissionToDeleteWatchlistItem"
-        [locale]="user?.settings?.locale || undefined"
-        [user]="user"
-        (itemDeleted)="onWatchlistItemDeleted($event)"
-      />
+      <!--
+        The finite state a failed read now ends in. It REPLACES the table rather
+        than sitting above it, because the table draws skeleton rows whenever it has
+        no list - so leaving it mounted beside a message is what made the module look
+        like it was still loading.
+      -->
+      @if (hasError) {
+        <div
+          class="align-items-center d-flex flex-column py-4 text-center"
+          role="alert"
+        >
+          <div class="mb-3" i18n>Your watchlist could not be loaded.</div>
+          <button
+            color="primary"
+            i18n
+            mat-flat-button
+            type="button"
+            (click)="onRetry()"
+          >
+            Try again
+          </button>
+        </div>
+      } @else {
+        <gf-benchmark
+          [benchmarks]="watchlist"
+          [deviceType]="deviceType()"
+          [dialogModule]="benchmarkDialogModule"
+          [hasPermissionToDeleteItem]="hasPermissionToDeleteWatchlistItem"
+          [locale]="user?.settings?.locale || undefined"
+          [user]="user"
+          (itemDeleted)="onWatchlistItemDeleted($event)"
+        />
+      }
     </div>
   </div>
 </div>

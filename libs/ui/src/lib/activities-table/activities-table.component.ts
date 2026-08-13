@@ -344,9 +344,15 @@ export class GfActivitiesTableComponent implements AfterViewInit, OnInit {
     this.importDividends.emit();
   }
 
+  /**
+   * Shows one activity's note. See `gf-accounts-table`: person-authored content is
+   * the message, so it is bounded and scrollable, and the dialog keeps a heading
+   * that names it.
+   */
   public onOpenComment(aComment: string) {
     this.notificationService.alert({
-      title: aComment
+      message: aComment,
+      title: $localize`Note`
     });
   }
 

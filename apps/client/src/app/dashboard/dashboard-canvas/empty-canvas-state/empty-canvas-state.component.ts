@@ -32,6 +32,22 @@ export class GfEmptyCanvasStateComponent {
 
   public readonly isDiscardingLayout = input(false);
 
+  /**
+   * Whether a catalog row is being dragged right now.
+   *
+   * This notice is laid over the grid, and the grid beneath it is what listens for
+   * a drop - so the canvas switches the whole overlay transparent to pointers and
+   * each control here takes them back for itself. That is correct until somebody
+   * drags: the controls sit in the centre of the card, which is the middle of the
+   * empty canvas and exactly where a row gets dropped, so the very controls that
+   * have to answer a click were swallowing the `dragover` and `drop` that the grid
+   * needed. On a first visit that is the whole of drag-to-add failing, silently.
+   *
+   * Answered by the canvas rather than observed here, because the drag begins in
+   * the catalog and this notice can see neither it nor the grid.
+   */
+  public readonly isDragInProgress = input(false);
+
   protected readonly discardLayout = output<void>();
 
   protected readonly openCatalog = output<void>();

@@ -1,4 +1,8 @@
 import { UserService } from '@ghostfolio/api/app/user/user.service';
+import {
+  DATABASE_UNAVAILABLE_EVENT,
+  isDatabaseUnavailableError
+} from '@ghostfolio/api/helper/database.helper';
 import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import {
@@ -8,7 +12,7 @@ import {
 } from '@ghostfolio/common/config';
 import { hasRole } from '@ghostfolio/common/permissions';
 
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import * as countriesAndTimezones from 'countries-and-timezones';
 import { StatusCodes, getReasonPhrase } from 'http-status-codes';
@@ -74,6 +78,25 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     } catch (error) {
       if (error?.getStatus?.() === StatusCodes.TOO_MANY_REQUESTS) {
         throw error;
+      } else if (isDatabaseUnavailableError(error)) {
+        // A credential problem and an unreachable database are opposite events and
+        // must not share an answer. This branch exists because they did: every
+        // failure here became a 401, so an outage told every signed-in browser its
+        // session had expired - the client cleared a token that was perfectly
+        // valid, unmounted the canvas and dropped whatever edit was queued, and no
+        // sign-in could succeed until the database returned. Nothing about that is
+        // recoverable by the visitor, and none of it was written to the log.
+        //
+        // 503 says what is true: the request could not be served, the credential
+        // was never in question, and the caller should try again. The client keeps
+        // the session on this status, which is what makes a pending change
+        // survivable.
+        Logger.error(DATABASE_UNAVAILABLE_EVENT, 'JwtStrategy');
+
+        throw new HttpException(
+          getReasonPhrase(StatusCodes.SERVICE_UNAVAILABLE),
+          StatusCodes.SERVICE_UNAVAILABLE
+        );
       } else {
         throw new HttpException(
           getReasonPhrase(StatusCodes.UNAUTHORIZED),

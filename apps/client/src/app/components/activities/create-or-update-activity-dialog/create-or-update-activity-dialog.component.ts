@@ -14,7 +14,9 @@ import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { validateObjectForForm } from '@ghostfolio/common/utils';
 import { GfEntityLogoComponent } from '@ghostfolio/ui/entity-logo';
 import { translate } from '@ghostfolio/ui/i18n';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
+import { confirmDismissWhenDirty } from '@ghostfolio/ui/shared/confirm-dismiss-when-dirty';
 import { GfSymbolAutocompleteComponent } from '@ghostfolio/ui/symbol-autocomplete';
 import { GfTagsSelectorComponent } from '@ghostfolio/ui/tags-selector';
 import { GfValueComponent } from '@ghostfolio/ui/value';
@@ -81,6 +83,18 @@ import { ActivityType } from './types/activity-type.type';
   templateUrl: 'create-or-update-activity-dialog.html'
 })
 export class GfCreateOrUpdateActivityDialogComponent {
+  /**
+   * Whether a submission is already under way.
+   *
+   * Explicit, because the safety that stood in for it was accidental. Every one of these
+   * dialogs validates asynchronously before closing, so a second press lands in that gap
+   * and runs the whole submission again - and the only thing that stopped two of them
+   * taking effect was `MatDialogRef.close` ignoring its second call. That is a detail of
+   * a library this code does not own, it is invisible where the risk is, and it protects
+   * nothing on the paths that do their own writing.
+   */
+  protected isSubmitting = false;
+
   public activityForm: FormGroup;
 
   public assetClassOptions: AssetClassSelectorOption[] = Object.keys(AssetClass)
@@ -112,6 +126,7 @@ export class GfCreateOrUpdateActivityDialogComponent {
     private dataService: DataService,
     private dateAdapter: DateAdapter<Date, string>,
     private destroyRef: DestroyRef,
+    private notificationService: NotificationService,
     public dialogRef: MatDialogRef<GfCreateOrUpdateActivityDialogComponent>,
     private formBuilder: FormBuilder,
     @Inject(MAT_DATE_LOCALE) private locale: string,
@@ -467,6 +482,15 @@ export class GfCreateOrUpdateActivityDialogComponent {
           this.changeDetectorRef.markForCheck();
         });
     }
+
+    // Asked before the form is thrown away. A backdrop click or Escape used to discard
+    // whatever had been typed here silently and irreversibly.
+    confirmDismissWhenDirty({
+      destroyRef: this.destroyRef,
+      dialogRef: this.dialogRef,
+      isDirty: () => this.activityForm?.dirty === true,
+      notificationService: this.notificationService
+    });
   }
 
   public applyCurrentMarketPrice() {
@@ -489,6 +513,12 @@ export class GfCreateOrUpdateActivityDialogComponent {
   }
 
   public async onSubmit() {
+    if (this.isSubmitting) {
+      return;
+    }
+
+    this.isSubmitting = true;
+
     const activity: CreateOrderDto | UpdateOrderDto = {
       accountId: this.activityForm.get('accountId')?.value,
       assetClass: this.activityForm.get('assetClass')?.value,
@@ -548,6 +578,10 @@ export class GfCreateOrUpdateActivityDialogComponent {
         this.dialogRef.close(activity as UpdateOrderDto);
       }
     } catch (error) {
+      // Released, because this dialog stays open: the validation failure is reported
+      // into the form and the viewer is expected to correct it and submit again.
+      this.isSubmitting = false;
+
       reportSanitizedError('GF-ACTIVITY-DIALOG-VALIDATION-FAILED', error);
     }
   }

@@ -113,10 +113,25 @@ button:focus-visible {
     margin-inline-start: auto;
   }
 
+  // The module's own name, and the LARGEST heading in its module.
+  //
+  // This was `title-small`, 14px, and measured at runtime that made it the smallest
+  // heading in several modules rather than the largest: the section headings inside the
+  // body rendered at 15px and 16px, so the visual hierarchy ran backwards and a reader's
+  // eye landed on "Data Providers" or "Security Token" instead of on which module they
+  // were looking at. Sizing headings so a subordinate one out-shouts the heading that
+  // owns it is the inconsistency, and the title is the end of it worth moving: it names
+  // the whole module, so it should sit at the top of the local scale by construction and
+  // not by whatever a leaf written for a full-width page happened to ask for.
+  //
+  // `title-medium` is the next step of the same type scale rather than an arbitrary
+  // value, and the grid partial's in-body ladder now descends from it - 16px here, 15px
+  // for a section heading, 14px below that - so every module reads top-down in one
+  // direction.
   mat-card-title {
     font: var(
-      --mat-sys-title-small,
-      500 0.875rem/1.25rem var(--font-family-sans-serif)
+      --mat-sys-title-medium,
+      500 1rem/1.5rem var(--font-family-sans-serif)
     );
     overflow: hidden;
     text-overflow: ellipsis;

@@ -7,6 +7,20 @@
 :host {
   display: block;
 
+  // Body copy at the size every other module's body copy renders at.
+  //
+  // This leaf has no table, and that turns out to decide its type size: a Material table
+  // cell states 14px for itself, so every module built round one renders its text at 14px,
+  // while a leaf writing plain prose inherits Bootstrap's 16px page base instead. Measured
+  // across the canvas that produced two different body sizes depending on which module a
+  // reader was looking at - and here it also left the prose LARGER than the section
+  // heading introducing it, so the heading was the quieter of the two.
+  //
+  // Set on the host rather than on the individual prose blocks so anything added to this
+  // leaf later inherits it too. Material's own components are unaffected either way: each
+  // states its own type size through its component tokens rather than inheriting one.
+  font-size: 0.875rem;
+
   // Cancels a Bootstrap gutter that escapes its container.
   //
   // `gf-fire-calculator` opens with `<div class="container p-0">` wrapping a

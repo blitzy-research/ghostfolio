@@ -18,6 +18,21 @@
           matInput
           (keydown.enter)="$event.stopPropagation()"
         />
+        <!--
+          The second branch renders the message the DTO itself produced.
+          `validateObjectForForm` has always pushed a rejected constraint's own wording
+          onto the control it belongs to, and no template in this application ever
+          displayed it - so a name the server refused for its length, say, failed with
+          nothing on screen. That is why this pattern repeats across every dialog rather
+          than only where a client-side validator exists.
+        -->
+        @if (accountForm.get('name')?.hasError('required')) {
+          <mat-error i18n>Please enter a name.</mat-error>
+        } @else if (accountForm.get('name')?.hasError('validationError')) {
+          <mat-error>{{
+            accountForm.get('name').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div>
@@ -27,6 +42,9 @@
           formControlName="currency"
           [currencies]="currencies"
         />
+        @if (accountForm.get('currency')?.hasError('required')) {
+          <mat-error i18n>Please select a currency.</mat-error>
+        }
       </mat-form-field>
     </div>
     <div>
@@ -41,6 +59,13 @@
         <span class="ml-2" matTextSuffix>{{
           accountForm.get('currency')?.value
         }}</span>
+        @if (accountForm.get('balance')?.hasError('required')) {
+          <mat-error i18n>Please enter a cash balance.</mat-error>
+        } @else if (accountForm.get('balance')?.hasError('validationError')) {
+          <mat-error>{{
+            accountForm.get('balance').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div [ngClass]="{ 'd-none': platforms?.length < 1 }">
@@ -111,7 +136,8 @@
       color="primary"
       mat-flat-button
       type="submit"
-      [disabled]="!(accountForm.dirty && accountForm.valid)"
+      [attr.aria-busy]="isSubmitting ? 'true' : null"
+      [disabled]="!(accountForm.dirty && accountForm.valid) || isSubmitting"
     >
       <ng-container i18n>Save</ng-container>
     </button>

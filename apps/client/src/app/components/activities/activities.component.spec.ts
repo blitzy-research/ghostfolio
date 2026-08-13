@@ -11,7 +11,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
-import { BehaviorSubject, EMPTY, of } from 'rxjs';
+import { BehaviorSubject, EMPTY, Observable, of, throwError } from 'rxjs';
 
 import { GfActivitiesComponent } from './activities.component';
 
@@ -89,6 +89,25 @@ describe('GfActivitiesComponent', () => {
     width?: string;
   }
 
+  /**
+   * Every alert the component raised, in the order it raised them.
+   *
+   * A refused activity read is only observable through what the viewer is told,
+   * so the notification service is recorded rather than merely stubbed: the
+   * assertions below are on the message itself, which is the whole of the
+   * behaviour being fixed.
+   */
+  let alertCalls: { title: string }[];
+
+  /**
+   * The answers `fetchActivity` will give, consumed one per call.
+   *
+   * A queue rather than a single value, because a test needs to distinguish the
+   * first read of a stale identifier from any later read, and because a read
+   * that is never answered at all (`EMPTY`) is a third, distinct case.
+   */
+  let activityResponses: Observable<unknown>[];
+
   let component: GfActivitiesComponent;
   let dataServiceMock: {
     fetchActivities: jest.Mock;
@@ -136,9 +155,13 @@ describe('GfActivitiesComponent', () => {
     queryParams: Record<string, unknown> = {},
     { deviceType = 'desktop' }: { deviceType?: string } = {}
   ) => {
+    alertCalls = [];
+
     dataServiceMock = {
       fetchActivities: jest.fn(() => of({ activities: [], count: 0 })),
-      fetchActivity: jest.fn(() => EMPTY)
+      // Answered from a queue where a test supplies one, so a stale identifier can be
+      // made to fail. `EMPTY` otherwise, which is neither an answer nor a failure.
+      fetchActivity: jest.fn(() => activityResponses.shift() ?? EMPTY)
     };
 
     queryParamsSubject = new BehaviorSubject<Record<string, unknown>>(
@@ -194,11 +217,19 @@ describe('GfActivitiesComponent', () => {
           useValue: { onChangeHasImpersonation: () => of(null) }
         },
         { provide: MatDialog, useValue: dialogMock },
-        // Reached by the real activities table, which confirms a deletion
-        // through it. Nothing below deletes anything, so an unimplemented stub
-        // is both sufficient and the stricter choice: a call would throw rather
-        // than pass silently.
-        { provide: NotificationService, useValue: {} },
+        // Recorded rather than stubbed away. It is reached from two directions -
+        // the real activities table confirms a deletion through it, and this
+        // component reports a refused activity read through it - and the message
+        // the viewer is given for the second of those is the only externally
+        // observable part of that behaviour, so it has to be captured.
+        {
+          provide: NotificationService,
+          useValue: {
+            alert: (params: { title: string }) => {
+              alertCalls.push(params);
+            }
+          }
+        },
         { provide: Router, useValue: routerMock },
         {
           provide: UserService,
@@ -238,6 +269,13 @@ describe('GfActivitiesComponent', () => {
   const lastNavigation = () => {
     return navigations.at(-1);
   };
+
+  // Emptied here rather than inside `createComponent`, because a test seeding an
+  // answer has to do so *before* the screen is built - the read it is answering
+  // fires during initialization - so clearing the queue there would discard it.
+  beforeEach(() => {
+    activityResponses = [];
+  });
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -360,6 +398,84 @@ describe('GfActivitiesComponent', () => {
       await createComponent({ createDialog: true });
 
       expect(dialogMock.open).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * A dialog request naming an activity that cannot be read.
+   *
+   * This is the ordinary way for one to arrive: a shared link, a restored tab or a Back
+   * navigation can all carry the identifier of an activity that has since been deleted.
+   * The read had no failure handler, so nothing opened, the request stayed RECORDED as
+   * served, and the identifier stayed in the address - leaving a module that had been
+   * asked to show something and silently showed nothing, with no way to ask again short
+   * of editing the URL.
+   */
+  describe('a request naming an activity that is gone', () => {
+    it('says the activity no longer exists', async () => {
+      activityResponses = [throwError(() => ({ status: 404 }))];
+
+      await createComponent({
+        activityId: 'ACTIVITY_ID',
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        editDialog: true
+      });
+
+      expect(dialogMock.open).not.toHaveBeenCalled();
+      expect(alertCalls).toEqual([
+        { title: 'This activity no longer exists.' }
+      ]);
+    });
+
+    it('clears the request from the address', async () => {
+      activityResponses = [throwError(() => ({ status: 404 }))];
+
+      await createComponent({
+        activityId: 'ACTIVITY_ID',
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        editDialog: true
+      });
+
+      // Clearing them is what makes the module usable again, and what lets the same
+      // request count as new if it was merely transient: the final branch observes
+      // their absence and forgets what was served.
+      const cleared = navigations.find(({ extras }) => {
+        return extras.queryParams?.['activityId'] === null;
+      });
+
+      expect(cleared).toBeTruthy();
+      expect(cleared.extras.queryParamsHandling).toBe('merge');
+    });
+
+    it('distinguishes a transient failure from a deletion', async () => {
+      activityResponses = [throwError(() => ({ status: 500 }))];
+
+      await createComponent({
+        activityId: 'ACTIVITY_ID',
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        editDialog: true
+      });
+
+      // Worth separating: one of these is worth trying again and the other never will
+      // be.
+      expect(alertCalls).toEqual([
+        { title: 'The activity could not be loaded. Please try again.' }
+      ]);
+    });
+
+    it('applies to a create request carrying an identifier as well', async () => {
+      activityResponses = [throwError(() => ({ status: 404 }))];
+
+      await createComponent({
+        activityId: 'ACTIVITY_ID',
+        createDialog: true,
+        dialogModule: DashboardModuleType.ACTIVITIES
+      });
+
+      // The same read serves both: this module opens a prefilled create form from an
+      // existing activity, which is how an activity is duplicated.
+      expect(dialogMock.open).not.toHaveBeenCalled();
+      expect(alertCalls).toHaveLength(1);
     });
   });
 

@@ -1,4 +1,15 @@
-<mat-card appearance="outlined">
+<!--
+  `inert` while a row is being dragged.
+
+  One attribute rather than a class per control, because it is the whole card that
+  has to become transparent to the drag and `inert` is the platform's own way to say
+  so: it removes every descendant from hit-testing, from the tab order and from the
+  accessibility tree for as long as it is set. That last part is the reason it is
+  preferable to switching pointer events off - during a drag these controls genuinely
+  are not available, and saying so to assistive technology is more honest than
+  leaving them announced but unreachable.
+-->
+<mat-card appearance="outlined" [attr.inert]="isDragInProgress() ? '' : null">
   <div class="p-3">
     <div class="d-flex justify-content-center mb-1">
       <gf-logo size="large" [showLabel]="false" />

@@ -23,7 +23,7 @@ import {
   ChangeDetectorRef,
   Component,
   DestroyRef,
-  Inject
+  inject
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
@@ -94,6 +94,18 @@ export class GfImportActivitiesDialogComponent {
   public errorMessages: string[] = [];
   public holdings: PortfolioPosition[] = [];
   public importStep: ImportStep = ImportStep.UPLOAD_FILE;
+  /**
+   * Why the last import attempt did not go through, stated beside the control that
+   * produced it.
+   *
+   * Held here rather than raised as a notice because the selection it applies to is still
+   * on the screen and still submittable - the message and the retry belong together.
+   */
+  public errorMessage: string;
+
+  /** Whether an import is in flight, so the control cannot be pressed twice. */
+  public isImporting = false;
+
   public isLoading = false;
   public mode: 'DIVIDEND';
   public pageIndex = 0;
@@ -105,9 +117,21 @@ export class GfImportActivitiesDialogComponent {
   public tags: CreateTagDto[] = [];
   public totalItems: number;
 
+  /**
+   * What this dialog was opened with.
+   *
+   * Taken through `inject` rather than as a constructor parameter, deliberately. The
+   * parameter form makes Angular's runtime reflection depend on
+   * `ImportActivitiesDialogParams` being a real value, and it is an interface imported
+   * with `import type` - erased at emit - so reflecting this class threw
+   * `ReferenceError: ImportActivitiesDialogParams is not defined` wherever the compiler
+   * did not erase the reference with it. The ahead-of-time build never reflects, which
+   * is why the application was unaffected and only a test ever saw it.
+   */
+  public readonly data = inject<ImportActivitiesDialogParams>(MAT_DIALOG_DATA);
+
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
-    @Inject(MAT_DIALOG_DATA) public data: ImportActivitiesDialogParams,
     private dataService: DataService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
@@ -153,15 +177,39 @@ export class GfImportActivitiesDialogComponent {
           range: 'max'
         })
         .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(({ holdings }) => {
-          this.holdings = sortBy(holdings, ({ name }) => {
-            return name.toLowerCase();
-          });
-          this.assetProfileForm.get('assetProfileIdentifier').enable();
+        .subscribe({
+          error: (error: unknown) => {
+            // Both flags are settled here for the same reason: the loading flag draws
+            // the placeholder and the control was disabled until the list arrived, so
+            // leaving either as it was left the dialog permanently unusable with
+            // nothing said. Re-enabled empty, which the required validator already
+            // handles - the viewer can close, or retry by reopening.
+            this.assetProfileForm.get('assetProfileIdentifier').enable();
 
-          this.isLoading = false;
+            this.isLoading = false;
 
-          this.changeDetectorRef.markForCheck();
+            reportSanitizedError('GF-ACTIVITIES-IMPORT-HOLDINGS-FAILED', error);
+
+            this.snackBar.open(
+              $localize`Your holdings could not be loaded.` +
+                ' ' +
+                $localize`Please try again later.`,
+              undefined,
+              { duration: ms('6 seconds') }
+            );
+
+            this.changeDetectorRef.markForCheck();
+          },
+          next: ({ holdings }) => {
+            this.holdings = sortBy(holdings, ({ name }) => {
+              return name.toLowerCase();
+            });
+            this.assetProfileForm.get('assetProfileIdentifier').enable();
+
+            this.isLoading = false;
+
+            this.changeDetectorRef.markForCheck();
+          }
         });
     }
   }
@@ -170,7 +218,31 @@ export class GfImportActivitiesDialogComponent {
     this.dialogRef.close();
   }
 
+  /**
+   * Imports the selected activities, and closes ONLY once that worked.
+   *
+   * It used to close either way, from a `finally`. That threw away the one thing the
+   * viewer could not cheaply reproduce - a validated selection, arrived at by choosing a
+   * file, waiting for it to be parsed and picking rows out of the result - and it did so
+   * at the exact moment it became useful, leaving a six-second notice as the only trace
+   * of what had happened. Retrying meant starting from the file picker.
+   *
+   * So the dialog now survives a failure, holding the selection, with the reason stated
+   * beside the control that produced it. The server-side counterpart of this is in
+   * `ImportService.import`, which removes the asset profiles a failed import created and
+   * left unreferenced - together they mean a retry starts from a clean state rather than
+   * accumulating litter with each attempt.
+   */
   public async onImportActivities() {
+    if (this.isImporting) {
+      return;
+    }
+
+    this.errorMessage = undefined;
+    this.isImporting = true;
+
+    this.changeDetectorRef.markForCheck();
+
     try {
       this.snackBar.open('⏳ ' + $localize`Importing data...`);
 
@@ -188,18 +260,19 @@ export class GfImportActivitiesDialogComponent {
           duration: ms('3 seconds')
         }
       );
-    } catch (error) {
-      this.snackBar.open(
-        $localize`Oops! Something went wrong.` +
-          ' ' +
-          $localize`Please try again later.`,
-        $localize`Okay`,
-        {
-          duration: ms('3 seconds')
-        }
-      );
-    } finally {
+
+      this.isImporting = false;
+
       this.dialogRef.close();
+    } catch (error) {
+      this.snackBar.dismiss();
+
+      this.errorMessage = $localize`The import could not be completed. Nothing has been added to your activities. Please try again.`;
+      this.isImporting = false;
+
+      reportSanitizedError('GF-ACTIVITIES-IMPORT-SELECTED-FAILED', error);
+
+      this.changeDetectorRef.markForCheck();
     }
   }
 
@@ -238,15 +311,36 @@ export class GfImportActivitiesDialogComponent {
         symbol
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ activities }) => {
-        this.activities = activities;
-        this.dataSource = new MatTableDataSource(activities.reverse());
-        this.pageIndex = 0;
-        this.totalItems = activities.length;
+      .subscribe({
+        error: (error: unknown) => {
+          // The control was disabled a moment ago to stop a second request, and with no
+          // failure handler it stayed that way: the viewer could neither retry nor pick
+          // a different holding, and the stepper never advanced. Re-enabling it is the
+          // fix, and the reason is listed where the dialog lists import problems.
+          this.assetProfileForm.get('assetProfileIdentifier').enable();
 
-        aStepper.next();
+          reportSanitizedError('GF-ACTIVITIES-IMPORT-DIVIDENDS-FAILED', error);
 
-        this.changeDetectorRef.markForCheck();
+          this.snackBar.open(
+            $localize`The dividends could not be loaded.` +
+              ' ' +
+              $localize`Please try again later.`,
+            undefined,
+            { duration: ms('6 seconds') }
+          );
+
+          this.changeDetectorRef.markForCheck();
+        },
+        next: ({ activities }) => {
+          this.activities = activities;
+          this.dataSource = new MatTableDataSource(activities.reverse());
+          this.pageIndex = 0;
+          this.totalItems = activities.length;
+
+          aStepper.next();
+
+          this.changeDetectorRef.markForCheck();
+        }
       });
   }
 
@@ -256,6 +350,7 @@ export class GfImportActivitiesDialogComponent {
 
   public onReset(aStepper: MatStepper) {
     this.details = [];
+    this.errorMessage = undefined;
     this.errorMessages = [];
     this.importStep = ImportStep.SELECT_ACTIVITIES;
     this.pageIndex = 0;
@@ -293,6 +388,40 @@ export class GfImportActivitiesDialogComponent {
     this.snackBar.open('⏳ ' + $localize`Validating data...`);
 
     const reader = new FileReader();
+
+    /**
+     * The two outcomes that are not `load`, and the reason this method could hang.
+     *
+     * Only `onload` was ever wired up. A file the browser cannot read - revoked while
+     * the picker was open, on a disconnected volume, or refused by the operating system
+     * - and a read the viewer aborts both leave `load` unfired, so the indefinite
+     * "Validating data…" notice this method opens stayed up for good, the stepper never
+     * advanced, and the dialog offered nothing to press. There is no timeout that would
+     * catch it either, because nothing was waiting.
+     *
+     * Both are answered the same way, and deliberately through the same failure path the
+     * dialog already has for an unparseable file: the notice is dismissed, the stepper
+     * advances, and the reason is listed where every other import problem is listed.
+     */
+    reader.onabort = () => {
+      this.handleUnreadableFile(
+        $localize`Reading the file was cancelled.`,
+        stepper
+      );
+    };
+
+    reader.onerror = () => {
+      reportSanitizedError(
+        'GF-ACTIVITIES-IMPORT-FILE-READ-FAILED',
+        reader.error
+      );
+
+      this.handleUnreadableFile(
+        $localize`The file could not be read. Please check the file and try again.`,
+        stepper
+      );
+    };
+
     reader.readAsText(file, 'UTF-8');
 
     reader.onload = async (readerEvent) => {
@@ -397,6 +526,31 @@ export class GfImportActivitiesDialogComponent {
         this.changeDetectorRef.markForCheck();
       }
     };
+  }
+
+  /**
+   * Ends a file read that produced no content.
+   *
+   * Routed through the dialog's existing error presentation rather than a notice of its
+   * own, so an unreadable file reads the same as an unparseable one - and, critically,
+   * so the stepper advances. The alternative was leaving the viewer on the upload step
+   * behind a notice that would vanish in six seconds.
+   */
+  private handleUnreadableFile(aMessage: string, aStepper: MatStepper) {
+    this.handleImportError({
+      activities: [],
+      error: { error: { message: [aMessage] } }
+    });
+
+    this.importStep = ImportStep.SELECT_ACTIVITIES;
+
+    this.snackBar.dismiss();
+
+    this.updateSelection(this.activities);
+
+    aStepper.next();
+
+    this.changeDetectorRef.markForCheck();
   }
 
   private handleImportError({

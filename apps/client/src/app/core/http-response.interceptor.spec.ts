@@ -370,6 +370,85 @@ describe('HttpResponseInterceptor', () => {
     });
   });
 
+  describe('a dependency of the server being down', () => {
+    it('says it is temporary, and offers a retry', () => {
+      failRequest({ status: StatusCodes.SERVICE_UNAVAILABLE });
+
+      // Emphatically not an authentication outcome: the session is still valid, so
+      // the viewer keeps it and is offered the one thing that can help.
+      expect(snackBarRequests).toHaveLength(1);
+      expect(snackBarRequests[0].message).toContain('temporarily unavailable');
+      expect(snackBarRequests[0].action).toBeDefined();
+      expect(signOut).not.toHaveBeenCalled();
+    });
+
+    it('reloads when that offer is accepted', () => {
+      failRequest({ status: StatusCodes.SERVICE_UNAVAILABLE });
+
+      snackBarAction.next();
+
+      expect(navigationAttempts).toBe(1);
+    });
+  });
+
+  /**
+   * The single reference every branch shares, and what happens to it afterwards.
+   *
+   * One reference is what keeps a screen full of modules from raising a message per
+   * failed request. The cost of that design is that the reference has to be released
+   * when the message goes away, or the interceptor spends the rest of the session
+   * believing it is still talking: the FIRST failure is reported and every LATER one
+   * is silent, which is worse than reporting none at all, because the silence is
+   * indistinguishable from success.
+   *
+   * The 403 branch was already pinned this way. These cover the rest of them, since
+   * a reference that wedges is invisible until the second failure - and by then the
+   * viewer has no reason to connect the two.
+   */
+  describe('releasing the message reference once it has been dismissed', () => {
+    it.each([
+      ['a server error', StatusCodes.INTERNAL_SERVER_ERROR],
+      ['a rate limit', StatusCodes.TOO_MANY_REQUESTS],
+      ['an unavailable dependency', StatusCodes.SERVICE_UNAVAILABLE]
+    ])('can speak again about %s', (_label, status) => {
+      failRequest({ status });
+      failRequest({ status });
+
+      expect(snackBarRequests).toHaveLength(1);
+
+      snackBarDismissal.next();
+
+      failRequest({ status });
+
+      expect(snackBarRequests).toHaveLength(2);
+    });
+
+    it('does not let one status silence a different one', () => {
+      failRequest({ status: StatusCodes.INTERNAL_SERVER_ERROR });
+
+      snackBarDismissal.next();
+
+      failRequest({ status: StatusCodes.TOO_MANY_REQUESTS });
+
+      // Each branch holds the same reference, so a release that only worked for the
+      // branch that took it would leave the others permanently mute.
+      expect(snackBarRequests).toHaveLength(2);
+      expect(snackBarRequests[1].message).toContain('too many requests');
+    });
+
+    it('is released when the viewer acts on the message rather than waiting it out', () => {
+      failRequest({ status: StatusCodes.TOO_MANY_REQUESTS });
+
+      // Acting on a message dismisses it, so the dismissal is what the release hangs
+      // on - not the action, which the branches use for their own recovery.
+      snackBarDismissal.next();
+
+      failRequest({ status: StatusCodes.TOO_MANY_REQUESTS });
+
+      expect(snackBarRequests).toHaveLength(2);
+    });
+  });
+
   it('says nothing about a status it does not handle', () => {
     const errors = failRequest({ status: StatusCodes.NOT_FOUND });
 

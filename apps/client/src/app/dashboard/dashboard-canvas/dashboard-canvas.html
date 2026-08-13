@@ -143,7 +143,12 @@
     Drawn for the failed-read state too, because nothing on it concerns the
     arrangement.
   -->
-  <gf-dashboard-toolbar />
+  <!--
+    The busy state travels down as an input because the request travels UP over the
+    shared reload bus: the bar owns the control that starts a refresh and the canvas
+    is what knows when every module has finished re-resolving.
+  -->
+  <gf-dashboard-toolbar [isRefreshing]="isRefreshing" />
 
   <!--
     The root of the heading hierarchy the module chrome contributes to. Every
@@ -311,15 +316,30 @@
       and what the viewer sees is still correct - it is only unsaved. The retry
       hands the request back to the layout service, which still holds the
       snapshot, so this adds no second way of writing a layout.
+
+      Two controls, because a retry alone is not a way out: a write the server
+      refuses every time leaves the screen and the stored dashboard disagreeing
+      for as long as the viewer keeps pressing it. The second control ends that
+      by taking the stored arrangement back - see `onDiscardFailedSave`. It is
+      second in order deliberately, since the recoverable case is the common one.
+
+      Mutually exclusive with the conflict notice below: both are rendered from
+      one persistence state in the layout service, so a failure and a refusal can
+      no longer describe the same write at the same time.
     -->
     @if (hasSaveError) {
       <div
-        class="align-items-center d-flex justify-content-center px-3 pt-3"
+        class="align-items-center d-flex flex-wrap justify-content-center px-3 pt-3"
         role="status"
       >
-        <span class="mr-2" i18n>Oops! Something went wrong.</span>
+        <span class="mr-2 text-center" i18n
+          >Your dashboard could not be saved.</span
+        >
         <button mat-button type="button" (click)="onRetrySave()">
           <span i18n>Try again</span>
+        </button>
+        <button mat-button type="button" (click)="onDiscardFailedSave()">
+          <span i18n>Discard and reload the saved dashboard</span>
         </button>
       </div>
     }
@@ -441,6 +461,7 @@
             class="p-3"
             [canDiscardLayout]="hasUnrenderableModules"
             [isDiscardingLayout]="isDiscardingLayout"
+            [isDragInProgress]="isCatalogDragInProgress"
             (discardLayout)="onDiscardLayout()"
             (openCatalog)="onOpenCatalog()"
           />
@@ -595,7 +616,28 @@
             what guarantees it is not PAINTED in the interval.
           -->
             @if (isModuleRenderable(item)) {
-              <gridster-item [item]="item">
+              <!--
+              The compact class is the one thing about the cell's size that this
+              template states, and it exists for a control the grid knows nothing
+              about: five feature components render their own floating action
+              button, and that button is pinned to its module's bottom edge over a
+              body that scrolls beneath it. At the smallest cells that is most of
+              the body. A two-row cell is 170px, of which the header takes about
+              40px and the gutters the rest of the difference, leaving a body near
+              120px - and a 56px button with its 12px inset covers more than half of
+              it, so a control scrolling past underneath is hidden with no way to
+              read it at that position. At four rows the same button covers about a
+              quarter, which is what a pinned control costs anywhere.
+
+              So below the threshold the button goes back into normal flow, at the
+              end of the content, where it occludes nothing - see the stylesheet.
+              Three rows is the line because it is the last size at which the
+              button still costs more than a third of the body.
+            -->
+              <gridster-item
+                [class.gf-dashboard-module-compact]="item.rows <= 3"
+                [item]="item"
+              >
                 <!--
                 A module arrives as metadata rather than as a class: the host
                 awaits the lazy loader on the definition and mounts whatever it

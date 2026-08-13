@@ -175,7 +175,22 @@ export class GfSignInPromptComponent implements OnInit {
       LoginWithAccessTokenDialogParams,
       { accessToken: string } | undefined
     >(GfLoginWithAccessTokenDialogComponent, {
-      autoFocus: false,
+      // Focus goes to the field the visitor came to fill in.
+      //
+      // `false` is what this used to say, and it is why marking the token input
+      // `cdkFocusInitial` changed nothing: the CDK consults that attribute in
+      // exactly one branch of its focus-trap switch, and `false` is not it - that
+      // branch focuses the dialog CONTAINER, an element with `tabindex="-1"` and no
+      // name, so a visitor arriving by keyboard or screen reader was placed on the
+      // box rather than on anything in it.
+      //
+      // `'first-tabbable'` rather than the `'[cdkFocusInitial]'` selector form,
+      // because it prefers the marked element AND falls back to the first tabbable
+      // one. That fallback is load-bearing: the token field is conditional on the
+      // deployment enabling token authentication, and on a deployment that offers
+      // only Google or OpenID Connect the selector form would match nothing and
+      // leave focus exactly where it was.
+      autoFocus: 'first-tabbable',
       data: {
         accessToken: '',
         hasPermissionToUseAuthGoogle: this.hasPermissionForAuthGoogle,

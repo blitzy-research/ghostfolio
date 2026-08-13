@@ -356,13 +356,23 @@
                   </span>
                 </a>
                 <hr class="m-0" />
+                <!--
+                  `watchedByCount` is passed because the predicate requires it to be
+                  exactly zero. Omitting it did not make the check lenient, it made the
+                  control DEAD: the value arrived as `undefined`, `undefined === 0` is
+                  false, and so this menu item was disabled on every row for every
+                  profile, forever. The selection checkbox above passes it and always
+                  did, which is why deleting was possible in bulk but never from the row
+                  itself.
+                -->
                 <button
                   mat-menu-item
                   [disabled]="
                     !adminMarketDataService.hasPermissionToDeleteAssetProfile({
                       activitiesCount: element.activitiesCount,
                       isBenchmark: element.isBenchmark,
-                      symbol: element.symbol
+                      symbol: element.symbol,
+                      watchedByCount: element.watchedByCount
                     })
                   "
                   (click)="
@@ -385,7 +395,10 @@
             </td>
           </ng-container>
 
-          <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+          <tr
+            *matHeaderRowDef="displayedColumns; sticky: true"
+            mat-header-row
+          ></tr>
           <tr
             *matRowDef="let row; columns: displayedColumns"
             class="cursor-pointer"
@@ -410,6 +423,29 @@
         (page)="onChangePage($event)"
       />
 
+      <!--
+        The finite state a failed read ends in. It sits below the table, which the error
+        branch has already emptied - the rows are replaced only on success, so whatever
+        was there before used to stay on display beside an indefinite placeholder,
+        showing values that no longer reflected anything.
+      -->
+      @if (hasError) {
+        <div
+          class="align-items-center d-flex flex-column py-4 text-center"
+          role="alert"
+        >
+          <div class="mb-3" i18n>The market data could not be loaded.</div>
+          <button
+            color="primary"
+            i18n
+            mat-flat-button
+            type="button"
+            (click)="onRetry()"
+          >
+            Try again
+          </button>
+        </div>
+      }
       @if (isLoading && totalItems === 0) {
         <ngx-skeleton-loader
           animation="pulse"

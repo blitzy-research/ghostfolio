@@ -1620,6 +1620,134 @@ describe('GfDashboardToolbarComponent', () => {
     });
   });
 
+  describe('releasing an impersonation the viewer no longer holds', () => {
+    const marker = () => {
+      return host().querySelector<HTMLElement>('.gf-impersonation-indicator');
+    };
+
+    /**
+     * Mirrors the real service, which both forgets the identifier AND publishes the
+     * absence. The default stand-in only records the call, which would let the
+     * marker linger in these tests for a reason the application does not have.
+     */
+    const withFaithfulRemoval = () => {
+      impersonationStorageServiceMock.removeId.mockImplementation(() => {
+        impersonationSubject.next(null);
+      });
+    };
+
+    it('withdraws the claim when the grant behind it is gone', () => {
+      withFaithfulRemoval();
+      impersonationStorageServiceMock.getId.mockReturnValue('REVOKED_ID');
+      impersonationSubject.next('REVOKED_ID');
+
+      renderWithUser(createUser({ access: [] }));
+
+      expect(impersonationStorageServiceMock.removeId).toHaveBeenCalledTimes(1);
+      expect(component.hasImpersonationId).toBe(false);
+      expect(marker()).toBeNull();
+    });
+
+    it('leaves an identity the viewer was actually granted alone', () => {
+      withFaithfulRemoval();
+      impersonationStorageServiceMock.getId.mockReturnValue('ACCESS_ID');
+      impersonationSubject.next('ACCESS_ID');
+
+      renderWithUser(
+        createUser({
+          access: [{ alias: 'Shared', id: 'ACCESS_ID', permissions: [] }]
+        } as unknown as Partial<User>)
+      );
+
+      expect(impersonationStorageServiceMock.removeId).not.toHaveBeenCalled();
+      expect(component.hasImpersonationId).toBe(true);
+      expect(marker()).not.toBeNull();
+    });
+
+    /**
+     * The grants arrive with the viewer, not before them. Reading their absence as
+     * "not held" would discard a working impersonation on every single boot, which
+     * is a worse defect than the one being fixed.
+     */
+    it('does not judge a stored identity before the grants have arrived', () => {
+      impersonationStorageServiceMock.getId.mockReturnValue('ACCESS_ID');
+      impersonationSubject.next('ACCESS_ID');
+
+      stateChangedSubject.next({ user: null });
+      fixture.detectChanges();
+
+      expect(impersonationStorageServiceMock.removeId).not.toHaveBeenCalled();
+      expect(component.hasImpersonationId).toBe(true);
+    });
+
+    /**
+     * The other half of the server's own predicate. A viewer who may impersonate
+     * everybody is honoured on a bare account identifier, which is precisely what
+     * the user administration module stores and which is deliberately not a grant
+     * identifier - so checking the grant list alone would revoke exactly the
+     * impersonation that works.
+     */
+    it('keeps an identity a viewer who may impersonate anybody adopted', () => {
+      withFaithfulRemoval();
+      impersonationStorageServiceMock.getId.mockReturnValue('SOME_USER_ID');
+      impersonationSubject.next('SOME_USER_ID');
+
+      renderWithUser(
+        createUser({
+          access: [],
+          permissions: [permissions.impersonateAllUsers]
+        })
+      );
+
+      expect(impersonationStorageServiceMock.removeId).not.toHaveBeenCalled();
+      expect(component.hasImpersonationId).toBe(true);
+      expect(marker()).not.toBeNull();
+    });
+
+    it('notices a grant withdrawn while the dashboard is open', () => {
+      withFaithfulRemoval();
+      impersonationStorageServiceMock.getId.mockReturnValue('ACCESS_ID');
+      impersonationSubject.next('ACCESS_ID');
+
+      renderWithUser(
+        createUser({
+          access: [{ alias: 'Shared', id: 'ACCESS_ID', permissions: [] }]
+        } as unknown as Partial<User>)
+      );
+
+      expect(impersonationStorageServiceMock.removeId).not.toHaveBeenCalled();
+      expect(marker()).not.toBeNull();
+
+      renderWithUser(createUser({ access: [] }));
+
+      expect(impersonationStorageServiceMock.removeId).toHaveBeenCalledTimes(1);
+      expect(marker()).toBeNull();
+    });
+
+    /**
+     * Withdrawing the claim must not reload. Every request this document has
+     * already made was served as the viewer themselves - the server answers an
+     * identifier it will not honour with the viewer's own data - so what is on
+     * screen is already correct and only the label was wrong.
+     */
+    it('corrects the label without discarding the page', () => {
+      withFaithfulRemoval();
+      impersonationStorageServiceMock.getId.mockReturnValue('REVOKED_ID');
+      impersonationSubject.next('REVOKED_ID');
+
+      renderWithUser(createUser({ access: [] }));
+
+      expect(impersonationStorageServiceMock.removeId).toHaveBeenCalledTimes(1);
+
+      // Observed through the channel this environment actually offers: jsdom cannot
+      // have its `Location` replaced, but it does report an attempted navigation on
+      // its virtual console, and adopting an identity leaves by replacing the
+      // document. An empty list is therefore an exact statement that nothing left.
+      expect(navigationAttempts).toHaveLength(0);
+      expect(routerMock.navigate).not.toHaveBeenCalled();
+    });
+  });
+
   describe('impersonateAccount', () => {
     it('adopts the identity it was given', () => {
       component.impersonateAccount('ACCESS_ID');
@@ -2266,11 +2394,30 @@ describe('GfDashboardToolbarComponent', () => {
       }
     });
 
-    it('takes nothing in and gives nothing out', () => {
+    /**
+     * The bar gives nothing out, and takes in only what it cannot observe for
+     * itself.
+     *
+     * It used to take nothing at all, and the refresh control showed it: the work
+     * belongs to the canvas, which mounts the modules, so the bar had no way to know
+     * whether a refresh it asked for was still running. The one input is that fact
+     * and nothing else - a state to render, not a capability to exercise - which is
+     * why the assertion pins the exact set rather than merely allowing inputs.
+     *
+     * Outputs stay empty deliberately: the bar reports intent through the shared
+     * services it injects, so a parent is never obliged to wire it up.
+     */
+    it('takes in only the busy state it cannot observe, and gives nothing out', () => {
       const mirror = reflectComponentType(GfDashboardToolbarComponent);
 
       expect(mirror.selector).toBe('gf-dashboard-toolbar');
-      expect(mirror.inputs).toEqual([]);
+      expect(mirror.inputs).toEqual([
+        {
+          isSignal: false,
+          propName: 'isRefreshing',
+          templateName: 'isRefreshing'
+        }
+      ]);
       expect(mirror.outputs).toEqual([]);
       expect(mirror.isStandalone).toBe(true);
     });

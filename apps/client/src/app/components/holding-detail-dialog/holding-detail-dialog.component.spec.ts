@@ -11,7 +11,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
 
 import { GfHoldingDetailDialogComponent } from './holding-detail-dialog.component';
 
@@ -41,6 +41,7 @@ import { GfHoldingDetailDialogComponent } from './holding-detail-dialog.componen
 describe('GfHoldingDetailDialogComponent', () => {
   const holding = { dataSource: 'YAHOO', symbol: 'AAPL' };
 
+  let fetchHoldingDetail: jest.Mock;
   let dialogRefMock: { close: jest.Mock };
   let fixture: ComponentFixture<GfHoldingDetailDialogComponent>;
   let postActivity: () => Observable<unknown>;
@@ -63,10 +64,12 @@ describe('GfHoldingDetailDialogComponent', () => {
   const createComponent = async ({
     hasPermissionToAccessAdminControl = true,
     hasPermissionToCreateActivity = true,
+    holdingDetailResponses,
     postActivityResponse = of({})
   }: {
     hasPermissionToAccessAdminControl?: boolean;
     hasPermissionToCreateActivity?: boolean;
+    holdingDetailResponses?: Observable<unknown>[];
     postActivityResponse?: Observable<unknown>;
   } = {}) => {
     callOrder = [];
@@ -103,8 +106,14 @@ describe('GfHoldingDetailDialogComponent', () => {
               of({ accounts: [{ id: 'account-1' }] })
             ),
             fetchActivities: jest.fn(() => of({ activities: [] })),
-            fetchHoldingDetail: jest.fn(() =>
-              of({
+            // Answered from a QUEUE when a test supplies one, so a retry can be
+            // given a different outcome from the first attempt.
+            fetchHoldingDetail: (fetchHoldingDetail = jest.fn(() => {
+              if (holdingDetailResponses?.length) {
+                return holdingDetailResponses.shift();
+              }
+
+              return of({
                 activitiesCount: 1,
                 averagePrice: 100,
                 dataProviderInfo: {},
@@ -130,8 +139,8 @@ describe('GfHoldingDetailDialogComponent', () => {
                   symbol: holding.symbol
                 },
                 tags: []
-              })
-            ),
+              });
+            })),
             fetchMarketDataBySymbol: jest.fn(() => of({ marketData: [] })),
             postActivity: () => postActivity()
           }
@@ -365,6 +374,117 @@ describe('GfHoldingDetailDialogComponent', () => {
       await createComponent({ hasPermissionToCreateActivity: false });
 
       expect(actionButton('Close')).toBeUndefined();
+    });
+  });
+
+  describe('a holding whose details cannot be read', () => {
+    /** The finite state the dialog now ends in, located by its live role. */
+    const notice = (): HTMLElement | null => {
+      return (fixture.nativeElement as HTMLElement).querySelector(
+        '[role="alert"]'
+      );
+    };
+
+    const noticeButtons = () => {
+      return Array.from(
+        notice()?.querySelectorAll<HTMLButtonElement>('button') ?? []
+      ).map((button) => button.textContent.trim());
+    };
+
+    /**
+     * A holding with no asset profile - a cash balance is the everyday case - has
+     * no details to return, and the server says so with 404. The dialog used to
+     * treat that as nothing at all: no failure handler ran, every field stayed
+     * undefined, and because the body renders those fields unconditionally the
+     * viewer was left on an empty chart under a nameless header for as long as the
+     * dialog stayed open.
+     */
+    it('says there is nothing to show rather than waiting for ever', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 404 }))]
+      });
+
+      expect(component.isLoading).toBe(false);
+      expect(component.hasNoDetails).toBe(true);
+      expect(component.hasError).toBe(false);
+
+      expect(notice()).toBeTruthy();
+      expect(notice().textContent).toContain(
+        'There are no details to show for this holding.'
+      );
+      expect(notice().textContent).toContain(
+        'A cash balance has no market price or history of its own.'
+      );
+    });
+
+    /**
+     * No retry on this branch, deliberately. The holding has no details to return,
+     * so asking again fails identically every time and the control would only
+     * invite the viewer to keep pressing it.
+     */
+    it('offers only a way out when there is nothing to retry', async () => {
+      await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 404 }))]
+      });
+
+      expect(noticeButtons()).toEqual(['Close']);
+    });
+
+    it('reports a genuine fault as one, and offers to try again', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 500 }))]
+      });
+
+      expect(component.isLoading).toBe(false);
+      expect(component.hasError).toBe(true);
+      expect(component.hasNoDetails).toBe(false);
+
+      expect(notice().textContent).toContain(
+        'This holding could not be loaded.'
+      );
+      expect(noticeButtons()).toEqual(['Try again', 'Close']);
+    });
+
+    it('finishes loading even for a rejection that never reached the network', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => new Error('offline'))]
+      });
+
+      // No status at all on this rejection, which is why the handler reads it
+      // defensively rather than asserting an HTTP error shape.
+      expect(component.isLoading).toBe(false);
+      expect(component.hasError).toBe(true);
+    });
+
+    it('recovers the holding when the retry succeeds', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 500 }))]
+      });
+
+      expect(component.hasError).toBe(true);
+      expect(fetchHoldingDetail).toHaveBeenCalledTimes(1);
+
+      component.onRetryHoldingDetail();
+
+      fixture.detectChanges();
+
+      // The second answer is the default success payload, so the dialog is fully
+      // rebuilt from it - which is the point of the read being re-callable rather
+      // than inline.
+      expect(fetchHoldingDetail).toHaveBeenCalledTimes(2);
+      expect(component.hasError).toBe(false);
+      expect(component.isLoading).toBe(false);
+      expect(component.SymbolProfile).toBeDefined();
+      expect(notice()).toBeNull();
+    });
+
+    it('is not shown at all when the holding loads', async () => {
+      const component = await createComponent();
+
+      expect(component.isLoading).toBe(false);
+      expect(component.hasError).toBe(false);
+      expect(component.hasNoDetails).toBe(false);
+      expect(notice()).toBeNull();
     });
   });
 

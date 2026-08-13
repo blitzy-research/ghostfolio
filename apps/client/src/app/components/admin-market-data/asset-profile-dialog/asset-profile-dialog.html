@@ -150,6 +150,21 @@
                       formControlName="assetProfileIdentifier"
                       [includeIndices]="true"
                     />
+                    <!--
+                      Says why "Apply" is refusing. Choosing the profile that is already
+                      in force disables it, and that looked identical to having chosen
+                      nothing at all.
+                    -->
+                    @if (
+                      assetProfileIdentifierForm
+                        .get('assetProfileIdentifier')
+                        .hasError('equalsPreviousProfileIdentifier')
+                    ) {
+                      <mat-error i18n
+                        >This is the asset profile already in use. Please choose
+                        a different one.</mat-error
+                      >
+                    }
                   </mat-form-field>
                   <button
                     class="ml-2 no-min-width px-2"
@@ -162,7 +177,8 @@
                         'assetProfileIdentifier'
                       ) ||
                       assetProfileIdentifierForm.hasError(
-                        'equalsPreviousProfileIdentifier'
+                        'equalsPreviousProfileIdentifier',
+                        'assetProfileIdentifier'
                       )
                     "
                   >
@@ -326,6 +342,13 @@
               <mat-form-field appearance="outline" class="w-100 without-hint">
                 <mat-label i18n>Name</mat-label>
                 <input formControlName="name" matInput type="text" />
+                <!--
+                  Says why saving is refusing. The name is required and clearing it
+                  greyed the control out with nothing to read.
+                -->
+                @if (assetProfileForm.get('name').hasError('required')) {
+                  <mat-error i18n>Please enter a name.</mat-error>
+                }
               </mat-form-field>
             </div>
             @if (assetProfile?.dataSource === 'MANUAL') {

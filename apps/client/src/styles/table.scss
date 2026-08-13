@@ -7,6 +7,36 @@
     }
   }
 
+  // Every table in this application now pins its header row, declared through
+  // `matHeaderRowDef`'s own `sticky` input so the positioning is Material's rather than
+  // hand-rolled. What Material does NOT supply is a background: it emits `position:
+  // sticky` and a `z-index`, and leaves the cell transparent - so a pinned header would
+  // have data rows sliding visibly through it.
+  //
+  // The fill is the table's own background token, which is what keeps this correct in
+  // every place a table appears. The token is re-based per theme below and again inside
+  // module content by `gridster.scss`, so a pinned header always matches the surface it
+  // is pinned over rather than a colour guessed here.
+  //
+  // This matters because the single-canvas dashboard made every table a scrollport of
+  // its own: a table long enough to scroll used to carry its column names off the top of
+  // the module and leave a grid of bare UUIDs and numbers behind, with nothing on screen
+  // to say which column was which.
+  .mat-mdc-header-row {
+    .mat-mdc-header-cell {
+      background-color: var(--mat-table-background-color);
+    }
+  }
+
+  // The sort affordance is the interactive target in a header cell, and at its natural
+  // size it was 20px tall - under the 24px minimum for a pointer target. Height is added
+  // rather than font size or padding so the row's own height and the text baseline are
+  // untouched, which is what keeps this from being a visual change as well as a
+  // dimensional one.
+  .mat-sort-header-container {
+    min-height: 24px;
+  }
+
   .mat-footer-row,
   .mat-row {
     .mat-cell,

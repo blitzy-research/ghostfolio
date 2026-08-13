@@ -9,7 +9,28 @@
     <mat-form-field appearance="outline" class="w-100">
       <mat-label i18n>Name, symbol or ISIN</mat-label>
       <gf-symbol-autocomplete formControlName="searchSymbol" />
+      <!--
+        Says why Save is refusing. Pressing it on an empty field used to do nothing at
+        all, and the field itself said nothing about needing a selection rather than
+        typed text.
+      -->
+      @if (createWatchlistItemForm.get('searchSymbol').hasError('required')) {
+        <mat-error i18n>Please search for and select an asset.</mat-error>
+      }
     </mat-form-field>
+
+    <!--
+      Reported here, beside the control that produced it, rather than through a
+      notification: the selection that failed is still in the field above, and the
+      viewer has to be able to read what happened and change or resubmit it without
+      hunting for either. An alert rather than a status, because the viewer asked for
+      something and did not get it.
+    -->
+    @if (errorMessage) {
+      <div class="create-watchlist-item-error" role="alert">
+        {{ errorMessage }}
+      </div>
+    }
   </div>
   <div class="d-flex justify-content-end" mat-dialog-actions>
     <button mat-button type="button" (click)="onCancel()">
@@ -23,7 +44,8 @@
       color="primary"
       mat-flat-button
       type="submit"
-      [disabled]="createWatchlistItemForm.hasError('incomplete')"
+      [attr.aria-busy]="isCreating ? 'true' : null"
+      [disabled]="createWatchlistItemForm.hasError('incomplete') || isCreating"
     >
       <ng-container i18n>Save</ng-container>
     </button>

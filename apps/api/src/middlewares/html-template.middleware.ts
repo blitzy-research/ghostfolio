@@ -116,7 +116,28 @@ export class HtmlTemplateMiddleware implements NestMiddleware {
   }
 
   public use(request: Request, response: Response, next: NextFunction) {
-    const path = request.originalUrl.replace(/\/$/, '');
+    // The PATH alone, never `originalUrl`. `originalUrl` carries the query string,
+    // and every decision below is made by inspecting the string for a dot: a
+    // single query parameter containing one - `?jwt=<header>.<payload>.<signature>`
+    // is the everyday case, and any `?symbol=BRK.B` or `?utm_source=a.b` will do -
+    // made `isFileRequest` answer yes for a document request, so the response
+    // bypassed interpolation and the visitor was served the template with its
+    // `${title}`, `${description}` and `${rootUrl}` placeholders unsubstituted.
+    // That reaches crawlers, link unfurlers and the service worker's cached copy
+    // of the shell, so it outlives the request that produced it.
+    //
+    // The pathname is taken from `originalUrl` with the query removed, rather than
+    // from `request.path`. That is not interchangeable here: this middleware is
+    // mounted on a wildcard route, so Express strips the matched prefix from
+    // `request.url` and `request.path` reads `/` for every request - which would
+    // send `/api/...` and every locale-prefixed asset down the interpolation
+    // branch. `originalUrl` is the one member Express never rewrites.
+    //
+    // The result is also what belongs in the two places it is used below: the
+    // `locales` lookup is keyed by pathname, and the `path` interpolated into the
+    // document becomes a canonical URL, which must not carry a one-off credential
+    // or campaign parameter.
+    const path = this.getPathname(request).replace(/\/$/, '');
     let languageCode = path.substr(1, 2);
 
     if (!SUPPORTED_LANGUAGE_CODES.includes(languageCode)) {
@@ -160,6 +181,23 @@ export class HtmlTemplateMiddleware implements NestMiddleware {
 
       return response.send(indexHtml);
     }
+  }
+
+  /**
+   * The requested pathname: the original request target with the query string and
+   * fragment removed.
+   *
+   * Split rather than parsed with `URL`. A request target is not required to be a
+   * valid URL - a client may send a percent-encoding this application has no say
+   * over - and a throw inside a middleware that every document request passes
+   * through would turn a malformed address into a 500. Splitting on the two
+   * delimiters cannot fail, and the delimiters are unambiguous: neither `?` nor `#`
+   * may appear unencoded in a path.
+   */
+  private getPathname(request: Request): string {
+    const url = request.originalUrl ?? request.url ?? '';
+
+    return url.split(/[?#]/)[0];
   }
 
   private isFileRequest(filename: string) {

@@ -8,9 +8,17 @@
   // explicit indicator here; `cdk-keyboard-focused` is the CDK's own
   // keyboard-only marker on the toggle buttons.
   a:focus-visible,
-  button:focus-visible {
+  button:focus-visible,
+  // The prompt box takes focus because it scrolls, so it needs an indicator like
+  // any other focusable thing. `-2px` rather than `2px`: the box has a border of
+  // its own and an outward ring would sit on top of the neighbouring margin.
+  .prompt-container:focus-visible {
     outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
     outline-offset: 2px;
+  }
+
+  .prompt-container:focus-visible {
+    outline-offset: -2px;
   }
 
   // The module body. It fills the cell when the prompt is short and grows past it
@@ -132,7 +140,8 @@
   color: var(--mat-sys-on-surface, #ffffff);
 
   a:focus-visible,
-  button:focus-visible {
+  button:focus-visible,
+  .prompt-container:focus-visible {
     outline-color: var(--mat-sys-on-surface, #ffffff);
   }
 

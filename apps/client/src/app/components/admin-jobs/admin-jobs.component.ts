@@ -8,7 +8,10 @@ import {
   DATA_GATHERING_QUEUE_PRIORITY_MEDIUM,
   QUEUE_JOB_STATUS_LIST
 } from '@ghostfolio/common/config';
-import { getDateWithTimeFormatString } from '@ghostfolio/common/helper';
+import {
+  getDateWithTimeFormatString,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
 import { AdminJobs, User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { NotificationService } from '@ghostfolio/ui/notifications';
@@ -55,6 +58,14 @@ import {
 } from 'ionicons/icons';
 import { get } from 'lodash';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
+
+/**
+ * The stable event identifier a failed queue read is reported under.
+ *
+ * Fixed so it stays searchable, and carrying the reason only - never the response -
+ * because a queue payload names the symbols a deployment is gathering.
+ */
+const ADMIN_JOBS_FETCH_FAILED_EVENT = 'GF-ADMIN-JOBS-FETCH-FAILED';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -105,6 +116,18 @@ export class GfAdminJobsComponent implements OnInit {
     'status',
     'actions'
   ];
+
+  /**
+   * Whether the queue could not be read.
+   *
+   * Needed because the skeleton below is drawn from `isLoading`, and the read used to
+   * have no failure handler at all - so a rejection left the flag raised and the
+   * screen went on animating a row that was never going to arrive, for as long as the
+   * module stayed on the canvas. The only trace was whatever global notice the
+   * response happened to earn, six seconds of it, with nothing on the screen to press
+   * afterwards.
+   */
+  protected hasError = false;
 
   protected hasPermissionToAccessBullBoard = false;
   protected isLoading = false;
@@ -168,8 +191,17 @@ export class GfAdminJobsComponent implements OnInit {
     this.adminService
       .deleteJob(aId)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.fetchJobs();
+      .subscribe({
+        // Re-read on either outcome. A refused delete leaves the row exactly as it
+        // was, which is indistinguishable from a delete that worked and a table that
+        // has not caught up - so the table is refreshed from the server rather than
+        // left to imply an outcome it does not know.
+        error: () => {
+          this.fetchJobs();
+        },
+        next: () => {
+          this.fetchJobs();
+        }
       });
   }
 
@@ -179,8 +211,16 @@ export class GfAdminJobsComponent implements OnInit {
     this.adminService
       .deleteJobs({ status: currentFilter ? [currentFilter] : [] })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.fetchJobs(currentFilter ? [currentFilter] : undefined);
+      .subscribe({
+        // See `onDeleteJob`: the table is refreshed either way, because a partially
+        // applied bulk delete is exactly the case where the screen must not be left
+        // guessing.
+        error: () => {
+          this.fetchJobs(currentFilter ? [currentFilter] : undefined);
+        },
+        next: () => {
+          this.fetchJobs(currentFilter ? [currentFilter] : undefined);
+        }
       });
   }
 
@@ -188,8 +228,15 @@ export class GfAdminJobsComponent implements OnInit {
     this.adminService
       .executeJob(aId)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.fetchJobs();
+      .subscribe({
+        // See `onDeleteJob`. A refused execute is the one that matters most here,
+        // because the job's status is the whole reason the control was pressed.
+        error: () => {
+          this.fetchJobs();
+        },
+        next: () => {
+          this.fetchJobs();
+        }
       });
   }
 
@@ -205,32 +252,72 @@ export class GfAdminJobsComponent implements OnInit {
     window.open(BULL_BOARD_ROUTE, '_blank');
   }
 
+  /**
+   * Shows one job's payload.
+   *
+   * The serialised structure is the MESSAGE. As a heading it grew the dialog to
+   * whatever height the payload needed and pushed the close button off the bottom
+   * of the viewport, where a pointer cannot reach it; as the message it is bounded
+   * and scrolls inside the dialog, and the heading now says what is being shown.
+   */
   protected onViewData(aData: AdminJobs['jobs'][0]['data']) {
     this.notificationService.alert({
-      title: JSON.stringify(aData, null, '  ')
+      message: JSON.stringify(aData, null, '  '),
+      title: $localize`Data`
     });
   }
 
+  /**
+   * Shows one job's stack trace. See `onViewData`: a stack trace is the longest
+   * thing this screen displays, so it is the message rather than the heading.
+   */
   protected onViewStacktrace(aStacktrace: AdminJobs['jobs'][0]['stacktrace']) {
     this.notificationService.alert({
-      title: JSON.stringify(aStacktrace, null, '  ')
+      message: JSON.stringify(aStacktrace, null, '  '),
+      title: $localize`Stacktrace`
     });
+  }
+
+  /**
+   * Reads the queue again, keeping whichever status filter is applied.
+   *
+   * The filter is re-read rather than remembered so a retry answers the question the
+   * viewer is currently asking, not the one they asked when the failure happened.
+   */
+  protected onRetry() {
+    const currentFilter = this.filterForm.controls.status.value;
+
+    this.fetchJobs(currentFilter ? [currentFilter] : undefined);
   }
 
   private fetchJobs(aStatus?: JobStatus[]) {
+    this.hasError = false;
     this.isLoading = true;
 
     this.adminService
       .fetchJobs({ status: aStatus })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ jobs }) => {
-        this.dataSource = new MatTableDataSource(jobs);
-        this.dataSource.sort = this.sort();
-        this.dataSource.sortingDataAccessor = get;
+      .subscribe({
+        error: (error: unknown) => {
+          // Lowered on this path too, which is the fix: the flag is what draws the
+          // skeleton, so leaving it raised is what turned a failed read into a screen
+          // that looked busy forever.
+          this.hasError = true;
+          this.isLoading = false;
 
-        this.isLoading = false;
+          reportSanitizedError(ADMIN_JOBS_FETCH_FAILED_EVENT, error);
 
-        this.changeDetectorRef.markForCheck();
+          this.changeDetectorRef.markForCheck();
+        },
+        next: ({ jobs }) => {
+          this.dataSource = new MatTableDataSource(jobs);
+          this.dataSource.sort = this.sort();
+          this.dataSource.sortingDataAccessor = get;
+
+          this.isLoading = false;
+
+          this.changeDetectorRef.markForCheck();
+        }
       });
   }
 }

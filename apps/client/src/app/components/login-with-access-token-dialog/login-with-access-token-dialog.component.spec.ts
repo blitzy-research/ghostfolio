@@ -118,6 +118,72 @@ describe('GfLoginWithAccessTokenDialogComponent', () => {
     expect(hrefs).toContain('../api/auth/oidc');
   });
 
+  describe('the security token field', () => {
+    const errorText = () => {
+      return fixture.nativeElement
+        .querySelector('mat-error')
+        ?.textContent?.trim();
+    };
+
+    it('is the control the dialog opens on', async () => {
+      await createFixture({ hasPermissionToUseAuthToken: true });
+
+      // Marked rather than asserted through `document.activeElement`: the initial
+      // focus is applied by the dialog's own focus trap, which only exists when the
+      // component is opened as a dialog rather than created directly. What is being
+      // pinned is that the field, and not the header's close control, is what the
+      // trap has been told to choose - which is the whole of the defect.
+      const input = fixture.nativeElement.querySelector('input[matInput]');
+
+      expect(input.hasAttribute('cdkFocusInitial')).toBe(true);
+    });
+
+    it('says nothing before the visitor has tried anything', async () => {
+      await createFixture({ hasPermissionToUseAuthToken: true });
+
+      expect(errorText()).toBeUndefined();
+    });
+
+    /**
+     * The silent refusal this fixes. Pressing Enter on an empty field reached the
+     * sign-in method, which returned without doing anything and without saying
+     * anything, so the visitor was left pressing a key that appeared to be ignored.
+     */
+    it('states what it wants when sign-in is attempted while it is empty', async () => {
+      await createFixture({ hasPermissionToUseAuthToken: true });
+
+      fixture.componentInstance.onLoginWithAccessToken();
+
+      fixture.detectChanges();
+
+      expect(errorText()).toBe('Please enter your security token.');
+    });
+
+    it('signs in without complaint once a token has been entered', async () => {
+      await createFixture({ hasPermissionToUseAuthToken: true });
+
+      const { accessTokenFormControl, dialogRef } = fixture.componentInstance;
+
+      accessTokenFormControl.setValue('SECURITY_TOKEN');
+
+      fixture.componentInstance.onLoginWithAccessToken();
+
+      fixture.detectChanges();
+
+      expect(errorText()).toBeUndefined();
+      expect(dialogRef.close).toHaveBeenCalledWith({
+        accessToken: 'SECURITY_TOKEN'
+      });
+    });
+
+    it('is not offered at all where the deployment withholds token sign-in', async () => {
+      await createFixture({ hasPermissionToUseAuthGoogle: true });
+
+      expect(fixture.nativeElement.querySelector('input[matInput]')).toBeNull();
+      expect(errorText()).toBeUndefined();
+    });
+  });
+
   it('records nothing until a provider link is actually used', async () => {
     await createFixture({
       hasPermissionToUseAuthGoogle: true,

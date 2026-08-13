@@ -26,8 +26,21 @@
                 [value]="activitiesCount"
               />
               @if (activitiesCount && userCount) {
-                <div>
-                  {{ activitiesCount / userCount | number: '1.2-2' }}
+                <div class="align-items-center d-flex">
+                  <!--
+                    Formatted the same way as the count directly above it. This read
+                    `| number: '1.2-2'`, which formats against the locale the BUNDLE was
+                    built for, while its neighbour is a `gf-value` formatted against the
+                    locale the VIEWER chose - so two numbers one line apart could use
+                    different decimal separators for anyone whose locale differs from the
+                    build's.
+                  -->
+                  <gf-value
+                    class="mr-1"
+                    [locale]="user?.settings?.locale"
+                    [precision]="2"
+                    [value]="activitiesCount / userCount"
+                  />
                   <span i18n>per User</span>
                 </div>
               }

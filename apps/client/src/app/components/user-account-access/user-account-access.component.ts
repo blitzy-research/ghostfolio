@@ -213,10 +213,18 @@ export class GfUserAccountAccessComponent implements OnInit {
     });
   }
 
+  /**
+   * `accessDialogId` rather than `accessId`, and the distinction is load-bearing.
+   * `accessId` is the root host's own discriminator for a portfolio shared by
+   * link, so borrowing it to address this dialog made the root state depend on
+   * whether a generic `editDialog` flag happened to be present - which meant an
+   * unrelated module clearing that flag replaced a signed-in viewer's canvas with
+   * a stranger's portfolio. See `GfAppQueryParams`.
+   */
   public onUpdateAccess(aId: string) {
     void this.router.navigate([], {
       queryParams: {
-        accessId: aId,
+        accessDialogId: aId,
         dialogModule: DashboardModuleType.ACCOUNT_ACCESS,
         editDialog: true
       },
@@ -245,7 +253,7 @@ export class GfUserAccountAccessComponent implements OnInit {
       return;
     }
 
-    const { accessId, createDialog, dialogModule, editDialog } =
+    const { accessDialogId, createDialog, dialogModule, editDialog } =
       this.queryParams ?? {};
 
     // Neither flag names a dialog of its own, so both are honoured only when the
@@ -258,9 +266,9 @@ export class GfUserAccountAccessComponent implements OnInit {
       this.serveDialogRequest('createDialog', () => {
         this.openCreateAccessDialog();
       });
-    } else if (isAddressed && editDialog && accessId) {
+    } else if (isAddressed && editDialog && accessDialogId) {
       const access = this.accessesGive?.find(({ id }) => {
-        return id === accessId;
+        return id === accessDialogId;
       });
 
       if (access) {
@@ -309,16 +317,19 @@ export class GfUserAccountAccessComponent implements OnInit {
    *
    * Merging is what makes the clear safe on a single canvas: every module
    * observes the same query parameters, so dropping them all would close a
-   * sibling module's dialog as a side effect of closing this one's. Clearing
-   * `accessId` alongside `editDialog` also matters beyond this module - the two
-   * together are how the canvas tells an access grant being edited from a
-   * portfolio shared by link - so leaving either behind would misreport the
-   * canvas's own state.
+   * sibling module's dialog as a side effect of closing this one's.
+   *
+   * `accessId` is deliberately NOT among the keys cleared here, and that is a
+   * correctness point rather than an omission: it belongs to the root host, where
+   * it identifies a portfolio shared by link. Clearing it from this module used to
+   * be necessary because this dialog travelled on it; now that the dialog has
+   * `accessDialogId` of its own, clearing `accessId` here would close somebody's
+   * shared portfolio as a side effect of closing an unrelated dialog.
    */
   private clearDialogQueryParams() {
     void this.router.navigate([], {
       queryParams: {
-        accessId: null,
+        accessDialogId: null,
         createDialog: null,
         dialogModule: null,
         editDialog: null

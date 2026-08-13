@@ -17,7 +17,14 @@
         />
       </mat-card-header>
       <mat-card-content>
+        <!--
+          The `title` carried the percentage for a pointer, which leaves a keyboard or
+          screen-reader viewer with an unnamed progressbar. The name says what the
+          proportion is of; the value Material already exposes says how much.
+        -->
         <mat-progress-bar
+          aria-label="Share of the portfolio matching the current filters"
+          i18n-aria-label
           mode="determinate"
           [title]="`${(
             portfolioDetails?.summary?.filteredValueInPercentage * 100

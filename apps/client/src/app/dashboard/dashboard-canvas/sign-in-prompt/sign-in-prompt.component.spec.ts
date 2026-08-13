@@ -95,7 +95,7 @@ describe('GfSignInPromptComponent', () => {
   let dialogRequests: {
     component: unknown;
     config: {
-      autoFocus?: boolean;
+      autoFocus?: boolean | string;
       data?: Record<string, unknown>;
       disableClose?: boolean;
       height?: string;
@@ -266,7 +266,7 @@ describe('GfSignInPromptComponent', () => {
       (
         dialogComponent: unknown,
         config: {
-          autoFocus?: boolean;
+          autoFocus?: boolean | string;
           data?: Record<string, unknown>;
           disableClose?: boolean;
           height?: string;
@@ -500,7 +500,12 @@ describe('GfSignInPromptComponent', () => {
         hasPermissionToUseAuthToken: true,
         title: 'Sign in'
       });
-      expect(config.autoFocus).toBe(false);
+      // Not `false`, which is what this asserted while the dialog opened with focus
+      // on its own container: an element with `tabindex="-1"` and no name, reached
+      // by keyboard and screen-reader visitors instead of the field they came for.
+      // The CDK reads the dialog's `cdkFocusInitial` marker in this branch and in no
+      // other, so the value is the fix rather than a detail of it.
+      expect(config.autoFocus).toBe('first-tabbable');
       expect(config.width).toBe('30rem');
     });
 
@@ -933,6 +938,23 @@ describe('GfSignInPromptComponent', () => {
       await createComponent();
 
       expect(buttonLabelled('Sign in')).toBeTruthy();
+    });
+
+    /**
+     * This card is the whole of the document a signed-out visitor is given, and it
+     * had no heading of any kind: the only thing naming the application was the mark,
+     * which is an image. Hidden visually rather than shown, because the mark already
+     * says it to anybody who can see it and a second visible copy would be a design
+     * change nothing asked for.
+     */
+    it('gives the document a heading, without changing what is seen', async () => {
+      await createComponent();
+
+      const heading = host().querySelector('h1');
+
+      expect(heading).toBeTruthy();
+      expect(heading.textContent.trim()).toBe('Sign in to Ghostfolio');
+      expect(heading.classList).toContain('sr-only');
     });
 
     it('opens the access-token dialog from the sign-in control', async () => {

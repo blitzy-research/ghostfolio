@@ -69,6 +69,17 @@ export class AdminMarketDataService {
     });
   }
 
+  /**
+   * Whether a profile may be deleted.
+   *
+   * Every condition has to hold, and `watchedByCount` is compared strictly to zero on
+   * purpose: a caller that forgets to pass it gets `undefined`, which fails the test and
+   * disables the control. That is the safe direction to fail in - the alternative,
+   * treating a missing count as zero, would offer deletion of a profile somebody is
+   * watching on the strength of a field nobody supplied. It is also not hypothetical:
+   * the row-level delete control did omit it, and was dead for every profile as a
+   * result.
+   */
   public hasPermissionToDeleteAssetProfile({
     activitiesCount,
     isBenchmark,

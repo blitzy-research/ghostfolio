@@ -5,7 +5,10 @@ import {
   ghostfolioScraperApiSymbolPrefix
 } from '@ghostfolio/common/config';
 import { DashboardModuleType } from '@ghostfolio/common/dashboard';
-import { getDateFormatString } from '@ghostfolio/common/helper';
+import {
+  getDateFormatString,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
 import {
   AssetProfileIdentifier,
   Filter,
@@ -17,6 +20,7 @@ import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { GfSymbolPipe } from '@ghostfolio/common/pipes';
 import { GfActivitiesFilterComponent } from '@ghostfolio/ui/activities-filter';
 import { translate } from '@ghostfolio/ui/i18n';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 import { GfValueComponent } from '@ghostfolio/ui/value';
@@ -73,6 +77,18 @@ import { GfAssetProfileDialogComponent } from './asset-profile-dialog/asset-prof
 import { AssetProfileDialogParams } from './asset-profile-dialog/interfaces/interfaces';
 import { GfCreateAssetProfileDialogComponent } from './create-asset-profile-dialog/create-asset-profile-dialog.component';
 import { CreateAssetProfileDialogParams } from './create-asset-profile-dialog/interfaces/interfaces';
+
+/**
+ * The stable event identifiers this screen's failures are reported under.
+ *
+ * Fixed so they stay searchable, and carrying the reason only - never the response -
+ * because market data names the symbols a deployment tracks.
+ */
+const ADMIN_MARKET_DATA_FETCH_FAILED_EVENT =
+  'GF-ADMIN-MARKET-DATA-FETCH-FAILED';
+
+const ADMIN_ASSET_PROFILE_CREATE_FAILED_EVENT =
+  'GF-ADMIN-ASSET-PROFILE-CREATE-FAILED';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -159,6 +175,15 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
   public ghostfolioScraperApiSymbolPrefix = ghostfolioScraperApiSymbolPrefix;
   public hasPermissionForSubscription: boolean;
   public info: InfoItem;
+  /**
+   * Whether the market data could not be read.
+   *
+   * Needed because the placeholder is drawn from `isLoading`, and the read had no
+   * failure handler - so a rejection left the flag raised and the screen animated
+   * indefinitely over whichever rows happened to be there already.
+   */
+  public hasError = false;
+
   public isLoading = false;
   public isUUID = isUUID;
   public placeholder = '';
@@ -216,6 +241,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
     private dialog: MatDialog,
+    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
@@ -412,6 +438,16 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
     };
   }
 
+  /**
+   * Reads the market data again, keeping whichever filters and sort are applied.
+   *
+   * `loadData` reads them from the component rather than taking them as arguments, so a
+   * retry answers the question the viewer is currently asking.
+   */
+  public onRetry() {
+    this.loadData();
+  }
+
   public onOpenAssetProfileDialog(
     aAssetProfileIdentifier: AssetProfileIdentifier
   ) {
@@ -516,6 +552,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
       sortDirection?: SortDirection;
     } = { pageIndex: 0 }
   ) {
+    this.hasError = false;
     this.isLoading = true;
 
     this.pageSize =
@@ -542,24 +579,41 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
         take: this.pageSize
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ count, marketData }) => {
-        this.totalItems = count;
+      .subscribe({
+        error: (error: unknown) => {
+          // Both halves matter here. The flag draws the placeholder, so leaving it
+          // raised left the screen looking busy for as long as the module stayed on the
+          // canvas; and the rows are replaced only on success, so whatever was there
+          // before stayed on display beside it - a table of values that no longer
+          // reflected anything, with no way to tell. Emptied and explained instead.
+          this.dataSource = new MatTableDataSource([]);
+          this.hasError = true;
+          this.isLoading = false;
+          this.totalItems = 0;
 
-        this.dataSource = new MatTableDataSource(
-          marketData.map((marketDataItem) => {
-            return {
-              ...marketDataItem,
-              isBenchmark: this.benchmarks.some(({ id }) => {
-                return id === marketDataItem.id;
-              })
-            };
-          })
-        );
-        this.dataSource.sort = this.sort;
+          reportSanitizedError(ADMIN_MARKET_DATA_FETCH_FAILED_EVENT, error);
 
-        this.isLoading = false;
+          this.changeDetectorRef.markForCheck();
+        },
+        next: ({ count, marketData }) => {
+          this.totalItems = count;
 
-        this.changeDetectorRef.markForCheck();
+          this.dataSource = new MatTableDataSource(
+            marketData.map((marketDataItem) => {
+              return {
+                ...marketDataItem,
+                isBenchmark: this.benchmarks.some(({ id }) => {
+                  return id === marketDataItem.id;
+                })
+              };
+            })
+          );
+          this.dataSource.sort = this.sort;
+
+          this.isLoading = false;
+
+          this.changeDetectorRef.markForCheck();
+        }
       });
   }
 
@@ -642,14 +696,38 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
               this.adminService
                 .addAssetProfile({ dataSource, symbol })
                 .pipe(takeUntilDestroyed(this.destroyRef))
-                .subscribe(() => {
-                  this.loadData();
+                .subscribe({
+                  error: (error: unknown) => {
+                    // No detail dialog for a profile that was not created. Opening one
+                    // regardless is what produced the masked values: it read a profile
+                    // that did not exist, was answered 404, and presented the empty
+                    // result as the profile's contents.
+                    this.clearDialogQueryParams();
+
+                    this.notificationService.alert({
+                      title: $localize`The asset profile could not be created. Please try again.`
+                    });
+
+                    reportSanitizedError(
+                      ADMIN_ASSET_PROFILE_CREATE_FAILED_EVENT,
+                      error
+                    );
+                  },
+                  next: () => {
+                    this.loadData();
+
+                    // Opened only AFTER the create has been acknowledged. This used to
+                    // run outside the subscription, so it fired while the create was
+                    // still in flight: the dialog asked for a profile the server did
+                    // not have yet, and every field came back masked.
+                    this.onOpenAssetProfileDialog({ dataSource, symbol });
+                  }
                 });
             } else {
               this.loadData();
-            }
 
-            this.onOpenAssetProfileDialog({ dataSource, symbol });
+              this.onOpenAssetProfileDialog({ dataSource, symbol });
+            }
           });
       });
   }

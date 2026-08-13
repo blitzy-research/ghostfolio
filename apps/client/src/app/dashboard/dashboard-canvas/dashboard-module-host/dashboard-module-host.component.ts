@@ -68,6 +68,22 @@ const GEOMETRY_STEPS_BY_KEY: Readonly<
 // and disappear symmetrically as a module is scrolled.
 const OVERFLOW_HINT_THRESHOLD = 12;
 
+/**
+ * Where a module's body stands against each of its four edges, carried from the
+ * measuring phase of an overflow pass to the marking phase.
+ *
+ * A value rather than four assignments, because the two phases are separated for
+ * every host at once (see
+ * {@link GfDashboardModuleHostComponent.runOverflowChecks}) and a measurement has
+ * to survive the gap between them.
+ */
+interface DashboardModuleOverflowState {
+  hasOverflowAbove: boolean;
+  hasOverflowBelow: boolean;
+  hasOverflowEnd: boolean;
+  hasOverflowStart: boolean;
+}
+
 // The element every CDK overlay - dialog, menu, tooltip, select - is attached
 // inside. Focus sitting anywhere within it is what distinguishes "an overlay is
 // holding focus and will hand it back" from "the viewer moved focus themselves",
@@ -146,8 +162,36 @@ export class GfDashboardModuleHostComponent
 
   public resolvedComponent: Type<unknown>;
 
-  // Held only so the pending overflow check can be cancelled at teardown.
-  private animationFrameHandle: number;
+  /**
+   * The hosts waiting to be measured this frame, the frame that will measure
+   * them, and whether one is booked - shared by every module on the canvas rather
+   * than held per host.
+   *
+   * Static because the cost this exists to remove is one only the SET of hosts can
+   * incur. Measuring reads layout and marking an edge writes it, so twenty hosts
+   * each reading-then-writing inside their own frame callback made the browser
+   * recompute layout again for every host after the first: the reads of host two
+   * onwards each landed after host one's write had invalidated it. Measured at the
+   * first paint of a full dashboard, that came to 143 ms of forced layout.
+   *
+   * Reading every host before writing any of them collapses that to a single
+   * recomputation per frame, because nothing invalidates layout between the reads.
+   * It changes no observer, no threshold and no measurement - only the order the
+   * existing work happens in - which is why the affordances themselves behave
+   * identically.
+   *
+   * `isOverflowCheckScheduled` is a flag of its own rather than derived from the
+   * handle, because a frame callback that runs synchronously - as it does under
+   * test - would otherwise clear a handle the pending assignment is about to
+   * overwrite. The handle is kept only so teardown can cancel a frame nobody is
+   * waiting on any more.
+   */
+  private static pendingOverflowChecks =
+    new Set<GfDashboardModuleHostComponent>();
+
+  private static isOverflowCheckScheduled = false;
+
+  private static overflowCheckFrameHandle: number | undefined;
 
   // Together with `requestedDefinition` this makes resolution exactly-once per
   // definition. `hasRequestedLoad` separates "not asked yet" from "asked for
@@ -156,8 +200,6 @@ export class GfDashboardModuleHostComponent
   // for a definition which has since been replaced is discarded instead of
   // painted.
   private hasRequestedLoad = false;
-
-  private isOverflowCheckScheduled = false;
 
   private mutationObserver: MutationObserver;
 
@@ -289,9 +331,7 @@ export class GfDashboardModuleHostComponent
     this.resizeObserver?.disconnect();
     this.observedContentChild = null;
 
-    if (this.animationFrameHandle !== undefined) {
-      cancelAnimationFrame(this.animationFrameHandle);
-    }
+    GfDashboardModuleHostComponent.releaseOverflowCheck(this);
   }
 
   public ngOnInit() {
@@ -406,9 +446,19 @@ export class GfDashboardModuleHostComponent
    * No cell is moved, resized, added or removed, so no grid callback fires and
    * no layout write is scheduled.
    */
-  public reload() {
+  /**
+   * Answers when the module has been re-resolved, so a caller refreshing the whole
+   * canvas can tell when it is finished.
+   *
+   * Awaiting the resolution rather than starting it and returning is what makes a
+   * refresh a bounded operation: the canvas holds a busy state for exactly as long
+   * as the last module takes and then says the refresh is done. It is deliberately
+   * the COMPONENT that is awaited and not the module's own data, which this host
+   * knows nothing about - a module fetches on its own account once it is mounted.
+   */
+  public reload(): Promise<void> {
     if (!this.definition) {
-      return;
+      return Promise.resolve();
     }
 
     this.resolvedComponent = undefined;
@@ -419,7 +469,7 @@ export class GfDashboardModuleHostComponent
     this.hasRequestedLoad = false;
     this.requestedDefinition = undefined;
 
-    void this.resolveModule();
+    return this.resolveModule();
   }
 
   /**
@@ -636,42 +686,56 @@ export class GfDashboardModuleHostComponent
     }
   }
 
-  // Compared before anything is written, so a scroll that does not cross an
-  // edge costs no change detection at all - which is what makes it safe to run
-  // this from a per-frame scroll handler.
-  private applyOverflowState() {
+  /**
+   * Reads where this module's body stands against each of its four edges, and
+   * writes nothing at all.
+   *
+   * Purity is the contract rather than a style: this is phase one of a pass shared
+   * with every other module (see {@link runOverflowChecks}), and a single write
+   * here would invalidate the layout each host measured after it. `null` for a body
+   * that is not there to measure, which is a module still resolving its component.
+   */
+  private measureOverflowState(): DashboardModuleOverflowState | null {
     const element = this.moduleContent?.nativeElement;
 
     if (!element) {
-      return;
+      return null;
     }
 
-    const hasOverflowAbove = element.scrollTop > OVERFLOW_HINT_THRESHOLD;
-    const hasOverflowBelow =
-      element.scrollHeight - element.clientHeight - element.scrollTop >
-      OVERFLOW_HINT_THRESHOLD;
-
     const scrolledFromStart = Math.abs(element.scrollLeft);
-    const hasOverflowStart = scrolledFromStart > OVERFLOW_HINT_THRESHOLD;
-    const hasOverflowEnd =
-      element.scrollWidth - element.clientWidth - scrolledFromStart >
-      OVERFLOW_HINT_THRESHOLD;
 
+    return {
+      hasOverflowAbove: element.scrollTop > OVERFLOW_HINT_THRESHOLD,
+      hasOverflowBelow:
+        element.scrollHeight - element.clientHeight - element.scrollTop >
+        OVERFLOW_HINT_THRESHOLD,
+      hasOverflowEnd:
+        element.scrollWidth - element.clientWidth - scrolledFromStart >
+        OVERFLOW_HINT_THRESHOLD,
+      hasOverflowStart: scrolledFromStart > OVERFLOW_HINT_THRESHOLD
+    };
+  }
+
+  // Compared before anything is written, so a scroll that does not cross an
+  // edge costs no change detection at all - which is what makes it safe to run
+  // this from a per-frame scroll handler.
+  private applyOverflowState(aState: DashboardModuleOverflowState | null) {
     if (
-      hasOverflowAbove === this.hasOverflowAbove &&
-      hasOverflowBelow === this.hasOverflowBelow &&
-      hasOverflowEnd === this.hasOverflowEnd &&
-      hasOverflowStart === this.hasOverflowStart
+      !aState ||
+      (aState.hasOverflowAbove === this.hasOverflowAbove &&
+        aState.hasOverflowBelow === this.hasOverflowBelow &&
+        aState.hasOverflowEnd === this.hasOverflowEnd &&
+        aState.hasOverflowStart === this.hasOverflowStart)
     ) {
       return;
     }
 
     // The one re-entry into Angular, taken only for an actual change.
     this.zone.run(() => {
-      this.hasOverflowAbove = hasOverflowAbove;
-      this.hasOverflowBelow = hasOverflowBelow;
-      this.hasOverflowEnd = hasOverflowEnd;
-      this.hasOverflowStart = hasOverflowStart;
+      this.hasOverflowAbove = aState.hasOverflowAbove;
+      this.hasOverflowBelow = aState.hasOverflowBelow;
+      this.hasOverflowEnd = aState.hasOverflowEnd;
+      this.hasOverflowStart = aState.hasOverflowStart;
 
       this.changeDetectorRef.markForCheck();
     });
@@ -680,21 +744,81 @@ export class GfDashboardModuleHostComponent
   // An arrow function held as a field so the same reference can be added and
   // removed as an event listener, and coalesced to one measurement per frame
   // because the scroll listener and both observers can all fire within a single
-  // frame.
+  // frame. The frame itself is shared with every other module on the canvas - see
+  // {@link pendingOverflowChecks}.
   private scheduleOverflowCheck = () => {
-    if (this.isOverflowCheckScheduled) {
+    GfDashboardModuleHostComponent.pendingOverflowChecks.add(this);
+
+    if (GfDashboardModuleHostComponent.isOverflowCheckScheduled) {
       return;
     }
 
-    this.isOverflowCheckScheduled = true;
+    GfDashboardModuleHostComponent.isOverflowCheckScheduled = true;
 
-    this.animationFrameHandle = requestAnimationFrame(() => {
-      this.isOverflowCheckScheduled = false;
+    GfDashboardModuleHostComponent.overflowCheckFrameHandle =
+      requestAnimationFrame(() => {
+        GfDashboardModuleHostComponent.isOverflowCheckScheduled = false;
 
-      this.syncObservedContentChild();
-      this.applyOverflowState();
-    });
+        GfDashboardModuleHostComponent.runOverflowChecks();
+      });
   };
+
+  /**
+   * Measures every waiting host, then marks every one of them - in that order,
+   * and never interleaved.
+   *
+   * The separation is the entire point: phase one only READS layout, so the
+   * browser computes it once and answers the rest of the hosts from the same
+   * computation, and phase two only WRITES, so nothing a host marks can invalidate
+   * a measurement another host has yet to take. Interleaving the two is what cost
+   * 143 ms at the first paint of a full dashboard.
+   *
+   * The queue is drained before either phase runs, so a check booked by the marks
+   * themselves - a hint appearing changes nothing about the scrollport, but an
+   * observer cannot know that until it has looked - books the NEXT frame rather
+   * than joining the pass in progress.
+   */
+  private static runOverflowChecks() {
+    const hosts = [...GfDashboardModuleHostComponent.pendingOverflowChecks];
+
+    GfDashboardModuleHostComponent.pendingOverflowChecks.clear();
+
+    const measurements = hosts.map((host) => {
+      host.syncObservedContentChild();
+
+      return host.measureOverflowState();
+    });
+
+    hosts.forEach((host, index) => {
+      host.applyOverflowState(measurements[index]);
+    });
+  }
+
+  /**
+   * Takes a host out of the shared queue, and cancels the frame once the last one
+   * has gone.
+   *
+   * Cancelling on an empty queue rather than on teardown of whichever host happens
+   * to be destroyed first is what keeps one module's removal from silencing the
+   * measurement every remaining module is waiting on.
+   */
+  private static releaseOverflowCheck(aHost: GfDashboardModuleHostComponent) {
+    GfDashboardModuleHostComponent.pendingOverflowChecks.delete(aHost);
+
+    if (GfDashboardModuleHostComponent.pendingOverflowChecks.size > 0) {
+      return;
+    }
+
+    GfDashboardModuleHostComponent.isOverflowCheckScheduled = false;
+
+    if (GfDashboardModuleHostComponent.overflowCheckFrameHandle !== undefined) {
+      cancelAnimationFrame(
+        GfDashboardModuleHostComponent.overflowCheckFrameHandle
+      );
+
+      GfDashboardModuleHostComponent.overflowCheckFrameHandle = undefined;
+    }
+  }
 
   // The body element's own box does not change when its content grows, because
   // it is the scrollport; the first child is what actually resizes. Re-pointed

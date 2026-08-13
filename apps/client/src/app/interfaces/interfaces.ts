@@ -64,7 +64,32 @@ import type { DataSource } from '@prisma/client';
  * against each other.
  */
 export interface GfAppQueryParams extends Params {
+  /**
+   * The identifier of a portfolio shared by link, and **nothing else**.
+   *
+   * It is the one query parameter that decides which of the root host's states is
+   * drawn, so it is deliberately not shared with any dialog. It used to be: the
+   * account access module reopened its own edit dialog with
+   * `?accessId=<id>&editDialog=true`, which forced the root host to treat
+   * `accessId` as a share only while `editDialog` was absent - and that made the
+   * root state depend on a flag every module can set and clear. An anonymous
+   * visitor following a share link that happened to carry a foreign module's
+   * `editDialog` was shown the sign-in prompt instead of the portfolio, and a
+   * signed-in viewer editing one of their own grants had their canvas replaced by
+   * a stranger's portfolio the moment an unrelated module cleared that flag.
+   *
+   * See {@link accessDialogId}, which is what the access module uses now.
+   */
   accessId?: string;
+  /**
+   * The grant the account access module is editing.
+   *
+   * Its own parameter rather than a reuse of {@link accessId}, because the two
+   * mean different things: this one addresses a dialog inside a module, that one
+   * decides what the root host draws. Paired with `editDialog` and
+   * `dialogModule` in the ordinary way, so it opens nothing on its own.
+   */
+  accessDialogId?: string;
   accountDetailDialog?: string;
   accountId?: string;
   activityId?: string;

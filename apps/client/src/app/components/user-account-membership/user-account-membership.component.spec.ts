@@ -75,8 +75,132 @@ describe('GfUserAccountMembershipComponent', () => {
     return fixture.componentInstance;
   };
 
+  /**
+   * Builds the panel with its real template, for the layout assertions below.
+   *
+   * The pricing-link tests deliberately render nothing, because the URL is computed
+   * from viewer state and the markup adds nothing to that claim. The opposite is true
+   * here: the defect being pinned is entirely in the markup, so the markup is what has
+   * to be built.
+   */
+  const createRenderedComponent = async () => {
+    stateChanged = new BehaviorSubject<{ user: unknown }>({
+      user: {
+        permissions: ['updateUserSettings'],
+        settings: { language: 'en', locale: 'en-GB' },
+        subscription: { offer: { price: 99 }, type: 'Basic' }
+      }
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [GfUserAccountMembershipComponent],
+      providers: [
+        {
+          provide: DataService,
+          useValue: {
+            fetchInfo: jest.fn(() => ({
+              baseCurrency: 'CHF',
+              globalPermissions: ['enableSubscription']
+            }))
+          }
+        },
+        { provide: MatSnackBar, useValue: { open: jest.fn() } },
+        { provide: NotificationService, useValue: {} },
+        { provide: UserService, useValue: { stateChanged } }
+      ]
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(GfUserAccountMembershipComponent);
+
+    fixture.detectChanges();
+
+    return fixture.nativeElement as HTMLElement;
+  };
+
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  /**
+   * How the panel behaves in a cell at this module's declared minimum size.
+   *
+   * Four columns by five rows leaves roughly 364px of body, and for a Basic viewer the
+   * card, the upgrade control, the price, the offer badge and the two secondary actions
+   * come to more than that. Two separate things went wrong as a result, and only the
+   * first of them was recoverable by the viewer:
+   *
+   * 1. The content was centred with `align-items-center` against a fixed `h-100`. A
+   *    centred flex item taller than its container overflows equally in both
+   *    directions, and block overflow before the container's start edge lies outside
+   *    the scrollable region altogether - so the top of the membership card was cut off
+   *    and no amount of scrolling brought it back.
+   * 2. The gap between the card and the controls beneath it was page-scale, so the
+   *    upgrade control - the only reason this module exists for a Basic viewer - was
+   *    pushed past the fold at the very size the module declares as usable.
+   *
+   * jsdom performs no layout, so what is asserted here is the arrangement that produces
+   * the behaviour rather than the pixels. That is the right level for it: the pixels are
+   * measured at runtime, and what a regression would do is put one of these classes
+   * back.
+   */
+  describe('the layout at the module minimum', () => {
+    it('centres with an auto margin rather than by aligning', async () => {
+      const element = await createRenderedComponent();
+      const layout = element.querySelector('.gf-membership-layout');
+
+      expect(layout).toBeTruthy();
+
+      // The three that made the overflow unreachable. `h-100` in particular capped the
+      // host at the visible height, so tall content spilled outside the box instead of
+      // extending the region the module's scroll affordance travels over.
+      expect(layout.classList.contains('align-items-center')).toBe(false);
+      expect(layout.classList.contains('h-100')).toBe(false);
+      expect(layout.classList.contains('justify-content-center')).toBe(false);
+    });
+
+    it('keeps the gutter that holds the row inside its cell', async () => {
+      const element = await createRenderedComponent();
+      const layout = element.querySelector('.gf-membership-layout');
+
+      // `container-fluid` is what cancels the negative inline margins of the row it
+      // wraps. Dropping it while rearranging the vertical centring would push the
+      // content past both side edges of the module.
+      expect(layout.classList.contains('container-fluid')).toBe(true);
+      expect(layout.classList.contains('d-flex')).toBe(true);
+    });
+
+    it('separates the controls from the card at module scale', async () => {
+      const element = await createRenderedComponent();
+      const controls = element.querySelector(
+        '.gf-membership-layout .d-flex.flex-column.mt-4'
+      );
+
+      expect(controls).toBeTruthy();
+      expect(element.querySelector('.mt-5')).toBeNull();
+    });
+
+    it('lets the secondary actions wrap instead of overflowing', async () => {
+      const element = await createRenderedComponent();
+      const actions = Array.from(
+        element.querySelectorAll('.justify-content-center')
+      ).find((node) => node.classList.contains('align-items-center'));
+
+      expect(actions).toBeTruthy();
+
+      // Four columns is narrow enough that "Try Premium" with its premium indicator
+      // and "Redeem Coupon" together exceed the body on a smaller canvas. Without
+      // wrapping, the second control ended up outside it.
+      expect(actions.classList.contains('flex-wrap')).toBe(true);
+    });
+
+    it('shows the upgrade control for a Basic viewer', async () => {
+      const element = await createRenderedComponent();
+
+      // A precondition for everything above: if this branch does not render there is
+      // no overflow to arrange, and the layout assertions would pass vacuously.
+      expect(element.textContent).toContain('Upgrade Plan');
+      expect(element.textContent).toContain('Redeem Coupon');
+    });
   });
 
   describe('the pricing link', () => {

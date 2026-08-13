@@ -288,16 +288,29 @@
       //
       // `!important` is unavoidable rather than lazy: Material declares
       // `.mat-mdc-table-sticky { position: sticky !important }` in its own component
-      // styles, so nothing short of `!important` can release it. The offsets and
-      // stacking order the CDK writes inline alongside that class are left in place
-      // because they are inert once the element is no longer positioned. Confined to
-      // module content, so the same tables keep their pinned columns wherever else
-      // they appear.
+      // styles, so nothing short of `!important` can reach it. Confined to module
+      // content, so the same tables keep their pinned columns wherever else they
+      // appear.
       //
-      // Only column stickiness is affected: no table in this workspace marks its
-      // header row sticky, so this cannot cost a pinned header.
+      // The release is expressed as `left`/`right` rather than as `position`, and that
+      // distinction is the whole point. This rule originally read
+      // `position: static !important`, on the stated grounds that "no table in this
+      // workspace marks its header row sticky, so this cannot cost a pinned header".
+      // That was true when it was written and is not true now: every table pins its
+      // header row, and because a cell pinned in two directions carries ONE `position`
+      // for both, dropping it took the header row down with the column. Measured at
+      // runtime, all seven tables on a canvas computed `position: static` and a header
+      // scrolled 184px above its own scrollport, leaving bare identifiers on screen -
+      // the exact defect the pinned header exists to prevent.
+      //
+      // Zeroing the two horizontal offsets instead releases the column and nothing
+      // else: with no `left` or `right` to resolve against, a cell that is sticky only
+      // horizontally has no offset to honour and rides with its table, while a header
+      // cell keeps the `top: 0` that pins it. The CDK writes all of these inline, which
+      // is why the reset has to carry `!important` as well.
       .mat-mdc-table-sticky {
-        position: static !important;
+        left: auto !important;
+        right: auto !important;
       }
     }
 
@@ -440,17 +453,33 @@
     // which module they were looking at.
     //
     // A descending ladder rather than one flat size, so a leaf that does nest two
-    // levels keeps the distinction between them; and it is anchored just above the
-    // title's 14px rather than below it, because a section heading still has to
-    // out-weigh the body text it introduces. `500` matches the weight the title
+    // levels keeps the distinction between them. `500` matches the weight the title
     // carries, so the difference a reader sees is size, in the right direction.
+    //
+    // The ladder sits BELOW the module title, and that correction is the point of the
+    // current values. It was originally anchored just ABOVE the title's 14px, on the
+    // reasoning that a section heading still has to out-weigh the body text it
+    // introduces - which is true, but it left the subordinate heading larger than the
+    // heading that owns it. Measured at runtime, the admin settings leaf rendered its
+    // `h2`s at 16px under a 14px module name and the FIRE leaf its `h3`s at 15px, so the
+    // hierarchy still ran backwards, just less far than the 32px it started from.
+    //
+    // The title now carries `title-medium` (16px, set in the module host) and the ladder
+    // descends from there. Both constraints have to hold at once, and getting one of them
+    // at the cost of the other is what each earlier attempt did: a section heading has to
+    // be SMALLER than the module that owns it and LARGER than the body text it
+    // introduces. Body text and table cells in these leaves measure 14px, so a section
+    // heading sized at 14px was distinguishable from a data cell only by its weight -
+    // measured that way at runtime, `h3` at 14px/500 against `<td>` at 14px/400. 15px is
+    // the one step that satisfies both: below the 16px title, above the 14px body.
+    //
+    // Every section heading a module actually renders is an `h3`, so the ladder's first
+    // step covers `h1` through `h4` rather than splitting at `h2` - a leaf that nests two
+    // levels of section heading does not exist here, and inventing a step for it would
+    // put one of the two levels back on the wrong side of a boundary that matters.
     .gridster-item-content {
       h1,
-      h2 {
-        font-size: 1rem;
-        font-weight: 500;
-      }
-
+      h2,
       h3,
       h4 {
         font-size: 0.9375rem;
@@ -474,12 +503,13 @@
       // the subordinate one. Allocations shows it most plainly, where "By Sector" and
       // its eleven siblings each out-shouted the word "Allocations".
       //
-      // Brought to the same 1rem/500 the heading ladder above uses, so a section title
-      // reads consistently whether the leaf expressed it as a heading or as a card.
-      // Scoped to module bodies, so a card title in a dialog - which really is the
-      // biggest thing on its own surface - is untouched.
+      // Brought to the same size and weight the section-heading step of the ladder above
+      // uses, so a section title reads consistently whether the leaf expressed it as a
+      // heading or as a card - and so it stays below the module's own name rather than
+      // tying with it. Scoped to module bodies, so a card title in a dialog - which
+      // really is the biggest thing on its own surface - is untouched.
       mat-card-title {
-        font-size: 1rem;
+        font-size: 0.9375rem;
         font-weight: 500;
       }
 

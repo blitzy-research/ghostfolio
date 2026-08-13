@@ -45,6 +45,8 @@
       i18n-title
       mat-button
       title="Refresh dashboard"
+      [attr.aria-busy]="isRefreshing ? 'true' : null"
+      [disabled]="isRefreshing"
       (click)="onLogoClick()"
     >
       <gf-logo class="px-2" />
@@ -57,19 +59,23 @@
             The badge content is a bare non-breaking mark because the badge is a
             dot, not a count: it reports only that filters are in force, and the
             library hides a textless badge from assistive technology of its own
-            accord. It is deliberately left without a spoken description - a
-            fixed one would be announced even while the dot is suppressed, since
-            suppression is presentational - and the panel this button opens
-            already lists the filters in force as visible text.
+            accord. The badge itself stays without a spoken description - a fixed
+            one would be announced even while the dot is suppressed, since
+            suppression is presentational - and the state is carried by the
+            BUTTON'S OWN NAME below instead, which changes with it and so is
+            re-announced when it changes and silent when there is nothing to say.
           -->
           <button
             #assistantTrigger="matMenuTrigger"
-            aria-label="Assistant"
             class="h-100 no-min-width px-2"
-            i18n-aria-label
             mat-button
             matBadge="&NoBreak;"
             matBadgeSize="small"
+            [attr.aria-label]="
+              hasFilters && hasPermissionToChangeFilters
+                ? assistantWithFiltersLabel
+                : assistantLabel
+            "
             [matBadgeHidden]="!hasFilters || !hasPermissionToChangeFilters"
             [matMenuTriggerFor]="assistantMenu"
             [matMenuTriggerRestoreFocus]="false"

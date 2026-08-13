@@ -6,6 +6,7 @@ import { PrismaService } from '@ghostfolio/api/services/prisma/prisma.service';
 import { PropertyService } from '@ghostfolio/api/services/property/property.service';
 import { TagService } from '@ghostfolio/api/services/tag/tag.service';
 
+import { ForbiddenException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -38,25 +39,37 @@ describe('UserService', () => {
   const userId = 'c0a8012e-4f7b-4d1a-9f3e-2b6d8c5a1e44';
 
   let deleteActivities: jest.Mock;
+  let isUserSignupEnabled: jest.Mock;
   let prismaServiceMock: {
     access: { deleteMany: jest.Mock };
     account: { deleteMany: jest.Mock };
     analytics: { delete: jest.Mock };
     settings: { delete: jest.Mock };
-    user: { delete: jest.Mock };
+    user: {
+      create: jest.Mock;
+      delete: jest.Mock;
+      findMany: jest.Mock;
+      update: jest.Mock;
+    };
     userDashboardLayout: { delete: jest.Mock };
   };
   let userService: UserService;
 
   beforeEach(async () => {
     deleteActivities = jest.fn().mockResolvedValue(undefined);
+    isUserSignupEnabled = jest.fn().mockResolvedValue(true);
 
     prismaServiceMock = {
       access: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       account: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       analytics: { delete: jest.fn().mockResolvedValue({}) },
       settings: { delete: jest.fn().mockResolvedValue({}) },
-      user: { delete: jest.fn().mockResolvedValue({ id: userId }) },
+      user: {
+        create: jest.fn().mockResolvedValue({ id: userId }),
+        delete: jest.fn().mockResolvedValue({ id: userId }),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn().mockResolvedValue({ id: userId })
+      },
       userDashboardLayout: { delete: jest.fn().mockResolvedValue({ userId }) }
     };
 
@@ -64,17 +77,74 @@ describe('UserService', () => {
       providers: [
         UserService,
         { provide: ActivitiesService, useValue: { deleteActivities } },
-        { provide: ConfigurationService, useValue: { get: () => undefined } },
+        {
+          provide: ConfigurationService,
+          useValue: {
+            // Only the salt is answered. Every other key stays undefined so the
+            // subscription feature remains off, which is what the closure tests
+            // below already depend on.
+            get: (aKey: string) =>
+              aKey === 'ACCESS_TOKEN_SALT' ? 'ACCESS_TOKEN_SALT' : undefined
+          }
+        },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
-        { provide: I18nService, useValue: {} },
+        {
+          provide: I18nService,
+          // Reached only on the creating path, where the default account this
+          // service opens alongside the user takes its name from a translation.
+          useValue: { getTranslation: () => 'My Account' }
+        },
         { provide: PrismaService, useValue: prismaServiceMock },
-        { provide: PropertyService, useValue: {} },
+        { provide: PropertyService, useValue: { isUserSignupEnabled } },
         { provide: SubscriptionService, useValue: {} },
         { provide: TagService, useValue: {} }
       ]
     }).compile();
 
     userService = module.get(UserService);
+  });
+
+  /**
+   * Account creation is gated on the deployment still admitting accounts, and the
+   * gate is asserted at the point of creation.
+   *
+   * It is asserted at both existing call sites too, so nothing observable changes
+   * today - which is exactly what makes it worth pinning here rather than through
+   * either of those. What is being protected is the next caller: a check that lives
+   * only in the callers is one a new caller can omit, and the omission would be
+   * silent, because creating a row is not an operation that fails on its own.
+   */
+  describe('createUser', () => {
+    it('creates the account while the deployment admits them', async () => {
+      await userService.createUser();
+
+      expect(isUserSignupEnabled).toHaveBeenCalledTimes(1);
+      expect(prismaServiceMock.user.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to create one once the deployment has stopped admitting them', async () => {
+      isUserSignupEnabled.mockResolvedValue(false);
+
+      await expect(userService.createUser()).rejects.toThrow(
+        ForbiddenException
+      );
+
+      // The assertion that matters: refused BEFORE the row is written, so a caller
+      // that forgot to check cannot leave an account behind.
+      expect(prismaServiceMock.user.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an externally supplied identity on the same ground', async () => {
+      isUserSignupEnabled.mockResolvedValue(false);
+
+      await expect(
+        userService.createUser({
+          data: { provider: 'GOOGLE', thirdPartyId: 'THIRD_PARTY_ID' }
+        })
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(prismaServiceMock.user.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteUser', () => {

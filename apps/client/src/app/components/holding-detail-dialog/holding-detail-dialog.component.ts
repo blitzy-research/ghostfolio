@@ -12,6 +12,7 @@ import {
   downloadAsFile,
   isKnownDataSource
 } from '@ghostfolio/common/helper';
+import { reportSanitizedError } from '@ghostfolio/common/helper';
 import {
   Activity,
   DataProviderInfo,
@@ -62,6 +63,7 @@ import { IonIcon } from '@ionic/angular/standalone';
 import { Account, MarketData, Tag } from '@prisma/client';
 import { isUUID } from 'class-validator';
 import { format, isSameMonth, isToday, parseISO } from 'date-fns';
+import { StatusCodes } from 'http-status-codes';
 import { addIcons } from 'ionicons';
 import {
   arrowDownCircleOutline,
@@ -79,6 +81,15 @@ import {
   HoldingDetailDialogParams,
   HoldingDetailDialogResult
 } from './interfaces/interfaces';
+
+/**
+ * The stable event identifier a failed holding read is reported under.
+ *
+ * Fixed so it stays searchable in a log that outlives the dialog, and used only for
+ * a genuine fault: a holding that simply has no details to return is an ordinary
+ * outcome rather than something to report.
+ */
+const HOLDING_DETAIL_FETCH_FAILED_EVENT = 'GF-HOLDING-DETAIL-FETCH-FAILED';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -128,8 +139,41 @@ export class GfHoldingDetailDialogComponent implements OnInit {
   public dividendInBaseCurrencyPrecision = 2;
   public dividendYieldPercentWithCurrencyEffect: number;
   public feeInBaseCurrency: number;
+  /**
+   * Whether the holding's own details could not be read.
+   *
+   * The request had no failure handler at all, so a rejection left every field
+   * undefined and the dialog sat on its loading state for as long as it stayed
+   * open - with no message, no retry and, because the header takes its title from
+   * the profile that never arrived, not even a name. A cash position reaches
+   * exactly this path: it has no asset profile to read, so the server answers 404
+   * and the dialog hung on the one holding almost every portfolio contains.
+   */
+  public hasError = false;
+
+  /**
+   * Whether the failure was the holding simply having no details to show.
+   *
+   * Separated from any other failure because it is not really an error from the
+   * viewer's side and must not be dressed up as one: a cash line is a balance, it
+   * has no market price, no chart and no asset profile, so "not found" is the
+   * correct answer to the question and the dialog should say so plainly rather
+   * than offering to retry something that will never succeed.
+   */
+  public hasNoDetails = false;
+
   public hasPermissionToCreateOwnTag: boolean;
   public hasPermissionToReadMarketDataOfOwnAssetProfile: boolean;
+
+  /**
+   * Whether the holding's own details are still on their way.
+   *
+   * Held explicitly rather than inferred from a field being undefined, because
+   * every one of those fields is legitimately undefined while the request is in
+   * flight AND after it fails - which is precisely why the two states were
+   * indistinguishable before.
+   */
+  public isLoading = true;
   public historicalDataItems: LineChartItem[];
   public holdingForm: FormGroup;
   public investmentInBaseCurrencyWithCurrencyEffect: number;
@@ -283,14 +327,107 @@ export class GfHoldingDetailDialogComponent implements OnInit {
         this.changeDetectorRef.markForCheck();
       });
 
+    this.loadHoldingDetail();
+
+    this.userService.stateChanged
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((state) => {
+        if (state?.user) {
+          this.user = state.user;
+
+          this.hasPermissionToCreateOwnTag =
+            hasPermission(this.user.permissions, permissions.createOwnTag) &&
+            this.user?.settings?.isExperimentalFeatures;
+
+          this.tagsAvailable =
+            this.user?.tags?.map((tag) => {
+              return {
+                ...tag,
+                name: translate(tag.name)
+              };
+            }) ?? [];
+
+          this.changeDetectorRef.markForCheck();
+        }
+      });
+  }
+
+  public onCloneActivity(aActivity: Activity) {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
+
+    // The flag is addressed to the activities module by name, so no other
+    // co-mounted module consumes it, and the three keys that identify *this*
+    // dialog are cleared in the same navigation - without that the shell would
+    // see its own flag still standing and reopen this dialog on top of the one
+    // being asked for.
+    void this.router.navigate([], {
+      queryParams: {
+        activityId: aActivity.id,
+        createDialog: true,
+        dataSource: null,
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        holdingDetailDialog: null,
+        symbol: null
+      },
+      queryParamsHandling: 'merge'
+    });
+
+    this.dialogRef.close();
+  }
+
+  /**
+   * Closes the loading state after a failed read and classifies what failed.
+   *
+   * The classification is the whole of the cash fix. A holding with no asset
+   * profile - a cash balance is the everyday example - genuinely has no detail to
+   * return, and the server says so with 404. Treating that as an error would offer
+   * a retry that can only fail again, so it is reported as the absence it is, and
+   * anything else is reported as a fault that is worth trying again.
+   *
+   * The status is read defensively rather than by asserting an `HttpErrorResponse`:
+   * this handler must finish the loading state for ANY rejection, including one that
+   * never reached the network and therefore carries no status at all.
+   */
+  private finalizeHoldingDetail(aError: unknown) {
+    const status = (aError as { status?: number })?.status;
+
+    this.hasNoDetails = status === StatusCodes.NOT_FOUND;
+    this.hasError = !this.hasNoDetails;
+    this.isLoading = false;
+
+    // Reported only for a genuine fault. A holding without details is an ordinary
+    // outcome, and logging it would put a line in the console of every portfolio
+    // that holds cash.
+    if (this.hasError) {
+      reportSanitizedError(HOLDING_DETAIL_FETCH_FAILED_EVENT, aError);
+    }
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Reads the holding's own details.
+   *
+   * Extracted so it can be asked for a SECOND time. The request used to be issued
+   * inline with no failure handler, which made a rejection unrecoverable in two
+   * separate ways: nothing reported it, and there was no way to ask again without
+   * closing and reopening the dialog - which, since the dialog is addressed by a
+   * query parameter that was still set, reopened it into the same dead state.
+   */
+  private loadHoldingDetail() {
     this.dataService
       .fetchHoldingDetail({
         dataSource: this.data.dataSource,
         symbol: this.data.symbol
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(
-        ({
+      .subscribe({
+        error: (error: unknown) => {
+          this.finalizeHoldingDetail(error);
+        },
+        next: ({
           activitiesCount,
           averagePrice,
           dataProviderInfo,
@@ -540,60 +677,32 @@ export class GfHoldingDetailDialogComponent implements OnInit {
             this.fetchMarketData();
           }
 
-          this.changeDetectorRef.markForCheck();
-        }
-      );
-
-    this.userService.stateChanged
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((state) => {
-        if (state?.user) {
-          this.user = state.user;
-
-          this.hasPermissionToCreateOwnTag =
-            hasPermission(this.user.permissions, permissions.createOwnTag) &&
-            this.user?.settings?.isExperimentalFeatures;
-
-          this.tagsAvailable =
-            this.user?.tags?.map((tag) => {
-              return {
-                ...tag,
-                name: translate(tag.name)
-              };
-            }) ?? [];
+          this.isLoading = false;
 
           this.changeDetectorRef.markForCheck();
         }
       });
   }
 
-  public onCloneActivity(aActivity: Activity) {
-    this.dashboardIntentService
-      .getRevealModuleSubject()
-      .next(DashboardModuleType.ACTIVITIES);
-
-    // The flag is addressed to the activities module by name, so no other
-    // co-mounted module consumes it, and the three keys that identify *this*
-    // dialog are cleared in the same navigation - without that the shell would
-    // see its own flag still standing and reopen this dialog on top of the one
-    // being asked for.
-    void this.router.navigate([], {
-      queryParams: {
-        activityId: aActivity.id,
-        createDialog: true,
-        dataSource: null,
-        dialogModule: DashboardModuleType.ACTIVITIES,
-        holdingDetailDialog: null,
-        symbol: null
-      },
-      queryParamsHandling: 'merge'
-    });
-
+  public onClose() {
     this.dialogRef.close();
   }
 
-  public onClose() {
-    this.dialogRef.close();
+  /**
+   * Tries the holding's details again.
+   *
+   * Offered only for a failure that could plausibly have been transient, which is
+   * why the no-details case does not get this control: retrying a holding that has
+   * no asset profile would fail identically every time, and offering the action
+   * would be an invitation to keep pressing it.
+   */
+  public onRetryHoldingDetail() {
+    this.hasError = false;
+    this.isLoading = true;
+
+    this.changeDetectorRef.markForCheck();
+
+    this.loadHoldingDetail();
   }
 
   public onCloseHolding() {

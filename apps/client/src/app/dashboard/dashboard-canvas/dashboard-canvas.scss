@@ -128,6 +128,45 @@
     --gf-dashboard-module-body-reserve: calc(0.75rem + 3.5rem + 0.75rem);
   }
 
+  // A cell too short to give a pinned button away.
+  //
+  // Everything above assumes the button can be pinned to the module's bottom edge
+  // and cost the reader only the band it occupies. That holds while the body is
+  // several times the button's height and stops holding at the smallest cells: a
+  // two-row cell leaves a body near 120px, and a 56px button with its inset covers
+  // more than half of it, so a control scrolling past underneath is simply hidden -
+  // and unlike the end of the content, which the reserve above clears, a control in
+  // the MIDDLE has nothing to clear it.
+  //
+  // Both declarations are undone rather than adjusted. Back in normal flow the
+  // button sits after the content and occludes nothing at all, and the reserve that
+  // cleared the pinned band becomes dead space, so it goes back to the plain gutter.
+  // The trailing alignment is kept: it is what puts the button in the same reading
+  // position at every cell size, which is the one thing that should not change with
+  // the cell.
+  //
+  // Keyed on a class the template computes from the item's row count rather than on
+  // a container query. The grid writes its cells' geometry as inline transforms and
+  // sizes, so a query container here would have to be the body inside the card - and
+  // making that a size container means its own height stops depending on its
+  // contents, which is the mechanism that gives the body its height in the first
+  // place. The row count is the same fact, known one layer earlier, and it can be
+  // asserted without a browser.
+  ::ng-deep .gf-dashboard-module-compact .fab-container {
+    inset-block-end: auto;
+    inset-inline: auto;
+    position: static;
+  }
+
+  ::ng-deep
+    .gf-dashboard-module-compact
+    .gridster-item-content:has(.fab-container) {
+    --gf-dashboard-module-body-reserve: var(
+      --gf-dashboard-module-body-gutter,
+      1rem
+    );
+  }
+
   // Every card this template draws itself - the two error notices - plus the
   // cards the public-portfolio branch renders inside it.
   //
@@ -450,7 +489,18 @@
     // pane's PADDING box rather than against its scrollable width, so without this
     // declaration this state would stay starved even once the grid beside it
     // scrolls.
-    min-inline-size: min(var(--gf-dashboard-canvas-min-width), 100vw);
+    //
+    // The second term is the PANE, not the viewport, and the difference is the
+    // whole of a defect. `100vw` ignores that the drawer is `mode="side"` and takes
+    // its width out of this pane, so on a 375px window the floor resolved to the
+    // full 375px inside a 151px pane: the box overhung the pane by exactly the
+    // drawer's width, and since the notice centres itself in that box, half the
+    // card - the description and its only control - sat behind the open catalog. On
+    // a first visit the catalog is open by design, so that was the state of the
+    // very first screen a new viewer saw. Against the containing block the floor
+    // can no longer exceed what is actually visible, while still lifting this state
+    // clear of the starvation the declaration exists to prevent.
+    min-inline-size: min(var(--gf-dashboard-canvas-min-width), 100%);
 
     // Above the grid's own chrome, and below the floating trigger, which is a
     // sibling inside this same region at a far higher value, and below the drawer,

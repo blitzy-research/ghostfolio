@@ -5,6 +5,38 @@
   and lands the reader on nothing. The condition is the one the host class is
   derived from, so the element and the styling that sizes it appear together.
 -->
+<!--
+  Said before anything else on the page, because it explains an absence: the
+  affordances the public configuration gates - the live-demo Create Account control
+  among them - are simply not rendered when it could not be read, so without this
+  the viewer is looking at an application that appears whole and is quietly missing
+  parts.
+
+  `role="status"` rather than an alert: the application works, the viewer is not
+  interrupted, and it is polite by design. The retry is the recovery, and it is a
+  real control rather than an instruction to reload, because a reload would ask the
+  same unreachable server for the shell as well.
+-->
+@if (isPublicInfoUnavailable) {
+  <div
+    class="align-items-center d-flex flex-wrap justify-content-center px-3 py-2"
+    role="status"
+  >
+    <span class="mr-2 text-center" i18n
+      >Ghostfolio could not be reached, so some features are unavailable.</span
+    >
+    <button
+      mat-button
+      type="button"
+      [attr.aria-busy]="isRetryingPublicInfo ? 'true' : null"
+      [disabled]="isRetryingPublicInfo"
+      (click)="onRetryPublicInfo()"
+    >
+      <span i18n>Try again</span>
+    </button>
+  </div>
+}
+
 @if (hasInfoMessage) {
   <header>
     <div class="info-message-container">

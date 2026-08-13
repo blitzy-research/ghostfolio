@@ -55,7 +55,23 @@
                 }
               </mat-select>
               @if (isLoading) {
-                <mat-spinner class="position-absolute" [diameter]="20" />
+                <mat-spinner
+                  aria-label="Searching"
+                  class="position-absolute"
+                  i18n-aria-label
+                  [diameter]="20"
+                />
+              }
+              <!--
+                Says why "Load Dividends" is refusing. A holding has to be chosen first
+                and nothing said so: the control simply stayed greyed out.
+              -->
+              @if (
+                assetProfileForm
+                  .get('assetProfileIdentifier')
+                  .hasError('required')
+              ) {
+                <mat-error i18n>Please choose a holding.</mat-error>
               }
             </mat-form-field>
             <div class="d-flex flex-column justify-content-center">
@@ -143,6 +159,16 @@
               (selectedActivities)="updateSelection($event)"
             />
           }
+          <!--
+            Reported beside the control that produced it, because the selection it
+            applies to is still on the screen and still submittable. An alert rather
+            than a status: the viewer asked for an import and did not get one.
+          -->
+          @if (errorMessage) {
+            <div class="import-activities-error mt-3" role="alert">
+              {{ errorMessage }}
+            </div>
+          }
           <div class="d-flex justify-content-end mt-3">
             <button mat-button (click)="onReset(stepper)">
               <ng-container i18n>Back</ng-container>
@@ -151,7 +177,8 @@
               class="ml-1"
               color="primary"
               mat-flat-button
-              [disabled]="!selectedActivities?.length"
+              [attr.aria-busy]="isImporting ? 'true' : null"
+              [disabled]="!selectedActivities?.length || isImporting"
               (click)="onImportActivities()"
             >
               <ng-container i18n>Import</ng-container>

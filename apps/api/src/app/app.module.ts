@@ -2,6 +2,7 @@ import { EventsModule } from '@ghostfolio/api/events/events.module';
 import { BullBoardAuthMiddleware } from '@ghostfolio/api/middlewares/bull-board-auth.middleware';
 import { HtmlTemplateMiddleware } from '@ghostfolio/api/middlewares/html-template.middleware';
 import { ConfigurationModule } from '@ghostfolio/api/services/configuration/configuration.module';
+import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import { CronModule } from '@ghostfolio/api/services/cron/cron.module';
 import { DataProviderModule } from '@ghostfolio/api/services/data-provider/data-provider.module';
 import { ExchangeRateDataModule } from '@ghostfolio/api/services/exchange-rate-data/exchange-rate-data.module';
@@ -97,12 +98,43 @@ import { UserModule } from './user/user.module';
           })
         ]
       : []),
-    BullModule.forRoot({
-      redis: {
-        db: parseInt(process.env.REDIS_DB ?? '0', 10),
-        host: process.env.REDIS_HOST,
-        password: process.env.REDIS_PASSWORD,
-        port: parseInt(process.env.REDIS_PORT ?? '6379', 10)
+    /**
+     * Resolved asynchronously, through the configuration service, and NOT from
+     * `process.env` at this point in the file.
+     *
+     * The synchronous form read `process.env.REDIS_*` while this decorator's
+     * `imports` array was being evaluated - which is before `ConfigModule.forRoot()`
+     * further down the same array has loaded the environment file. Every other
+     * consumer reads its configuration during dependency injection, by which time
+     * the file is loaded, so the queue was the single component that saw an empty
+     * environment: it connected to Redis on the defaults with no password and the
+     * process died at boot with `NOAUTH Authentication required`. The official start
+     * command therefore only worked if the operator had already exported the
+     * variables into the shell by hand.
+     *
+     * An async factory runs during injection like everything else, so the values
+     * arrive validated and coerced by envalid rather than parsed out of strings
+     * here, and the ordering of this array stops being load-bearing - which matters
+     * because the array is alphabetically sorted, so any ordering fix would have
+     * been silently undone by the next person to re-sort it.
+     */
+    BullModule.forRootAsync({
+      imports: [ConfigurationModule],
+      inject: [ConfigurationService],
+      useFactory: (configurationService: ConfigurationService) => {
+        const redisPassword = configurationService.get('REDIS_PASSWORD');
+
+        return {
+          redis: {
+            db: configurationService.get('REDIS_DB'),
+            host: configurationService.get('REDIS_HOST'),
+            // Absent rather than empty when unset: an empty string would have the
+            // client send an `AUTH` command with no credential to a Redis that does
+            // not ask for one, which it rejects.
+            password: redisPassword || undefined,
+            port: configurationService.get('REDIS_PORT')
+          }
+        };
       }
     }),
     CacheModule,

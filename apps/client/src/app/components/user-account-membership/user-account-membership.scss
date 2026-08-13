@@ -1,10 +1,29 @@
 :host {
   color: rgb(var(--dark-primary-text));
   display: block;
-  height: 100%;
+
+  // A floor rather than a fixed height. Fixed at 100% of the scrolling body, the
+  // host could never be taller than the visible area, so content that did not fit
+  // spilled outside its box instead of extending the scrollable region - and the
+  // module's scroll affordance had nothing to travel over. As a minimum it still
+  // fills a roomy cell, which is what keeps the card centred, and it grows with
+  // its content in a cell at the module's minimum size.
+  min-height: 100%;
 
   .module-membership-card {
     max-width: 17rem;
+  }
+
+  // Centres the content vertically only while there is room to do so. See the note
+  // above this element in the template for why an auto margin is used here rather
+  // than `align-items: center`: the two agree whenever the content fits, and only
+  // this one keeps the overflow reachable when it does not.
+  .gf-membership-layout {
+    min-block-size: 100%;
+
+    > .row {
+      margin-block: auto;
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import {
   GoogleCallbackGuard,
-  OidcCallbackGuard
+  OidcCallbackGuard,
+  OidcLoginGuard
 } from '@ghostfolio/api/app/auth/oauth-callback.guard';
 import { WebAuthService } from '@ghostfolio/api/app/auth/web-auth.service';
 import { HasPermissionGuard } from '@ghostfolio/api/guards/has-permission.guard';
@@ -107,16 +108,21 @@ export class AuthController {
     }
   }
 
+  /**
+   * Starts the OIDC flow by handing the visitor to the provider.
+   *
+   * The body is empty because the guard does all of the work: it refuses with a 403
+   * when the provider is not configured, and otherwise Passport's redirect to the
+   * provider terminates the request before the handler is reached. The feature check
+   * lives IN the guard rather than here - a guard decides before a handler is
+   * entered, so a check in this body never ran and Passport raised `Unknown
+   * authentication strategy` first, which the caller saw as a 500.
+   */
   @Get('oidc')
-  @UseGuards(AuthGuard('oidc'))
+  @UseGuards(OidcLoginGuard)
   @Version(VERSION_NEUTRAL)
   public oidcLogin() {
-    if (!this.configurationService.get('ENABLE_FEATURE_AUTH_OIDC')) {
-      throw new HttpException(
-        getReasonPhrase(StatusCodes.FORBIDDEN),
-        StatusCodes.FORBIDDEN
-      );
-    }
+    // Intentionally empty; see the comment above.
   }
 
   @Get('oidc/callback')

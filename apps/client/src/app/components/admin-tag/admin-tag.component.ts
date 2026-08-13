@@ -1,7 +1,7 @@
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { CreateTagDto, UpdateTagDto } from '@ghostfolio/common/dtos';
 import { ConfirmationDialogType } from '@ghostfolio/common/enums';
-import { getLocale } from '@ghostfolio/common/helper';
+import { getLocale, reportSanitizedError } from '@ghostfolio/common/helper';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 import { GfValueComponent } from '@ghostfolio/ui/value';
@@ -24,6 +24,7 @@ import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Params, Router, RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { Tag } from '@prisma/client';
+import { StatusCodes } from 'http-status-codes';
 import { addIcons } from 'ionicons';
 import {
   createOutline,
@@ -35,6 +36,13 @@ import { DeviceDetectorService } from 'ngx-device-detector';
 
 import { GfCreateOrUpdateTagDialogComponent } from './create-or-update-tag-dialog/create-or-update-tag-dialog.component';
 import { CreateOrUpdateTagDialogParams } from './create-or-update-tag-dialog/interfaces/interfaces';
+
+/**
+ * The stable event identifier a refused tag write is reported under.
+ *
+ * Fixed so it stays searchable, and carrying the reason only - never the response.
+ */
+const TAG_WRITE_FAILED_EVENT = 'GF-TAG-WRITE-FAILED';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -174,6 +182,63 @@ export class GfAdminTagComponent implements OnInit {
   }
 
   /**
+   * Says why a tag could not be saved, and re-reads the list.
+   *
+   * A duplicate name is worth naming precisely, because it is the failure a viewer can
+   * actually resolve and it is the one this screen invites: a tag is unique per owner by
+   * database constraint, so a repeat is rejected outright. With no failure handler at all
+   * the rejection surfaced as the application-wide "something went wrong" notice, the
+   * name the viewer had typed was gone with the dialog, and the list was left exactly as
+   * it had been - which, for a create, is indistinguishable from the tag having been
+   * added.
+   *
+   * The list is re-read on this path for that reason: whatever the server holds is what
+   * ends up on the screen, rather than an absence the viewer has to interpret.
+   *
+   * @param aError the caught value, read only for its status.
+   * @param aName the name that was refused, used only in the message shown to its owner.
+   */
+  private reportFailedTagWrite(aError: unknown, aName: string) {
+    const status = (aError as { status?: number })?.status;
+
+    this.notificationService.alert({
+      title:
+        status === StatusCodes.CONFLICT || status === StatusCodes.BAD_REQUEST
+          ? $localize`A tag named ${aName} already exists.`
+          : $localize`The tag could not be saved. Please try again.`
+    });
+
+    reportSanitizedError(TAG_WRITE_FAILED_EVENT, aError);
+
+    this.fetchTags();
+  }
+
+  /**
+   * The tag names already taken in one ownership scope.
+   *
+   * Scoped rather than global, because a tag is unique per owner: a global tag and a
+   * user's tag may legitimately share a name, so comparing against every name on this
+   * screen would refuse writes the store would happily accept.
+   *
+   * @param aScope the owner to look within, and optionally a tag to leave out of the
+   * comparison - which is what lets a rename keep its own name.
+   * @returns the names taken in that scope.
+   */
+  private getExistingTagNames({
+    excludeId,
+    userId
+  }: {
+    excludeId?: string;
+    userId: string;
+  }) {
+    return (this.tags ?? [])
+      .filter((tag) => {
+        return (tag.userId ?? null) === userId && tag.id !== excludeId;
+      })
+      .map(({ name }) => name);
+  }
+
+  /**
    * Removes the query parameters this component's dialogs travel on, and only
    * those.
    *
@@ -282,6 +347,12 @@ export class GfAdminTagComponent implements OnInit {
       CreateOrUpdateTagDialogParams
     >(GfCreateOrUpdateTagDialogComponent, {
       data: {
+        // A tag created here carries no owner, so the names it can collide with are
+        // the other ownerless ones. Passed in because the dialog cannot know which
+        // scope this screen writes to - and because the database will not refuse the
+        // collision itself: Postgres treats the NULL owner of two global tags as
+        // distinct, so the unique index over (name, userId) never fires for them.
+        existingNames: this.getExistingTagNames({ userId: null }),
         tag: {
           id: null,
           name: null
@@ -300,6 +371,9 @@ export class GfAdminTagComponent implements OnInit {
             .postTag(tag)
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe({
+              error: (error: unknown) => {
+                this.reportFailedTagWrite(error, tag.name);
+              },
               next: () => {
                 this.userService
                   .get(true)
@@ -321,6 +395,15 @@ export class GfAdminTagComponent implements OnInit {
       CreateOrUpdateTagDialogParams
     >(GfCreateOrUpdateTagDialogComponent, {
       data: {
+        // The names taken in this tag's OWN scope, its own excluded - a rename onto
+        // the name it already has is not a collision. This is the case the database
+        // does refuse, with a uniqueness rejection the server answers as `409`;
+        // checking here as well means the refused name is still on screen to correct
+        // instead of leaving with the dialog.
+        existingNames: this.getExistingTagNames({
+          excludeId: id,
+          userId: this.tags?.find((tag) => tag.id === id)?.userId ?? null
+        }),
         tag: {
           id,
           name
@@ -339,6 +422,9 @@ export class GfAdminTagComponent implements OnInit {
             .putTag(tag)
             .pipe(takeUntilDestroyed(this.destroyRef))
             .subscribe({
+              error: (error: unknown) => {
+                this.reportFailedTagWrite(error, tag.name);
+              },
               next: () => {
                 this.userService
                   .get(true)

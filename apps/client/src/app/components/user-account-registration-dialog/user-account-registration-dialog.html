@@ -98,6 +98,7 @@
       <mat-form-field appearance="outline" class="pt-3 w-100 without-hint">
         <mat-label i18n>Security Token</mat-label>
         <textarea
+          #accessTokenField
           cdkTextareaAutosize
           matInput
           readonly
@@ -109,13 +110,25 @@
             color="secondary"
             mat-flat-button
             [cdkCopyToClipboard]="accessToken"
+            (cdkCopyToClipboardCopied)="onAccessTokenCopied($event)"
             (click)="enableCreateAccountButton()"
           >
-            <ion-icon class="mr-1" name="copy-outline" />
+            <ion-icon aria-hidden="true" class="mr-1" name="copy-outline" />
             <span i18n>Copy to clipboard</span>
           </button>
         </div>
       </mat-form-field>
+      <!--
+        Says whether the copy actually happened. A live region rather than a
+        notification, because the token is on screen and must not be moved away
+        from, and polite rather than assertive because the visitor asked for this and
+        is not being interrupted. Empty until there is something to report, so it
+        announces nothing on arrival.
+      -->
+      <div aria-atomic="true" aria-live="polite" class="sr-only" role="status">
+        {{ accessTokenAnnouncement }}
+      </div>
+
       <div align="end" class="mt-1" mat-dialog-actions>
         <div>
           <!--

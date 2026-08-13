@@ -25,7 +25,11 @@
                   [disabled]="!hasPermissionToUpdateUserSettings"
                   [value]="user.settings.baseCurrency"
                   (selectionChange)="
-                    onChangeUserSetting('baseCurrency', $event.value)
+                    onChangeUserSetting(
+                      'baseCurrency',
+                      $event.value,
+                      $event.source
+                    )
                   "
                 >
                   @for (currency of currencies; track currency) {
@@ -49,7 +53,8 @@
                     (selectionChange)="
                       onChangeUserSetting(
                         'performanceCalculationType',
-                        $event.value
+                        $event.value,
+                        $event.source
                       )
                     "
                   >
@@ -84,7 +89,7 @@
                   [disabled]="!hasPermissionToUpdateUserSettings"
                   [value]="language"
                   (selectionChange)="
-                    onChangeUserSetting('language', $event.value)
+                    onChangeUserSetting('language', $event.value, $event.source)
                   "
                 >
                   <mat-option [value]="null" />
@@ -161,7 +166,7 @@
                   [disabled]="!hasPermissionToUpdateUserSettings"
                   [value]="user.settings.locale"
                   (selectionChange)="
-                    onChangeUserSetting('locale', $event.value)
+                    onChangeUserSetting('locale', $event.value, $event.source)
                   "
                 >
                   <mat-option [value]="null" />
@@ -185,7 +190,11 @@
                   [placeholder]="appearancePlaceholder"
                   [value]="user?.settings?.colorScheme"
                   (selectionChange)="
-                    onChangeUserSetting('colorScheme', $event.value)
+                    onChangeUserSetting(
+                      'colorScheme',
+                      $event.value,
+                      $event.source
+                    )
                   "
                 >
                   <mat-option i18n [value]="null">Auto</mat-option>

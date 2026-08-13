@@ -6,6 +6,10 @@ import {
   PROPERTY_COUPONS
 } from '@ghostfolio/common/config';
 import {
+  CreateStripeCheckoutSessionDto,
+  RedeemCouponDto
+} from '@ghostfolio/common/dtos';
+import {
   Coupon,
   CreateStripeCheckoutSessionResponse
 } from '@ghostfolio/common/interfaces';
@@ -55,7 +59,7 @@ export class SubscriptionController {
   @Post('redeem-coupon')
   @HttpCode(StatusCodes.OK)
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
-  public async redeemCoupon(@Body() { couponCode }: { couponCode: string }) {
+  public async redeemCoupon(@Body() { couponCode }: RedeemCouponDto) {
     if (!this.request.user) {
       throw new HttpException(
         getReasonPhrase(StatusCodes.FORBIDDEN),
@@ -151,7 +155,7 @@ export class SubscriptionController {
   @Post('stripe/checkout-session')
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
   public async createStripeCheckoutSession(
-    @Body() { couponId, priceId }: { couponId?: string; priceId: string }
+    @Body() { couponId, priceId }: CreateStripeCheckoutSessionDto
   ): Promise<CreateStripeCheckoutSessionResponse> {
     try {
       // Awaited, not returned. The collaborator is asynchronous and reaches the

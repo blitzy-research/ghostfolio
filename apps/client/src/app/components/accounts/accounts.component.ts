@@ -7,15 +7,10 @@ import type { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces'
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { DashboardModuleType } from '@ghostfolio/common/dashboard';
-import {
-  CreateAccountDto,
-  TransferBalanceDto,
-  UpdateAccountDto
-} from '@ghostfolio/common/dtos';
+import { CreateAccountDto, UpdateAccountDto } from '@ghostfolio/common/dtos';
 import { User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { GfAccountsTableComponent } from '@ghostfolio/ui/accounts-table';
-import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 
 import {
@@ -32,8 +27,7 @@ import { Account as AccountModel } from '@prisma/client';
 import { addIcons } from 'ionicons';
 import { addOutline } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
-import { EMPTY, Subscription } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 
 import { GfCreateOrUpdateAccountDialogComponent } from './create-or-update-account-dialog/create-or-update-account-dialog.component';
 import { CreateOrUpdateAccountDialogParams } from './create-or-update-account-dialog/interfaces/interfaces';
@@ -106,7 +100,6 @@ export class GfAccountsComponent implements OnInit {
     private deviceService: DeviceDetectorService,
     private dialog: MatDialog,
     private impersonationStorageService: ImpersonationStorageService,
-    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
@@ -394,9 +387,23 @@ export class GfAccountsComponent implements OnInit {
         this.clearDialogQueryParams();
       }
     } else if (transferBalanceDialog && !isAddressedElsewhere) {
-      this.serveDialogRequest('transferBalanceDialog', () => {
-        this.openTransferBalanceDialog();
-      });
+      // Waited for, exactly as `editDialog` above is waited for, and for a sharper
+      // reason: this dialog IS its accounts. Both of its selects are built from the
+      // list, so opening before it arrives produced a form whose two required
+      // choices could not be made - and a cold link carrying this parameter always
+      // arrives that way, because the request is applied once before the first read
+      // has answered. Not recorded as served, so the request is still honoured when
+      // the accounts do arrive.
+      if (this.accounts?.length) {
+        this.serveDialogRequest('transferBalanceDialog', () => {
+          this.openTransferBalanceDialog();
+        });
+      } else if (this.accounts) {
+        // The accounts are known and there are none to transfer between, so the
+        // request cannot ever be satisfied and is discarded rather than left in the
+        // address pointing at a dialog that will not open.
+        this.clearDialogQueryParams();
+      }
     } else {
       // Nothing is being asked of this module. Forgetting what was last served is
       // what lets the viewer ask for the same dialog a second time: the close
@@ -535,34 +542,16 @@ export class GfAccountsComponent implements OnInit {
     dialogRef
       .afterClosed()
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((data: any) => {
-        if (data) {
-          this.reset();
-
-          const { accountIdFrom, accountIdTo, balance }: TransferBalanceDto =
-            data?.account;
-
-          this.dataService
-            .transferAccountBalance({
-              accountIdFrom,
-              accountIdTo,
-              balance
-            })
-            .pipe(
-              catchError(() => {
-                this.notificationService.alert({
-                  title: $localize`Oops, cash balance transfer has failed.`
-                });
-
-                return EMPTY;
-              }),
-              takeUntilDestroyed(this.destroyRef)
-            )
-            .subscribe(() => {
-              this.fetchAccounts();
-            });
-
-          this.changeDetectorRef.markForCheck();
+      .subscribe((transferred: boolean) => {
+        // The dialog OWNS the transfer now, and closes with a result only once it
+        // succeeded. It used to close first and be transferred from here, which is
+        // what produced the stuck module: this handler cleared the accounts to show a
+        // loading state, and the failure branch alerted and returned `EMPTY`, so the
+        // re-read never ran and the module was left animating a skeleton over a list
+        // it had just discarded - permanently, and over a transfer that had not
+        // happened.
+        if (transferred) {
+          this.fetchAccounts();
         }
 
         this.clearDialogQueryParams();

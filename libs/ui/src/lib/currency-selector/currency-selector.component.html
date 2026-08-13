@@ -1,8 +1,18 @@
+<!--
+  `id` and `aria-describedby` both belong on THIS element rather than on the host, and
+  for the same reason: they are what `mat-form-field` points its label and its messages
+  at, and only a labelable element - an input, select, textarea or button - can receive
+  either. A custom element accepts both attributes silently and honours neither, which
+  is how this field came to have no accessible name while still rendering a label that
+  looked correct.
+-->
 <input
   autocapitalize="off"
   autocomplete="off"
   matInput
+  [attr.aria-describedby]="describedBy || null"
   [formControl]="control"
+  [id]="id"
   [matAutocomplete]="currencyAutocomplete"
 />
 

@@ -95,11 +95,24 @@ export class GfLoginWithAccessTokenDialogComponent {
     this.dialogRef.close();
   }
 
+  /**
+   * Signs in with the security token that was entered.
+   *
+   * The refusal is now reported. Pressing Enter on an empty field reaches this
+   * method, and the early return used to be the entire response: no message, no
+   * change, nothing to read. Marking the control touched is what renders the error
+   * Material has been holding all along, so the field states what it wants instead
+   * of appearing to ignore the visitor.
+   */
   public onLoginWithAccessToken() {
     if (this.accessTokenFormControl.valid) {
       this.dialogRef.close({
         accessToken: this.accessTokenFormControl.value
       });
+
+      return;
     }
+
+    this.accessTokenFormControl.markAsTouched();
   }
 }

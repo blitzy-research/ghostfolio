@@ -74,6 +74,9 @@
             >
           </mat-option>
         </mat-select>
+        @if (activityForm.get('type')?.hasError('required')) {
+          <mat-error i18n>Please choose an activity type.</mat-error>
+        }
       </mat-form-field>
     </div>
     <div [ngClass]="{ 'mb-3': mode === 'update' }">
@@ -123,6 +126,20 @@
           [defaultLookupItems]="defaultLookupItems"
           [isLoading]="isLoading"
         />
+        <!--
+          Required only while the data source is not MANUAL - the validator is added and
+          removed as the type and the data source change - so the rule is conditional and
+          was stated nowhere at all.
+        -->
+        @if (activityForm.get('searchSymbol')?.hasError('required')) {
+          <mat-error i18n>Please search for and select an asset.</mat-error>
+        } @else if (
+          activityForm.get('searchSymbol')?.hasError('validationError')
+        ) {
+          <mat-error>{{
+            activityForm.get('searchSymbol').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div
@@ -134,6 +151,17 @@
       <mat-form-field appearance="outline" class="w-100">
         <mat-label i18n>Name</mat-label>
         <input formControlName="name" matInput />
+        <!--
+          The mirror of the field above: required only while the data source IS MANUAL,
+          because a manual holding has no symbol to look up and its name is all there is.
+        -->
+        @if (activityForm.get('name')?.hasError('required')) {
+          <mat-error i18n>Please enter a name.</mat-error>
+        } @else if (activityForm.get('name')?.hasError('validationError')) {
+          <mat-error>{{
+            activityForm.get('name').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div class="d-none">
@@ -169,6 +197,26 @@
           />
         </mat-datepicker-toggle>
         <mat-datepicker #date disabled="false" />
+        <!--
+          Three distinct reasons, deliberately worded differently, because they are not
+          interchangeable: nothing entered, something entered that is not a date, and a
+          date the filter refuses. A viewer who typed a valid-looking date needs to know
+          which of the last two it was.
+          `dateFilter` is `isAfter(aDate, new Date(0))`, so what it refuses is a date at
+          or before the Unix epoch - the message states that boundary rather than
+          guessing at one, because a wrong explanation is worse than none.
+        -->
+        @if (activityForm.get('date')?.hasError('required')) {
+          <mat-error i18n>Please enter a date.</mat-error>
+        } @else if (activityForm.get('date')?.hasError('matDatepickerParse')) {
+          <mat-error i18n>Please enter a valid date.</mat-error>
+        } @else if (activityForm.get('date')?.hasError('matDatepickerFilter')) {
+          <mat-error i18n>Please choose a date from 1970 onwards.</mat-error>
+        } @else if (activityForm.get('date')?.hasError('validationError')) {
+          <mat-error>{{
+            activityForm.get('date').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div
@@ -184,6 +232,13 @@
       <mat-form-field appearance="outline" class="w-100">
         <mat-label i18n>Quantity</mat-label>
         <input formControlName="quantity" matInput type="number" />
+        @if (activityForm.get('quantity')?.hasError('required')) {
+          <mat-error i18n>Please enter a quantity.</mat-error>
+        } @else if (activityForm.get('quantity')?.hasError('validationError')) {
+          <mat-error>{{
+            activityForm.get('quantity').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div
@@ -225,6 +280,15 @@
               }
             </mat-select>
           </div>
+          @if (activityForm.get('unitPrice')?.hasError('required')) {
+            <mat-error i18n>Please enter a value.</mat-error>
+          } @else if (
+            activityForm.get('unitPrice')?.hasError('validationError')
+          ) {
+            <mat-error>{{
+              activityForm.get('unitPrice').getError('validationError')
+            }}</mat-error>
+          }
         </mat-form-field>
         @if (
           currencyOfAssetProfile ===
@@ -257,6 +321,15 @@
       <mat-form-field appearance="outline" class="w-100">
         <mat-label i18n>Fee</mat-label>
         <input formControlName="fee" matInput type="number" />
+        @if (activityForm.get('fee')?.hasError('required')) {
+          <mat-error i18n
+            >Please enter a fee, or 0 if there was none.</mat-error
+          >
+        } @else if (activityForm.get('fee')?.hasError('validationError')) {
+          <mat-error>{{
+            activityForm.get('fee').getError('validationError')
+          }}</mat-error>
+        }
         <div
           class="ml-2"
           matTextSuffix
@@ -347,7 +420,8 @@
         color="primary"
         mat-flat-button
         type="submit"
-        [disabled]="!(activityForm.dirty && activityForm.valid)"
+        [attr.aria-busy]="isSubmitting ? 'true' : null"
+        [disabled]="!(activityForm.dirty && activityForm.valid) || isSubmitting"
       >
         <ng-container i18n>Save</ng-container>
       </button>

@@ -95,6 +95,7 @@ describe('GfAppComponent', () => {
    * after the thing it describes has been renamed.
    */
   let dialogRequests: {
+    close: jest.Mock;
     component: unknown;
     config: {
       data?: Record<string, unknown>;
@@ -117,7 +118,9 @@ describe('GfAppComponent', () => {
   };
 
   let notificationServiceMock: { alert: jest.Mock<void, [AlertParams]> };
+  let isPublicInfoUnavailable: boolean;
   let queryParams: BehaviorSubject<Record<string, unknown>>;
+  let updateInfoResult: Observable<unknown>;
   let routerMock: { navigate: jest.Mock };
 
   /** Every navigation the shell requested, recorded with its real types. */
@@ -205,9 +208,15 @@ describe('GfAppComponent', () => {
           width?: string;
         }
       ) => {
-        dialogRequests.push({ component, config });
+        // `close` is part of the stand-in because the application closes a dialog
+        // itself when the address bar stops naming it, which is what going Back
+        // looks like from the shell. Recorded per request so that "the dialog the
+        // viewer had open was the one closed" is assertable.
+        const close = jest.fn();
 
-        return { afterClosed: () => dialogAfterClosed };
+        dialogRequests.push({ close, component, config });
+
+        return { afterClosed: () => dialogAfterClosed, close };
       }
     );
 
@@ -232,7 +241,9 @@ describe('GfAppComponent', () => {
     };
 
     notificationServiceMock = { alert: jest.fn<void, [AlertParams]>() };
+    isPublicInfoUnavailable = false;
     queryParams = new BehaviorSubject<Record<string, unknown>>({});
+    updateInfoResult = EMPTY;
     navigations = [];
     routerMock = {
       navigate: jest.fn(
@@ -285,7 +296,14 @@ describe('GfAppComponent', () => {
           useValue: {
             fetchInfo: () => ({
               globalPermissions: [permissions.enableSubscription]
-            })
+            }),
+            // The shell asks whether the deployment's public information could be
+            // read at all, so that a visitor whose application booted without it is
+            // told rather than left with silently missing capabilities. Answered
+            // here for every test; the tests that care about the unavailable state
+            // override it.
+            isPublicInfoUnavailable: () => isPublicInfoUnavailable,
+            updateInfo: () => updateInfoResult
           }
         },
         {
@@ -691,6 +709,117 @@ describe('GfAppComponent', () => {
 
       expect(dialogOpen).toHaveBeenCalledTimes(1);
       expect(openedDialog().config.data).toMatchObject({ symbol: 'MSFT' });
+    });
+
+    describe('when the visitor goes back', () => {
+      /**
+       * Keeps the dialog OPEN for the duration of a test.
+       *
+       * The shared stand-in reports closure immediately, which is right for the
+       * tests that assert what closing does but makes every dialog in them already
+       * shut. Nothing about going Back is observable against a dialog that closed on
+       * the same tick it opened.
+       *
+       * Must be called AFTER the component is built: building it resets the shared
+       * closure observable, so a hold applied first is silently discarded and the
+       * dialog closes itself the moment it opens.
+       */
+      const holdDialogOpen = () => {
+        const afterClosed = new Subject<unknown>();
+
+        dialogAfterClosed = afterClosed;
+
+        return afterClosed;
+      };
+
+      it('closes the dialog the address bar has stopped naming', async () => {
+        await createComponent();
+
+        holdDialogOpen();
+
+        queryParams.next(holdingParams);
+
+        await settle();
+
+        expect(dialogRequests).toHaveLength(1);
+        expect(dialogRequests[0].close).not.toHaveBeenCalled();
+
+        // What Back looks like from here: the same stream, emitting parameters that
+        // no longer name a holding. This used to be observed and ignored, leaving
+        // the dialog up over a URL saying it was closed.
+        queryParams.next({});
+
+        await settle();
+
+        expect(dialogRequests[0].close).toHaveBeenCalledTimes(1);
+      });
+
+      it('lets the same holding be opened again afterwards', async () => {
+        await createComponent();
+
+        const afterClosed = holdDialogOpen();
+
+        queryParams.next(holdingParams);
+
+        await settle();
+
+        queryParams.next({});
+
+        await settle();
+
+        // The dialog reports its own closure, exactly as Material does once the
+        // close has run.
+        afterClosed.next(undefined);
+
+        await settle();
+
+        queryParams.next(holdingParams);
+
+        await settle();
+
+        // Two dialogs over the session, not one. The recorded address used to be
+        // left behind by a Back that closed nothing, and every later request for
+        // that same holding then matched it and was guarded away - so the holding
+        // became permanently unopenable.
+        expect(dialogRequests).toHaveLength(2);
+        expect(dialogRequests[1].config.data).toMatchObject({ symbol: 'AAPL' });
+      });
+
+      it('cancels a request whose dialog has not opened yet', async () => {
+        await createComponent();
+
+        const answers = deferChunkLoads();
+
+        queryParams.next(holdingParams);
+
+        await settle();
+
+        expect(answers).toHaveLength(1);
+
+        queryParams.next({});
+
+        await settle();
+
+        // The chunk arrives after the visitor has already asked for it to go away.
+        answers[0](GfHoldingDetailDialogComponent);
+
+        await settle();
+
+        // Nothing opens. Without cancelling the pending request the dialog would
+        // appear a moment after Back, which is worse than Back doing nothing.
+        expect(dialogOpen).not.toHaveBeenCalled();
+      });
+
+      it('does nothing when no holding was open to begin with', async () => {
+        await createComponent();
+
+        queryParams.next({ createDialog: true });
+
+        await settle();
+
+        expect(dialogOpen).not.toHaveBeenCalled();
+        expect(routerMock.navigate).not.toHaveBeenCalled();
+      });
     });
 
     it('clears exactly its own parameters when the dialog closes', async () => {

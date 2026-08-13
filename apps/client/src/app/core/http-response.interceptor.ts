@@ -70,14 +70,48 @@ export class HttpResponseInterceptor implements HttpInterceptor {
               );
             }
 
+            // Guarded, because the branches above deliberately raise NO notice for
+            // one case - a refusal from the authentication endpoint, which the
+            // sign-in surface reports itself - and subscribing to a reference that
+            // was never assigned threw a `TypeError` from inside `catchError`,
+            // replacing a handled 403 with an unhandled error.
+            if (this.snackBarRef) {
+              this.snackBarRef.afterDismissed().subscribe(() => {
+                this.snackBarRef = undefined;
+              });
+
+              this.snackBarRef.onAction().subscribe(() => {
+                // Pricing is hosted externally; document.lang is available before
+                // user hydration.
+                window.location.href = `https://ghostfol.io/${document.documentElement.lang}/${publicRoutes.pricing.path}`;
+              });
+            }
+          }
+        } else if (error.status === StatusCodes.SERVICE_UNAVAILABLE) {
+          // A dependency the server needs is down - the database, typically. This
+          // is emphatically NOT an authentication outcome, and keeping it out of
+          // the 401 branch below is the whole point: the session is still valid, so
+          // the token stays in storage, the canvas stays mounted and whatever
+          // change is queued stays queued and recoverable. The viewer is told it is
+          // temporary and offered a retry, which is the only thing that can
+          // actually help.
+          if (!this.snackBarRef) {
+            this.snackBarRef = this.snackBar.open(
+              $localize`The service is temporarily unavailable.` +
+                ' ' +
+                $localize`Please try again later.`,
+              $localize`Retry`,
+              {
+                duration: ms('6 seconds')
+              }
+            );
+
             this.snackBarRef.afterDismissed().subscribe(() => {
               this.snackBarRef = undefined;
             });
 
             this.snackBarRef.onAction().subscribe(() => {
-              // Pricing is hosted externally; document.lang is available before
-              // user hydration.
-              window.location.href = `https://ghostfol.io/${document.documentElement.lang}/${publicRoutes.pricing.path}`;
+              window.location.reload();
             });
           }
         } else if (error.status === StatusCodes.INTERNAL_SERVER_ERROR) {

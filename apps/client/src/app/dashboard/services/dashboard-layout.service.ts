@@ -24,6 +24,7 @@ import {
   catchError,
   concatMap,
   debounceTime,
+  distinctUntilChanged,
   filter,
   map,
   take,
@@ -53,9 +54,38 @@ const SAVE_DEBOUNCE_IN_MS = 500;
  * otherwise be written to somebody else's account.
  */
 interface DashboardLayoutSnapshot {
+  /**
+   * Set when the viewer has asked for this arrangement to replace whatever is
+   * stored, having been told it conflicts with a layout saved elsewhere.
+   *
+   * Carried on the snapshot rather than expressed by clearing the service's
+   * revision, because the two differ the moment anything else refreshes that
+   * revision between the decision and the request: the decision belongs to THIS
+   * arrangement and has to travel with it.
+   */
+  isUnconditional?: boolean;
   layout: UpdateUserDashboardLayoutDto;
   userId: string;
 }
+
+/**
+ * The state of the one outstanding write, as a single value.
+ *
+ * Previously two independent booleans, which is how a viewer came to be shown
+ * two diagnoses and three actions at once: a failure banner offering a retry
+ * stacked above a conflict banner offering to load or overwrite, each describing
+ * the same unsaved arrangement and contradicting the other about what had
+ * happened to it. Mutually exclusive states cannot stack, and the two booleans
+ * the canvas still reads are derived from this one value so they cannot drift
+ * apart again.
+ *
+ * - `idle` - nothing is outstanding, or what was outstanding has been stored.
+ * - `failed` - the request did not complete. The arrangement is retained and a
+ *   retry is the recovery.
+ * - `refused` - the server compared revisions and declined. A retry is useless;
+ *   the recovery is to take the other document or to overwrite it deliberately.
+ */
+type DashboardLayoutPersistenceState = 'failed' | 'idle' | 'refused';
 
 // Widened at declaration because `HttpErrorResponse.status` is a plain number,
 // which keeps the comparison free of an enum-comparison lint report and a cast.
@@ -122,19 +152,21 @@ export class GfDashboardLayoutService
   // adopted is refused rather than misattributed.
   private activeUserId: string = null;
 
-  // Exposed so the canvas can tell the viewer that their arrangement is not
-  // saved, which is the whole point of retaining the snapshot. Cleared by the
-  // next successful write and by an identity change, which discards the
-  // snapshot outright.
-  private hasSaveError$ = new BehaviorSubject<boolean>(false);
-
-  // A refused write is reported on its OWN channel rather than as a save error,
-  // because the two need opposite affordances. A save error is a failure the
-  // viewer can only ask to be retried; a conflict is a decision only they can
-  // make - keep what this tab shows, or take what another one saved - and
-  // retrying it unchanged would either fail again or silently discard the other
-  // tab's work, which is the defect this channel exists to end.
-  private hasConflict$ = new BehaviorSubject<boolean>(false);
+  /**
+   * The one place the outcome of the outstanding write is held.
+   *
+   * A failure and a refusal need opposite affordances - a failure is something
+   * the viewer can only ask to be retried, a refusal is a decision only they can
+   * make between two documents - and they are states of the SAME arrangement, so
+   * at most one of them can be true. Holding them as one value is what makes
+   * that structural: entering either state leaves the other, with no ordering to
+   * get wrong and no combination for the canvas to render.
+   *
+   * Cleared by the next successful write and by an identity change, which
+   * discards the snapshot outright.
+   */
+  private persistenceState$ =
+    new BehaviorSubject<DashboardLayoutPersistenceState>('idle');
 
   // The token the last read or write reported for this viewer's row, echoed with
   // every write so the server can refuse one built on an arrangement that has
@@ -389,12 +421,25 @@ export class GfDashboardLayoutService
     return this.fetchLayout();
   }
 
+  /**
+   * Derived from the one persistence state rather than held beside it, so the
+   * canvas cannot be told at the same time that a write failed and that it was
+   * refused. `distinctUntilChanged` keeps a transition between two states this
+   * flag does not distinguish - `failed` to `refused`, say - from re-emitting the
+   * same answer.
+   */
   public getHasConflict(): Observable<boolean> {
-    return this.hasConflict$.asObservable();
+    return this.persistenceState$.pipe(
+      map((state) => state === 'refused'),
+      distinctUntilChanged()
+    );
   }
 
   public getHasSaveError(): Observable<boolean> {
-    return this.hasSaveError$.asObservable();
+    return this.persistenceState$.pipe(
+      map((state) => state === 'failed'),
+      distinctUntilChanged()
+    );
   }
 
   public ngOnDestroy() {
@@ -448,32 +493,28 @@ export class GfDashboardLayoutService
    */
   public overwriteAfterConflict() {
     if (!this.pendingSnapshot) {
-      this.hasConflict$.next(false);
+      this.persistenceState$.next('idle');
 
       return;
     }
 
-    this.hasConflict$.next(false);
+    this.persistenceState$.next('idle');
 
     this.revision = null;
 
-    // Copied and then stripped, rather than spread over with `undefined`: absence
-    // is what the server reads as "write unconditionally", and a member holding
-    // `undefined` is a member the body still declares. It survives serialisation as
-    // nothing either way, but the projected body is asserted key by key precisely
-    // so it cannot drift into carrying members it does not mean.
-    const unconditionalLayout: UpdateUserDashboardLayoutDto = {
-      ...this.pendingSnapshot.layout
-    };
-
-    delete unconditionalLayout.revision;
-
+    // Marked on the snapshot rather than expressed by stripping a member from its
+    // body, because the body no longer carries the token at all - it is attached
+    // when the request is built, from the revision held at that moment - so the
+    // decision has to be recorded somewhere the request builder will read. Absence
+    // of the token is what the server reads as "write unconditionally".
+    //
     // Replaced rather than merely re-emitted: the dispatcher skips any snapshot
-    // that is no longer the pending one, so an unconditional copy has to BECOME
-    // the pending arrangement or it would be dropped as superseded by the very
+    // that is no longer the pending one, so the marked copy has to BECOME the
+    // pending arrangement or it would be dropped as superseded by the very
     // snapshot it was derived from.
     this.pendingSnapshot = {
-      layout: unconditionalLayout,
+      isUnconditional: true,
+      layout: this.pendingSnapshot.layout,
       userId: this.pendingSnapshot.userId
     };
 
@@ -518,8 +559,7 @@ export class GfDashboardLayoutService
   private clearPendingSnapshot() {
     this.pendingSnapshot = null;
 
-    this.hasConflict$.next(false);
-    this.hasSaveError$.next(false);
+    this.persistenceState$.next('idle');
   }
 
   private createLayoutDto(
@@ -536,23 +576,49 @@ export class GfDashboardLayoutService
       version: 1
     };
 
-    // Assigned rather than spread with a fallback, so a body carrying no token has
-    // no `revision` member at all rather than one holding `undefined`. The
-    // distinction is real on both sides: the request body stays the exact five
-    // fields per item plus the two envelope members it was before, and the server
-    // reads absence as "write unconditionally" - which is what a first-ever save
-    // and a deliberate overwrite both are.
-    //
-    // Captured with the arrangement rather than read at dispatch, so what is sent
-    // is the revision this arrangement was actually built on. Reading it several
-    // hundred milliseconds later, after the debounce, could pick up a token this
-    // tab's own earlier write produced and would make a stale arrangement look
-    // current.
-    if (this.revision) {
-      layout.revision = this.revision;
+    // No `revision` here, deliberately. The concurrency token is attached when the
+    // request is built - see {@link withCurrentRevision} - because a token captured
+    // now is a token that can be superseded by this tab's OWN next write before
+    // this arrangement is ever sent, which is exactly how one tab came to conflict
+    // with itself.
+    return layout;
+  }
+
+  /**
+   * Attaches the concurrency token the request will be conditional on, at the
+   * moment the request is built.
+   *
+   * This has to happen here rather than when the arrangement is queued, and the
+   * reason is the serialised queue itself. Two edits inside one debounce window
+   * are two arrangements; the first is written, the server answers with a new
+   * token, and the second is then sent. Captured at queue time, the second would
+   * carry the token the FIRST write had already superseded - so the server
+   * compared it against a row only this tab had touched, refused it, and the
+   * canvas told the viewer their dashboard had been changed in another tab. There
+   * was no other tab.
+   *
+   * Read at dispatch, the token is by construction the one the row is at as far
+   * as this tab knows: writes are serialised, so nothing of ours is in flight,
+   * and {@link revision} holds whatever the last read or acknowledgement
+   * reported. A token from another client still refuses the write, which is the
+   * whole point of sending one.
+   *
+   * The arrangement itself is NOT re-read here - `aSnapshot.layout` is the
+   * projection made when the change happened - so what is sent is still the
+   * arrangement the viewer made, never one the grid has written over since.
+   *
+   * @returns the body to send. The snapshot's own layout, untouched, when no
+   * token is held or the viewer has asked to overwrite: absence of the member is
+   * what the server reads as an unconditional write.
+   */
+  private withCurrentRevision(
+    aSnapshot: DashboardLayoutSnapshot
+  ): UpdateUserDashboardLayoutDto {
+    if (aSnapshot.isUnconditional || !this.revision) {
+      return aSnapshot.layout;
     }
 
-    return layout;
+    return { ...aSnapshot.layout, revision: this.revision };
   }
 
   /**
@@ -596,7 +662,12 @@ export class GfDashboardLayoutService
     // the immediate lane - arrives here, one snapshot at a time, so the last
     // document the server commits is by construction the last one the viewer
     // reported.
-    return this.dataService.patchUserDashboardLayout(aSnapshot.layout).pipe(
+    // Built one statement before the call rather than inline, so the file keeps
+    // exactly one expression that reaches the facade's write method - which is
+    // what makes "one write origin" checkable rather than merely intended.
+    const body = this.withCurrentRevision(aSnapshot);
+
+    return this.dataService.patchUserDashboardLayout(body).pipe(
       map((layout) => ({ layout, snapshot: aSnapshot })),
 
       // Caught inside the projected observable on purpose. An error allowed to
@@ -613,7 +684,7 @@ export class GfDashboardLayoutService
         // retained either way, because both outcomes leave the viewer's
         // arrangement unsaved and both recoveries need it.
         if (this.isConflictError(error)) {
-          this.hasConflict$.next(true);
+          this.persistenceState$.next('refused');
 
           return of({ error, snapshot: aSnapshot });
         }
@@ -621,7 +692,7 @@ export class GfDashboardLayoutService
         // Published, not merely logged. The snapshot is left exactly where it
         // is so the arrangement stays recoverable, and this is the only channel
         // that tells the canvas to offer the retry that recovers it.
-        this.hasSaveError$.next(true);
+        this.persistenceState$.next('failed');
 
         // Carried on the result rather than rethrown, so the failure reaches a
         // caller awaiting this particular snapshot without terminating the

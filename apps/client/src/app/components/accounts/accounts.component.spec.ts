@@ -24,7 +24,7 @@ import { DeviceDetectorService } from 'ngx-device-detector';
 // for the application; nothing installs it for a jsdom test environment, so it is
 // installed here for the same reason as the localization global above.
 import 'reflect-metadata';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, NEVER, of, Subject } from 'rxjs';
 
 // Reached through the client-side re-export rather than the shared entry point,
 // and the position is the reason: this group is evaluated after the localization
@@ -436,6 +436,143 @@ describe('GfAccountsComponent', () => {
       // which the viewer chooses to act on.
       expect(routerMock.navigate).not.toHaveBeenCalled();
       expect(dialogMock.open).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The transfer request, which needs its accounts before it can be honoured.
+   *
+   * Both of the dialog's selects are built from this module's list, so opening before
+   * that list arrives produced a form whose two required choices could not be made. A
+   * cold link carrying this parameter always arrives that way, because the held
+   * parameters are applied once before the first read has answered - so the request has
+   * to be waited on rather than served or discarded.
+   */
+  describe('the transfer request', () => {
+    it('waits for the accounts rather than opening an empty form', () => {
+      const dataService = TestBed.inject(DataService);
+
+      // A read that never answers, over an unset list: exactly the state a cold
+      // placement is in when its held parameters are first applied, before anything
+      // has been fetched. The list is cleared explicitly because this fixture has
+      // already completed one read during initialization.
+      (
+        dataService as unknown as { fetchAccounts: jest.Mock }
+      ).fetchAccounts.mockReturnValue(NEVER);
+
+      component.accounts = undefined;
+
+      component.fetchAccounts();
+
+      queryParamsSubject.next({ transferBalanceDialog: 'true' });
+
+      expect(dialogMock.open).not.toHaveBeenCalled();
+    });
+
+    it('honours the request once they arrive', () => {
+      const dataService = TestBed.inject(DataService);
+      const accountsSubject = new Subject<unknown>();
+
+      (
+        dataService as unknown as { fetchAccounts: jest.Mock }
+      ).fetchAccounts.mockReturnValue(accountsSubject);
+
+      component.accounts = undefined;
+
+      component.fetchAccounts();
+
+      queryParamsSubject.next({ transferBalanceDialog: 'true' });
+
+      expect(dialogMock.open).not.toHaveBeenCalled();
+
+      // Not recorded as served while it was waiting, which is what leaves it standing.
+      accountsSubject.next(createAccountsResponse());
+
+      expect(dialogMock.open).toHaveBeenCalledTimes(1);
+      expect(dialogMock.open.mock.calls[0][1].data.accounts).toHaveLength(1);
+    });
+
+    it('hands the dialog the accounts it will offer', () => {
+      queryParamsSubject.next({ transferBalanceDialog: 'true' });
+
+      expect(dialogMock.open.mock.calls[0][1].data.accounts).toEqual([
+        { id: 'ACCOUNT_ID', name: 'Account' }
+      ]);
+    });
+
+    it('discards a request it can never satisfy', () => {
+      const dataService = TestBed.inject(DataService);
+
+      (
+        dataService as unknown as { fetchAccounts: jest.Mock }
+      ).fetchAccounts.mockReturnValue(
+        of({
+          // Known, and empty: a state this module can answer definitively.
+          accounts: [],
+          activitiesCount: 0,
+          totalBalanceInBaseCurrency: 0,
+          totalValueInBaseCurrency: 0
+        })
+      );
+
+      component.fetchAccounts();
+      routerMock.navigate.mockClear();
+
+      queryParamsSubject.next({ transferBalanceDialog: 'true' });
+
+      // The accounts are known and there are none to transfer between, so the request
+      // is cleared from the address rather than left pointing at a dialog that will
+      // never open.
+      expect(dialogMock.open).not.toHaveBeenCalled();
+      expect(routerMock.navigate).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * What this module does after the transfer dialog closes.
+   *
+   * It used to submit the transfer itself, and to clear its own list first so it could
+   * show a loading state. The failure branch alerted and returned `EMPTY`, so the re-read
+   * never ran: a refused transfer removed every row and left the module animating a
+   * skeleton indefinitely, over a transfer that had not happened. The dialog owns the
+   * request now and closes with a result only once it succeeded.
+   */
+  describe('after the transfer dialog closes', () => {
+    const closeTransferDialogWith = (aResult: unknown) => {
+      dialogMock.open.mockReturnValue({
+        afterClosed: () => {
+          return of(aResult);
+        }
+      });
+
+      queryParamsSubject.next({ transferBalanceDialog: 'true' });
+    };
+
+    it('re-reads its accounts when a transfer happened', () => {
+      const dataService = TestBed.inject(DataService);
+      const fetchAccounts = (
+        dataService as unknown as { fetchAccounts: jest.Mock }
+      ).fetchAccounts;
+
+      fetchAccounts.mockClear();
+
+      closeTransferDialogWith(true);
+
+      expect(fetchAccounts).toHaveBeenCalled();
+    });
+
+    it('keeps its rows when the dialog was dismissed', () => {
+      closeTransferDialogWith(undefined);
+
+      // The clearing that produced the indefinite skeleton is gone: a dismissal leaves
+      // the module exactly as it was.
+      expect(component.accounts).toHaveLength(1);
+    });
+
+    it('never empties its list on the strength of a dialog closing', () => {
+      closeTransferDialogWith(true);
+
+      expect(component.accounts).toHaveLength(1);
     });
   });
 

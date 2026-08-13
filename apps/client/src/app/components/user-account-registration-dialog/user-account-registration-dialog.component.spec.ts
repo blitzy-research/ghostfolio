@@ -1,7 +1,9 @@
 import { DataService } from '@ghostfolio/ui/services';
 
+import { CdkCopyToClipboard } from '@angular/cdk/clipboard';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Observable, of, throwError } from 'rxjs';
 
@@ -208,6 +210,98 @@ describe('GfUserAccountRegistrationDialogComponent', () => {
       // Unchanged behaviour, asserted because the control's label moved: the token
       // is disclosed once, so leaving without it is unrecoverable.
       expect(buttonLabelled('Continue').disabled).toBe(true);
+    });
+  });
+
+  describe('saving the security token', () => {
+    /** The polite region the outcome of a copy is announced through. */
+    const announcement = () => {
+      return host()
+        .querySelector('[role="status"][aria-live="polite"]')
+        ?.textContent?.trim();
+    };
+
+    beforeEach(async () => {
+      await createComponent();
+      acceptDisclaimer();
+
+      buttonLabelled('Create Account').click();
+
+      fixture.detectChanges();
+    });
+
+    it('says nothing before anything has been copied', () => {
+      // An announcement present on arrival would be read out as though the visitor
+      // had already acted, and there is nothing yet to report.
+      expect(announcement()).toBe('');
+    });
+
+    it('confirms a copy that worked', () => {
+      component.onAccessTokenCopied(true);
+
+      fixture.detectChanges();
+
+      expect(announcement()).toBe(
+        'The security token was copied to the clipboard.'
+      );
+    });
+
+    /**
+     * The outcome that matters. A refused copy is silent - the platform can withhold
+     * clipboard access - and a visitor who believes this token is saved and is wrong
+     * cannot recover the account it belongs to.
+     */
+    it('reports a copy that did not happen, and says what to do instead', () => {
+      component.onAccessTokenCopied(false);
+
+      fixture.detectChanges();
+
+      expect(announcement()).toBe(
+        'The security token could not be copied. Please select it and copy it manually.'
+      );
+    });
+
+    /**
+     * Pins the WIRING, not the handler. Every assertion above calls the method
+     * directly and would go on passing if the output were renamed or never bound, so
+     * this one goes through the directive the control actually carries. It emits
+     * through that directive rather than dispatching a DOM event, because the copy
+     * outcome is an Angular output and a `CustomEvent` of the same name reaches
+     * nothing.
+     */
+    it('is wired to the control a visitor actually presses', () => {
+      const copyDirective = fixture.debugElement
+        .queryAll(By.directive(CdkCopyToClipboard))
+        .find((candidate) => {
+          return (
+            candidate.nativeElement.textContent?.trim() === 'Copy to clipboard'
+          );
+        });
+
+      expect(copyDirective).toBeDefined();
+      expect(copyDirective.injector.get(CdkCopyToClipboard).text).toBe(
+        createdAccount.accessToken
+      );
+
+      copyDirective.injector.get(CdkCopyToClipboard).copied.emit(false);
+
+      fixture.detectChanges();
+
+      expect(announcement()).toBe(
+        'The security token could not be copied. Please select it and copy it manually.'
+      );
+    });
+
+    it('places the visitor on the token itself', async () => {
+      // Focus is deferred a frame, because the step holding the field is created by
+      // the advance that precedes it.
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve())
+      );
+
+      expect(document.activeElement).toBe(
+        component.accessTokenField?.nativeElement
+      );
     });
   });
 

@@ -25,7 +25,8 @@ import {
   FormBuilder,
   FormControl,
   FormsModule,
-  ReactiveFormsModule
+  ReactiveFormsModule,
+  Validators
 } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import {
@@ -91,7 +92,13 @@ export class GfFireCalculatorComponent implements OnChanges, OnDestroy {
   @Input() savingsRate = 0;
 
   public calculatorForm = this.formBuilder.group({
-    annualInterestRate: new FormControl<number | null>(null),
+    // A negative rate is refused rather than modelled. The projection solves for the
+    // number of compounding periods with logarithms, and with a negative rate the
+    // argument of one of them goes non-positive - so the answer came back `NaN`, was
+    // charted as an empty projection and a retirement date of nothing, and said nothing
+    // about why. The formula does not describe a shrinking balance, and pretending it
+    // does is worse than declining the input.
+    annualInterestRate: new FormControl<number | null>(null, Validators.min(0)),
     paymentPerPeriod: new FormControl<number | null>(null),
     principalInvestmentAmount: new FormControl<number | null>(null),
     projectedTotalAmount: new FormControl<number | null>(null),
@@ -139,6 +146,14 @@ export class GfFireCalculatorComponent implements OnChanges, OnDestroy {
     this.calculatorForm.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
+        // Not recalculated from an input the form has already refused. Redrawing here
+        // would replace a good projection with the `NaN` one the invalid value produces,
+        // beside the message explaining that the value is not accepted - so the chart
+        // would contradict the form.
+        if (this.calculatorForm.invalid) {
+          return;
+        }
+
         this.initialize();
       });
 
@@ -163,7 +178,12 @@ export class GfFireCalculatorComponent implements OnChanges, OnDestroy {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((annualInterestRate) => {
-        if (annualInterestRate !== null) {
+        // Not emitted either: this rate is persisted as a user setting, so publishing a
+        // refused value would store it and bring it back on the next visit.
+        if (
+          annualInterestRate !== null &&
+          this.calculatorForm.get('annualInterestRate')?.valid
+        ) {
           this.annualInterestRateChanged.emit(annualInterestRate);
         }
       });

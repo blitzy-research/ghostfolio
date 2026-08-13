@@ -18,8 +18,35 @@
           matInput
           (keydown.enter)="$event.stopPropagation()"
         />
+        <!--
+          Inside the form field rather than beside it, which is what makes Material
+          associate it with the input through `aria-describedby` - so the reason is
+          announced to whoever is IN the field, not only shown to whoever can see it.
+          The duplicate-name notice below is deliberately separate: it answers a
+          submission rather than describing the field, so it interrupts.
+        -->
+        @if (tagForm.get('name')?.hasError('required')) {
+          <mat-error i18n>Please enter a name.</mat-error>
+        } @else if (tagForm.get('name')?.hasError('blank')) {
+          <mat-error i18n
+            >Please enter a name with at least one character.</mat-error
+          >
+        } @else if (tagForm.get('name')?.hasError('validationError')) {
+          <mat-error>{{
+            tagForm.get('name').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
+    <!--
+      Beside the field rather than in the application-wide notice, because the dialog
+      stays open and the refused name is still in the field above. `role="alert"`
+      because it appears in response to a submission the viewer has just made, which
+      is the one case where interrupting is the correct behaviour.
+    -->
+    @if (errorMessage) {
+      <div class="create-tag-error" role="alert">{{ errorMessage }}</div>
+    }
   </div>
   <div class="justify-content-end" mat-dialog-actions>
     <button mat-button type="button" (click)="onCancel()">
@@ -33,7 +60,8 @@
       color="primary"
       mat-flat-button
       type="submit"
-      [disabled]="!(tagForm.dirty && tagForm.valid)"
+      [attr.aria-busy]="isSubmitting ? 'true' : null"
+      [disabled]="!(tagForm.dirty && tagForm.valid) || isSubmitting"
     >
       <ng-container i18n>Save</ng-container>
     </button>

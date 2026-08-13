@@ -46,7 +46,7 @@ import {
 import { UserWithSettings } from '@ghostfolio/common/types';
 import { PerformanceCalculationType } from '@ghostfolio/common/types/performance-calculation-type.type';
 
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, Role, User } from '@prisma/client';
 import { differenceInDays, subDays } from 'date-fns';
@@ -548,6 +548,23 @@ export class UserService {
     });
   }
 
+  /**
+   * Creates an account.
+   *
+   * The registration gate is asserted HERE, at the point of creation, and not only
+   * where creation is requested. Both existing callers do check first - the public
+   * endpoint answers 403 and the external-identity path refuses - so this changes
+   * nothing that happens today. It changes what happens the next time somebody adds
+   * a third caller: the gate is a deployment operator's decision to stop admitting
+   * accounts, and a check that lives only in the callers is one a new caller can
+   * omit without anything failing. Enforced at the single place that actually
+   * creates a row, omitting it is no longer possible.
+   *
+   * The callers keep their own checks, deliberately. They are what turn the refusal
+   * into the right answer for the surface asking - a status code in one case, a
+   * refusal the sign-in flow reports in the other - which is a translation this
+   * method has no business making.
+   */
   public async createUser(
     {
       data
@@ -555,6 +572,13 @@ export class UserService {
       data: Prisma.UserCreateInput;
     } = { data: {} }
   ): Promise<User> {
+    const isUserSignupEnabled =
+      await this.propertyService.isUserSignupEnabled();
+
+    if (!isUserSignupEnabled) {
+      throw new ForbiddenException('Sign up forbidden');
+    }
+
     if (!data.provider) {
       data.provider = 'ANONYMOUS';
     }

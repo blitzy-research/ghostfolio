@@ -222,6 +222,33 @@ $_tertiary: map.merge(map.get($_palettes, tertiary), $_rest);
       row-item-outline-color: rgba(var(--dark-dividers))
     )
   );
+
+  // The brand, at a luminance that reads on this theme's surfaces. `#006a68` is the
+  // primary Material derives for the light scheme from the same brand palette, and it
+  // measures 6.44:1 on white against the 4.5:1 normal-text minimum - where the raw
+  // brand `#36cfcc` measures 1.92:1. Declared per theme because that is the whole point
+  // of it: the pair it replaces was theme-invariant, which is why it failed.
+  --gf-theme-primary-accessible: #006a68;
+
+  // The semantic foreground palette. Gain and loss are encoded by hue throughout this
+  // application, so these are meaning rather than decoration, and they have to survive
+  // the contrast floor on every surface they land on: the white module card, the
+  // `#fafafa` canvas, and the `rgba(0, 0, 0, 0.05)` activity chip. Bootstrap's own
+  // `$green` and `$red` do not - `#28a745` measures 3.13:1 on white and 2.80:1 on the
+  // chip - which is what these replace.
+  //
+  // `--mat-sys-error` is stated for the negative because Material genuinely has that
+  // role, so a later migration to `mat.theme()` inherits the correct value; the
+  // fallback is what paints today, since this application themes through
+  // `mat.define-theme()` and leaves the system-token layer unpopulated. There is no
+  // Material role for a positive, a caution or an informational foreground, so those
+  // carry a value alone.
+  --gf-color-positive: #1b6e35;
+  --gf-color-negative: var(--mat-sys-error, #b3261e);
+  --gf-color-info: #0b5ed7;
+  --gf-color-neutral: #5c636a;
+  --gf-color-highlight: #0f6674;
+  --gf-color-caution: #99490b;
 }
 
 .theme-dark {
@@ -275,6 +302,21 @@ $_tertiary: map.merge(map.get($_palettes, tertiary), $_rest);
       row-item-outline-color: rgba(var(--light-dividers))
     )
   );
+
+  // `#47dbd7` is the primary Material derives for the dark scheme from the same brand
+  // palette, and it measures 8.92:1 on the `#262626` module card.
+  --gf-theme-primary-accessible: #47dbd7;
+
+  // The dark half of the semantic palette. Lightened rather than darkened, for the
+  // inverse of the light theme's reason: Bootstrap's `$red` measures 3.34:1 on the
+  // `#262626` card and 2.44:1 on the chip. Every value here clears 4.5:1 on all four
+  // dark surfaces - card, canvas, page background and chip.
+  --gf-color-positive: #6dd58c;
+  --gf-color-negative: var(--mat-sys-error, #f2b8b5);
+  --gf-color-info: #8ab4f8;
+  --gf-color-neutral: #bdc1c6;
+  --gf-color-highlight: #6fd6e8;
+  --gf-color-caution: #f8b878;
 }
 
 .theme-dark,
@@ -352,10 +394,23 @@ $_tertiary: map.merge(map.get($_palettes, tertiary), $_rest);
     )
   );
 
+  // Both of these used to be `--gf-theme-primary-500`, the brand teal `#36cfcc`, and
+  // both were WCAG failures because this block is theme-invariant: it applied one
+  // colour to both themes and so overwrote the per-theme values
+  // `mat.all-component-themes()` had already computed for exactly this pair. On white,
+  // `#36cfcc` measures 1.92:1 as label text - against the 4.5:1 normal-text minimum -
+  // and 1.92:1 as the focus outline, against the 3:1 non-text minimum. A viewer whose
+  // field is focused could not see which field it was.
+  //
+  // `--gf-theme-primary-accessible` is the brand at a luminance that reads on the
+  // surface each theme actually paints, declared once per theme lower in this file. The
+  // values are not invented: they are the primary Material itself derives for the light
+  // and dark schemes from this same brand palette, and `styles.scss` already uses that
+  // pair for button label text. So the brand is preserved and only its luminance moves.
   @include mat.form-field-overrides(
     (
-      outlined-focus-label-text-color: var(--gf-theme-primary-500),
-      outlined-focus-outline-color: var(--gf-theme-primary-500)
+      outlined-focus-label-text-color: var(--gf-theme-primary-accessible),
+      outlined-focus-outline-color: var(--gf-theme-primary-accessible)
     )
   );
 

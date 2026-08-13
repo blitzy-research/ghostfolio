@@ -20,7 +20,8 @@ import {
   OnInit
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { MatDialog } from '@angular/material/dialog';
+import { MatButtonModule } from '@angular/material/button';
+import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { ActivatedRoute, Router, RouterOutlet } from '@angular/router';
 import { DataSource } from '@prisma/client';
 import { addIcons } from 'ionicons';
@@ -43,9 +44,22 @@ import { ImpersonationStorageService } from './services/impersonation-storage.se
 import { TokenStorageService } from './services/token-storage.service';
 import { UserService } from './services/user/user.service';
 
+/**
+ * How long to wait before reading back the outcome of a public-configuration
+ * retry.
+ *
+ * The facade's refresh publishes its answer rather than returning it, so the
+ * outcome has to be read from the facade afterwards. This is the wait for that
+ * read: long enough that a local request has certainly settled, short enough that
+ * the control does not appear stuck. A retry that has not answered by then reads
+ * as still-unavailable, which is the safe way round - the notice stays and the
+ * control becomes pressable again.
+ */
+const PUBLIC_INFO_RETRY_SETTLE_MS = 1500;
+
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterOutlet],
+  imports: [MatButtonModule, RouterOutlet],
   selector: 'gf-root',
   styleUrls: ['./app.component.scss'],
   templateUrl: './app.component.html'
@@ -55,6 +69,21 @@ export class GfAppComponent implements OnInit {
   public deviceType: string;
   public hasImpersonationId: boolean;
   public hasInfoMessage: boolean;
+
+  /**
+   * Whether this boot is running on the offline fallback for the public
+   * configuration rather than on the server's own answer.
+   *
+   * It has to be said out loud rather than left to be inferred. Every affordance
+   * the configuration gates simply disappears when it is missing - the live-demo
+   * Create Account control among them - so without this the viewer sees an
+   * application that looks complete and is quietly missing pieces, with nothing
+   * to press and no reason given.
+   */
+  public isPublicInfoUnavailable = false;
+
+  /** Set while a retry of the public configuration is in flight. */
+  public isRetryingPublicInfo = false;
   public hasPermissionForSubscription: boolean;
   public info: InfoItem;
 
@@ -115,6 +144,20 @@ export class GfAppComponent implements OnInit {
    */
   private openedHoldingDetailAddress: string = null;
 
+  /**
+   * The holding dialog this component currently has open, if any.
+   *
+   * Held so that the address bar losing the parameters can CLOSE it. The dialog is
+   * opened by a query parameter, which puts it in the browser's own history, so
+   * pressing Back is how a visitor expects to dismiss it - and Back did nothing at
+   * all: the handler below only ever acted when the parameters were present, so the
+   * removal was observed and ignored. The dialog stayed up over a URL that said it
+   * was closed, and because the recorded address stayed with it, going Forward again
+   * was then suppressed as a duplicate - leaving the two permanently out of step and
+   * that holding unopenable for the rest of the session.
+   */
+  private openedHoldingDetailDialogRef: MatDialogRef<unknown, unknown> = null;
+
   public constructor() {
     this.initializeTheme();
     this.user = undefined;
@@ -165,6 +208,19 @@ export class GfAppComponent implements OnInit {
                 symbol
               });
             }
+          } else if (!holdingDetailDialog && this.openedHoldingDetailAddress) {
+            // The parameters no longer name a holding while one is open, which is
+            // what going Back looks like from here. Closing releases the recorded
+            // address through the dialog's own close handler, so the two stay in
+            // step and the same holding can be opened again afterwards.
+            //
+            // Guarded on the recorded address rather than on the reference alone, so
+            // a request whose chunk is still resolving is cancelled too: it has
+            // recorded its address but has no dialog yet, and without this it would
+            // open one moments after the visitor asked for it to go away.
+            this.openedHoldingDetailAddress = null;
+
+            this.openedHoldingDetailDialogRef?.close();
           }
         }
       );
@@ -179,6 +235,7 @@ export class GfAppComponent implements OnInit {
   public ngOnInit() {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
     this.info = this.dataService.fetchInfo();
+    this.isPublicInfoUnavailable = this.dataService.isPublicInfoUnavailable();
 
     this.hasPermissionForSubscription = hasPermission(
       this.info?.globalPermissions,
@@ -213,6 +270,50 @@ export class GfAppComponent implements OnInit {
 
         this.changeDetectorRef.markForCheck();
       });
+  }
+
+  /**
+   * Asks for the public configuration again, after a boot that had to run without
+   * it.
+   *
+   * The read goes through the facade's own refresh, which republishes the
+   * configuration on the same channel the boot published the fallback on, so a
+   * success is picked up by everything that reads it rather than only here. This
+   * component then re-reads its own derived state, which is what makes the notice
+   * and the affordances it explains appear and disappear together.
+   *
+   * The refresh has no result channel - it publishes rather than returns - so the
+   * outcome is read back from the facade a moment later. The delay is the request
+   * itself: asking immediately would always read the value the boot left behind.
+   * A failed retry therefore leaves the notice standing, which is correct, and the
+   * busy state is cleared either way so the control can be pressed again.
+   */
+  public onRetryPublicInfo() {
+    if (this.isRetryingPublicInfo) {
+      return;
+    }
+
+    this.isRetryingPublicInfo = true;
+
+    this.changeDetectorRef.markForCheck();
+
+    this.dataService.updateInfo();
+
+    window.setTimeout(() => {
+      this.isPublicInfoUnavailable = this.dataService.isPublicInfoUnavailable();
+      this.isRetryingPublicInfo = false;
+
+      if (!this.isPublicInfoUnavailable) {
+        this.info = this.dataService.fetchInfo();
+
+        this.hasPermissionForSubscription = hasPermission(
+          this.info?.globalPermissions,
+          permissions.enableSubscription
+        );
+      }
+
+      this.changeDetectorRef.markForCheck();
+    }, PUBLIC_INFO_RETRY_SETTLE_MS);
   }
 
   public onClickSystemMessage() {
@@ -593,11 +694,14 @@ export class GfAppComponent implements OnInit {
           width: this.deviceType === 'mobile' ? '100vw' : '50rem'
         });
 
+        this.openedHoldingDetailDialogRef = dialogRef;
+
         dialogRef
           .afterClosed()
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe((result) => {
             this.openedHoldingDetailAddress = null;
+            this.openedHoldingDetailDialogRef = null;
 
             // `dataSource` and `symbol` are shared, not owned. This dialog is the
             // only owner of `holdingDetailDialog`, so that key always goes; the pair

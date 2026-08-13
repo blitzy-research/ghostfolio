@@ -23,26 +23,37 @@
         One localized name per branch, matching the three states the markup already
         distinguishes, and `.sr-only` so the badge looks exactly as it did.
       -->
+      <!--
+        Whether the rule is switched on is decided FIRST, before what it last
+        measured.
+
+        The order was the other way round, and a rule that had passed before being
+        switched off therefore kept its green container and its "Passed" name while
+        being listed as inactive - the same rule asserting two contradictory things
+        about itself in one view. A switched-off rule has no verdict to report: the
+        value it happens to still carry is the answer to a question nobody is asking
+        any more.
+      -->
       <div
         class="align-items-center d-flex icon-container mr-2 px-2"
         [ngClass]="{
-          okay: rule?.value === true,
-          warn: rule?.value === false
+          okay: rule?.isActive === true && rule?.value === true,
+          warn: rule?.isActive === true && rule?.value === false
         }"
       >
-        @if (rule?.value === true) {
-          <ion-icon aria-hidden="true" name="checkmark-circle-outline" />
-          <span class="sr-only" i18n>Passed</span>
-        } @else if (rule?.isActive === true) {
-          <ion-icon aria-hidden="true" name="warning-outline" />
-          <span class="sr-only" i18n>Warning</span>
-        } @else {
+        @if (rule?.isActive !== true) {
           <ion-icon
             aria-hidden="true"
             class="text-muted"
             name="remove-circle-outline"
           />
           <span class="sr-only" i18n>Inactive</span>
+        } @else if (rule?.value === true) {
+          <ion-icon aria-hidden="true" name="checkmark-circle-outline" />
+          <span class="sr-only" i18n>Passed</span>
+        } @else {
+          <ion-icon aria-hidden="true" name="warning-outline" />
+          <span class="sr-only" i18n>Warning</span>
         }
       </div>
     }
@@ -66,7 +77,7 @@
       </div>
     } @else {
       <div class="flex-grow-1">
-        <div class="h6 my-1">{{ rule?.name }}</div>
+        <div class="my-1 rule-name">{{ rule?.name }}</div>
         <div class="evaluation">{{ rule?.evaluation }}</div>
       </div>
       <div>

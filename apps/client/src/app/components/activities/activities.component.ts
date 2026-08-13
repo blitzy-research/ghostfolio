@@ -5,7 +5,10 @@ import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { DEFAULT_PAGE_SIZE } from '@ghostfolio/common/config';
 import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { CreateOrderDto, UpdateOrderDto } from '@ghostfolio/common/dtos';
-import { downloadAsFile } from '@ghostfolio/common/helper';
+import {
+  downloadAsFile,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
 import {
   Activity,
   AssetProfileIdentifier,
@@ -14,6 +17,7 @@ import {
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { DateRange } from '@ghostfolio/common/types';
 import { GfActivitiesTableComponent } from '@ghostfolio/ui/activities-table';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 
 import {
@@ -32,6 +36,7 @@ import { MatTableDataSource } from '@angular/material/table';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { format, parseISO } from 'date-fns';
+import { StatusCodes } from 'http-status-codes';
 import { addIcons } from 'ionicons';
 import { addOutline } from 'ionicons/icons';
 import { DeviceDetectorService } from 'ngx-device-detector';
@@ -41,6 +46,14 @@ import { GfCreateOrUpdateActivityDialogComponent } from './create-or-update-acti
 import { CreateOrUpdateActivityDialogParams } from './create-or-update-activity-dialog/interfaces/interfaces';
 import { GfImportActivitiesDialogComponent } from './import-activities-dialog/import-activities-dialog.component';
 import { ImportActivitiesDialogParams } from './import-activities-dialog/interfaces/interfaces';
+
+/**
+ * The stable event identifier a failed activity read is reported under.
+ *
+ * Fixed so it stays searchable, and carrying the reason only - never the response -
+ * because an activity names what the viewer holds and what they paid.
+ */
+const ACTIVITY_FETCH_FAILED_EVENT = 'GF-ACTIVITY-FETCH-FAILED';
 
 @Component({
   host: { class: 'has-fab' },
@@ -114,6 +127,7 @@ export class GfActivitiesComponent implements OnInit {
     private dialog: MatDialog,
     private icsService: IcsService,
     private impersonationStorageService: ImpersonationStorageService,
+    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
@@ -523,8 +537,13 @@ export class GfActivitiesComponent implements OnInit {
           this.dataService
             .fetchActivity(activityId)
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe((activity) => {
-              this.openCreateActivityDialog(activity);
+            .subscribe({
+              error: (error: unknown) => {
+                this.discardUnservableActivityRequest(error);
+              },
+              next: (activity) => {
+                this.openCreateActivityDialog(activity);
+              }
             });
         });
       } else {
@@ -538,8 +557,13 @@ export class GfActivitiesComponent implements OnInit {
           this.dataService
             .fetchActivity(activityId)
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe((activity) => {
-              this.openUpdateActivityDialog(activity);
+            .subscribe({
+              error: (error: unknown) => {
+                this.discardUnservableActivityRequest(error);
+              },
+              next: (activity) => {
+                this.openUpdateActivityDialog(activity);
+              }
             });
         });
       } else {
@@ -566,6 +590,38 @@ export class GfActivitiesComponent implements OnInit {
    * one's. `dialogModule` is cleared with them because this module only ever
    * opens a dialog while that discriminator names it.
    */
+  /**
+   * Abandons a dialog request naming an activity that cannot be read.
+   *
+   * A stale identifier is the ordinary way here: a link, a restored tab or a Back
+   * navigation can all carry the identifier of an activity that has since been deleted.
+   * The read had no failure handler, so nothing opened, the request stayed RECORDED as
+   * served, and the parameters stayed in the address - which left the viewer looking at a
+   * screen that had been asked to show them something and silently showed nothing, with
+   * no way to ask again short of editing the URL.
+   *
+   * Clearing the parameters is what makes the module usable again, and it is also what
+   * lets the same request be honoured properly if it was merely a transient failure: the
+   * final branch of {@link applyQueryParams} observes their absence and forgets what was
+   * served, so asking again counts as new.
+   *
+   * @param aError the caught value, read only for its status.
+   */
+  private discardUnservableActivityRequest(aError: unknown) {
+    const status = (aError as { status?: number })?.status;
+
+    this.notificationService.alert({
+      title:
+        status === StatusCodes.NOT_FOUND
+          ? $localize`This activity no longer exists.`
+          : $localize`The activity could not be loaded. Please try again.`
+    });
+
+    reportSanitizedError(ACTIVITY_FETCH_FAILED_EVENT, aError);
+
+    this.clearDialogQueryParams();
+  }
+
   private clearDialogQueryParams() {
     void this.router.navigate([], {
       queryParams: {

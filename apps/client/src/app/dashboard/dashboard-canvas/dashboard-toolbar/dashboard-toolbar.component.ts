@@ -24,6 +24,7 @@ import {
   CUSTOM_ELEMENTS_SCHEMA,
   DestroyRef,
   HostListener,
+  Input,
   OnInit,
   ViewChild
 } from '@angular/core';
@@ -93,6 +94,17 @@ import { DeviceDetectorService } from 'ngx-device-detector';
   templateUrl: './dashboard-toolbar.html'
 })
 export class GfDashboardToolbarComponent implements OnInit {
+  /**
+   * Whether a refresh of every placed module is currently running.
+   *
+   * An input rather than state of this bar's own, because the request travels one
+   * way: this bar publishes it onto the shared reload bus and the canvas is what
+   * knows when the last module has finished. Bound to the control's disabled and
+   * busy states so a refresh cannot be started twice and does not look untouched
+   * while it runs.
+   */
+  @Input() isRefreshing = false;
+
   @ViewChild('assistant') assistantElement: GfAssistantComponent;
   @ViewChild('assistantTrigger') assistentMenuTriggerElement: MatMenuTrigger;
 
@@ -123,6 +135,22 @@ export class GfDashboardToolbarComponent implements OnInit {
   public hasFilters: boolean;
 
   public readonly impersonationStatusLabel = $localize`Viewing another account`;
+
+  /**
+   * The assistant button's name, in each of the two states its badge distinguishes.
+   *
+   * The badge is a dot rather than a count, and a description ON the badge is the wrong
+   * place for the state: a fixed one is announced even while the dot is suppressed,
+   * because suppression is presentational. Naming the BUTTON instead means the state is
+   * re-announced whenever it changes and disappears with the dot, and it needs no second
+   * element to carry it.
+   *
+   * Two whole sentences rather than one with a fragment appended, because a translator
+   * needs the complete string to order it naturally.
+   */
+  public readonly assistantLabel = $localize`Assistant`;
+
+  public readonly assistantWithFiltersLabel = $localize`Assistant, filters are in force`;
 
   public hasImpersonationId: boolean;
   public hasPermissionForSubscription: boolean;
@@ -177,6 +205,8 @@ export class GfDashboardToolbarComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((state) => {
         this.user = state.user;
+
+        this.releaseUnheldImpersonation();
 
         this.hasFilters = this.userService.hasFilters();
 
@@ -329,9 +359,65 @@ export class GfDashboardToolbarComponent implements OnInit {
   }
 
   // Refreshes what the viewer has placed rather than navigating anywhere: the
-  // canvas answers this bus by re-mounting every mounted module.
+  // canvas answers this bus by re-mounting every mounted module. Guarded on the
+  // busy state as well as disabled in the template, because a control can be
+  // activated by a keyboard while a browser is still applying the disabled
+  // attribute, and a second publication would restart a refresh already running.
   public onLogoClick() {
+    if (this.isRefreshing) {
+      return;
+    }
+
     this.layoutService.getShouldReloadSubject().next();
+  }
+
+  /**
+   * Drops a stored impersonation the viewer no longer holds a grant for.
+   *
+   * The indicator said "Viewing another account" for as long as an identifier sat
+   * in local storage, and nothing ever checked that the identifier still meant
+   * anything. It routinely stops meaning something: the grant is the other
+   * account's to revoke, and the server answers an identifier it cannot honour by
+   * simply serving the viewer's OWN data - with no error and no status to react to.
+   * So the viewer was looking at their own dashboard while being told, in the
+   * toolbar and in the account menu, that they were looking at somebody else's.
+   *
+   * The check is against the very list the menu offers, which is the right
+   * authority for it: an identifier that is not among the viewer's grants is one
+   * the server will not honour either. It runs on every viewer emission rather than
+   * once, because a grant can be revoked while the canvas is up.
+   *
+   * Deliberately silent about the grants not having ARRIVED. `access` is absent
+   * until the viewer is read, and treating that as "not held" would clear a
+   * perfectly good impersonation on every boot.
+   *
+   * The permission exemption is not a loosening of the check, it is the other half
+   * of the same server-side predicate: a viewer who may impersonate everybody is
+   * honoured on a bare account identifier, which is what the user administration
+   * module stores and which is deliberately NOT a grant identifier. Without the
+   * exemption this method would revoke exactly the impersonation that works.
+   */
+  private releaseUnheldImpersonation() {
+    const impersonationId = this.impersonationStorageService.getId();
+
+    if (!impersonationId || !this.user?.access) {
+      return;
+    }
+
+    if (hasPermission(this.user.permissions, permissions.impersonateAllUsers)) {
+      return;
+    }
+
+    const isHeld = this.user.access.some(({ id }) => id === impersonationId);
+
+    if (isHeld) {
+      return;
+    }
+
+    // No reload, and that is the point: the requests this page has already made
+    // were served as the viewer themselves, so what is on screen is already
+    // correct. Only the claim that it is not needs withdrawing.
+    this.impersonationStorageService.removeId();
   }
 
   public onMenuClosed() {

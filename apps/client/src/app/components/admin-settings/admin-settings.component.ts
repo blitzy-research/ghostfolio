@@ -78,6 +78,19 @@ export class GfAdminSettingsComponent implements OnInit {
     'actions'
   ];
   public ghostfolioApiStatus: DataProviderGhostfolioStatusResponse;
+  /**
+   * Whether a premium data provider API key is STORED, independently of whether the
+   * third party currently accepts it.
+   *
+   * Held separately from {@link isGhostfolioApiKeyValid} because the two answer
+   * different questions and were previously conflated: validity is `false` both when
+   * no key exists and when a stored key is rejected or cannot be checked, so the
+   * remove action - which was rendered only for a valid key - disappeared in exactly
+   * the situation an operator needs it, leaving an expired or mistyped key
+   * permanently in the database.
+   */
+  public hasGhostfolioApiKey: boolean;
+
   public isGhostfolioApiKeyValid: boolean;
   public isLoading = false;
   public pricingUrl: string;
@@ -149,7 +162,8 @@ export class GfAdminSettingsComponent implements OnInit {
             });
         }
       },
-      title: $localize`Please enter your Ghostfolio API key.`
+      title: $localize`Please enter your Ghostfolio API key.`,
+      valueLabel: $localize`API key`
     });
   }
 
@@ -173,6 +187,10 @@ export class GfAdminSettingsComponent implements OnInit {
         const ghostfolioApiKey = settings[
           PROPERTY_API_KEY_GHOSTFOLIO
         ] as string;
+
+        // Read from the stored setting alone. Removal is an operation on this
+        // application's own database and needs no third party's opinion.
+        this.hasGhostfolioApiKey = !!ghostfolioApiKey;
 
         if (ghostfolioApiKey) {
           this.adminService

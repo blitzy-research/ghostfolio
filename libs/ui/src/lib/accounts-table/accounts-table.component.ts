@@ -171,9 +171,20 @@ export class GfAccountsTableComponent {
     }
   }
 
+  /**
+   * Shows one account's note.
+   *
+   * The note is passed as the MESSAGE and not as the heading, which matters for two
+   * independent reasons. It is content a person typed, so it is arbitrarily long and
+   * belongs in the region the dialog bounds and scrolls - a note passed as a heading
+   * grew the surface until the button that closes it left the viewport. And a dialog
+   * needs an accessible name that says what it is; the note itself cannot serve as
+   * one.
+   */
   protected onOpenComment(aComment: string) {
     this.notificationService.alert({
-      title: aComment
+      message: aComment,
+      title: $localize`Note`
     });
   }
 

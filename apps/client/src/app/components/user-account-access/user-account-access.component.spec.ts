@@ -103,10 +103,16 @@ describe('GfUserAccountAccessComponent', () => {
   let routerMock: { navigate: jest.Mock };
   let stateChangedSubject: BehaviorSubject<{ user: User }>;
 
-  /** The request the URL makes when a grant is to be edited. */
+  /**
+   * The request the URL makes when a grant is to be edited.
+   *
+   * `accessDialogId` rather than `accessId`: the latter is the root host's
+   * discriminator for a portfolio shared by link, and this dialog no longer
+   * travels on it. See `GfAppQueryParams`.
+   */
   const editRequest = (aAccessId = accessId) => {
     return {
-      accessId: aAccessId,
+      accessDialogId: aAccessId,
       dialogModule: DashboardModuleType.ACCOUNT_ACCESS,
       editDialog: 'true'
     };
@@ -372,8 +378,11 @@ describe('GfUserAccountAccessComponent', () => {
       // naming a segment is what would discard every other parameter on it.
       expect(commands).toEqual([]);
       expect(extras.queryParamsHandling).toBe('merge');
+      // `accessId` is absent on purpose: it belongs to the root host, where it
+      // identifies a shared portfolio, so clearing it from here would close
+      // somebody's share as a side effect of closing this dialog.
       expect(extras.queryParams).toEqual({
-        accessId: null,
+        accessDialogId: null,
         createDialog: null,
         dialogModule: null,
         editDialog: null

@@ -57,6 +57,7 @@ import {
 } from './dashboard-canvas.config';
 import { GfDashboardModuleHostComponent } from './dashboard-module-host/dashboard-module-host.component';
 import { GfDashboardToolbarComponent } from './dashboard-toolbar/dashboard-toolbar.component';
+import { GfEmptyCanvasStateComponent } from './empty-canvas-state/empty-canvas-state.component';
 import { GfSignInPromptComponent } from './sign-in-prompt/sign-in-prompt.component';
 
 // Cuts the chart tree the shared portfolio brings with it, which reaches the `color`
@@ -402,6 +403,7 @@ describe('itemValidateCallback', () => {
 describe('the grid ceilings', () => {
   const config = () =>
     createDashboardCanvasConfig({
+      onDragGestureStart: () => undefined,
       onEmptyCellDrop: () => undefined,
       onGridsterDestroy: () => undefined,
       onGridsterInit: () => undefined,
@@ -1706,7 +1708,16 @@ describe('GfDashboardCanvasComponent', () => {
       expect(dashboardLayoutServiceMock.scheduleSave).toHaveBeenCalledTimes(1);
 
       const [, reported] = dashboardLayoutServiceMock.scheduleSave.mock
-        .calls[0] as [string, { moduleType: string }[]];
+        .calls[0] as [
+        string,
+        {
+          cols: number;
+          moduleType: string;
+          rows: number;
+          x: number;
+          y: number;
+        }[]
+      ];
 
       expect(reported.map(({ moduleType }) => moduleType).sort()).toEqual(
         [
@@ -1717,9 +1728,9 @@ describe('GfDashboardCanvasComponent', () => {
         ].sort()
       );
 
-      // The visible module carries the geometry the grid just committed; the three
-      // hidden ones keep the geometry they were saved with, which is the only
-      // geometry they have.
+      // The visible module carries the geometry the grid just committed, exactly
+      // where the viewer put it. That half is not negotiable: the module they can
+      // see and did move keeps its cells.
       expect(reported).toEqual(
         expect.arrayContaining([
           {
@@ -1728,16 +1739,53 @@ describe('GfDashboardCanvasComponent', () => {
             rows: 3,
             x: 2,
             y: 0
-          },
-          {
-            cols: 8,
-            moduleType: DashboardModuleType.ADMIN_OVERVIEW,
-            rows: 6,
-            x: 0,
-            y: 0
           }
         ])
       );
+
+      // The hidden module was saved at column 0 row 0 and the drag above moved the
+      // visible one on top of it, so it cannot still be there - the whole reason
+      // this matters is that the grid engine does not know the cells are taken, so
+      // nothing else was going to notice.
+      const adminOverview = reported.find(
+        ({ moduleType }) => moduleType === DashboardModuleType.ADMIN_OVERVIEW
+      );
+
+      expect(adminOverview).toEqual({
+        cols: 8,
+        moduleType: DashboardModuleType.ADMIN_OVERVIEW,
+        rows: 6,
+        x: 0,
+        y: 3
+      });
+
+      // The invariant, asserted over the whole arrangement rather than over the one
+      // pair this test happens to create: nothing in the persisted document
+      // overlaps anything else in it. A stored overlap is durable and silent, and it
+      // surfaces only when the entitlement returns and two modules claim the same
+      // cells - by which point the arrangement the viewer sees depends on which one
+      // the engine relocated.
+      for (const module of reported) {
+        for (const other of reported) {
+          if (module === other) {
+            continue;
+          }
+
+          const isOverlapping =
+            module.x < other.x + other.cols &&
+            other.x < module.x + module.cols &&
+            module.y < other.y + other.rows &&
+            other.y < module.y + module.rows;
+
+          expect({
+            isOverlapping,
+            pair: `${module.moduleType}/${other.moduleType}`
+          }).toEqual({
+            isOverlapping: false,
+            pair: `${module.moduleType}/${other.moduleType}`
+          });
+        }
+      }
     });
 
     it('should forget a module the viewer removed while keeping one they may not see', async () => {
@@ -2321,15 +2369,80 @@ describe('GfDashboardCanvasComponent', () => {
       expect(dashboardLayoutServiceMock.get).not.toHaveBeenCalled();
     });
 
-    it('should not enter the shared state when the access id belongs to the access-editing dialog', async () => {
+    it('should show the share even when a foreign module leaves a dialog flag in the address', async () => {
+      // The address an anonymous visitor can genuinely arrive at: somebody's share
+      // link, opened in a browser whose last visit left a generic dialog flag
+      // behind. The root state used to be decided partly by that flag, so this
+      // visitor was shown the sign-in prompt instead of the portfolio that had been
+      // shared with them.
       await createCanvas({
-        queryParams: { accessId: 'abc', editDialog: 'true' }
+        queryParams: {
+          accessId: 'abc',
+          dialogModule: DashboardModuleType.ACCOUNTS,
+          editDialog: 'true'
+        },
+        viewer: null
+      });
+      // The share is behind a deferred block, so it needs the same settle its
+      // siblings above take; a plain paint leaves the placeholder in the DOM.
+      await paintDeferredBlocks();
+
+      expect(component.isPublicPortfolio).toBe(true);
+      expect(queryElement('gf-public-portfolio')).toBeTruthy();
+      expect(queryElement('gridster')).toBeNull();
+      expect(queryElement('gf-sign-in-prompt')).toBeNull();
+    });
+
+    it('should stay on the canvas while the access module edits one of its own grants', async () => {
+      // The access module addresses its edit dialog with `accessDialogId`, which is
+      // not the root's discriminator, so the canvas is untouched by it.
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        }),
+        queryParams: {
+          accessDialogId: 'abc',
+          dialogModule: DashboardModuleType.ACCOUNT_ACCESS,
+          editDialog: 'true'
+        }
       });
       paint();
 
       expect(component.isPublicPortfolio).toBe(false);
       expect(queryElement('gf-public-portfolio')).toBeNull();
-      expect(queryElement('gridster')).toBeTruthy();
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
+    });
+
+    it('should not hand a signed-in canvas to a share when a dialog flag is cleared beneath it', async () => {
+      // The second half of the defect, and the damaging half. A signed-in viewer
+      // editing one of their own access grants held both parameters; the moment any
+      // other module merged `editDialog: null` into the address, the root state
+      // flipped to "shared portfolio" and their canvas was torn down and replaced
+      // with a stranger's. With the dialog on its own parameter, clearing a generic
+      // flag cannot move the root state at all.
+      await createCanvas({
+        layout: of({
+          modules: [{ cols: 5, moduleType: 'holdings', rows: 4, x: 0, y: 0 }],
+          version: 1
+        }),
+        queryParams: {
+          accessDialogId: 'abc',
+          dialogModule: DashboardModuleType.ACCOUNT_ACCESS,
+          editDialog: 'true'
+        }
+      });
+      paint();
+
+      expect(component.isPublicPortfolio).toBe(false);
+
+      queryParamsSubject.next({ accessDialogId: 'abc' });
+      paint();
+
+      expect(component.isPublicPortfolio).toBe(false);
+      expect(component.isSignedOut).toBe(false);
+      expect(queryElement('gf-public-portfolio')).toBeNull();
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.HOLDINGS]);
     });
 
     it('should adopt a cached viewer once the share parameter is dropped', async () => {
@@ -2792,6 +2905,146 @@ describe('GfDashboardCanvasComponent', () => {
         x: 0,
         y: 0
       });
+    });
+
+    it('should move the module the viewer cannot see out from under the one they added', async () => {
+      // One module the viewer is not entitled to see, saved across the top-left of
+      // the grid. It draws no card, so the grid engine has no item there and every
+      // cell it covers looks free to the engine's own scan.
+      await createCanvas({
+        layout: of({
+          modules: [
+            { cols: 8, moduleType: 'admin-overview', rows: 6, x: 0, y: 0 }
+          ],
+          version: 1
+        }),
+        viewer: { id: 'viewer-1', permissions: [] }
+      });
+      await paintAndSettle();
+
+      expect(renderedModuleTypes()).toEqual([]);
+
+      const gridster = gridsterComponent();
+
+      jest
+        .spyOn(gridster, 'getNextPossiblePosition')
+        .mockImplementation((aNewItem) => {
+          aNewItem.x = 0;
+          aNewItem.y = 0;
+
+          return true;
+        });
+
+      dashboardLayoutServiceMock.scheduleSave.mockClear();
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
+      paint();
+
+      // In a browser the pushed item renders a cell whose initialization the engine
+      // announces through `itemInitCallback`; in this environment gridster raises
+      // none of its own callbacks, so it is announced here - through the very
+      // configuration the canvas handed the engine.
+      component.options.itemInitCallback(
+        component.modules[0],
+        gridsterItemComponents()[0]
+      );
+
+      // The module the viewer added goes exactly where the engine put it. Screening
+      // the engine's answer against the hidden cells instead was measured and
+      // rejected: a lapsed subscription hides several saved modules, so every
+      // addition would be pushed below all of them and the viewer would get two
+      // cards with eleven empty rows between them.
+      expect(placedGeometry()).toEqual([
+        {
+          cols: 6,
+          moduleType: DashboardModuleType.HOLDINGS,
+          rows: 4,
+          x: 0,
+          y: 0
+        }
+      ]);
+
+      const [, reported] = dashboardLayoutServiceMock.scheduleSave.mock
+        .calls[0] as [
+        string,
+        {
+          cols: number;
+          moduleType: string;
+          rows: number;
+          x: number;
+          y: number;
+        }[]
+      ];
+
+      // And the arrangement that reaches the server has no overlap in it, because
+      // the module the viewer cannot see is the one that moved. Its saved cell was
+      // column 0 row 0; the addition took rows 0 to 3, so it settles at row 4 - the
+      // first cell, scanning left to right and then down, that is free.
+      expect(reported).toEqual([
+        {
+          cols: 6,
+          moduleType: DashboardModuleType.HOLDINGS,
+          rows: 4,
+          x: 0,
+          y: 0
+        },
+        {
+          cols: 8,
+          moduleType: DashboardModuleType.ADMIN_OVERVIEW,
+          rows: 6,
+          x: 0,
+          y: 4
+        }
+      ]);
+    });
+
+    it('should leave a hidden module exactly where it was saved when nothing took its cells', async () => {
+      await createCanvas({
+        layout: of({
+          modules: [
+            { cols: 8, moduleType: 'admin-overview', rows: 6, x: 0, y: 6 }
+          ],
+          version: 1
+        }),
+        viewer: { id: 'viewer-1', permissions: [] }
+      });
+      await paintAndSettle();
+
+      const gridster = gridsterComponent();
+
+      jest
+        .spyOn(gridster, 'getNextPossiblePosition')
+        .mockImplementation((aNewItem) => {
+          aNewItem.x = 0;
+          aNewItem.y = 0;
+
+          return true;
+        });
+
+      dashboardLayoutServiceMock.scheduleSave.mockClear();
+
+      moduleCatalogComponent().moduleAdded.emit(DashboardModuleType.HOLDINGS);
+      paint();
+
+      component.options.itemInitCallback(
+        component.modules[0],
+        gridsterItemComponents()[0]
+      );
+
+      const [, reported] = dashboardLayoutServiceMock.scheduleSave.mock
+        .calls[0] as [string, { moduleType: string; y: number }[]];
+
+      // Nothing landed on it, so nothing moves. A relocation that fired whenever a
+      // hidden module merely existed would rewrite a saved position the viewer chose,
+      // for no reason and with no way for them to see it happen.
+      expect(reported).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            moduleType: DashboardModuleType.ADMIN_OVERVIEW,
+            y: 6
+          })
+        ])
+      );
     });
 
     it('should add nothing when the engine reports no free cell', async () => {
@@ -4767,13 +5020,18 @@ describe('GfDashboardCanvasComponent', () => {
      */
     const substituteRecordingHosts = (count: number) => {
       const hosts = Array.from({ length: count }, () => ({
-        reload: jest.fn<void, []>()
+        reload: jest.fn<Promise<void>, []>(() => Promise.resolve())
       }));
 
+      // Both members, because the real query offers both and the canvas needs the
+      // array form: a refresh now waits for every module to finish re-mounting
+      // before it reports itself over, and waiting means collecting the promises.
+      // A double that offered only `forEach` made the canvas see no hosts at all.
       component.moduleHosts = {
         forEach: (callback: (host: (typeof hosts)[number]) => void) => {
           hosts.forEach(callback);
-        }
+        },
+        toArray: () => hosts
       } as unknown as typeof component.moduleHosts;
 
       return hosts;
@@ -4943,6 +5201,74 @@ describe('GfDashboardCanvasComponent', () => {
       // modules for the duration of a catalog drag.
       expect(component.options.maxItemCols).toBe(GRID_COLUMNS);
       expect(component.options.maxItemRows).toBe(GRID_ROWS);
+    });
+
+    /**
+     * The notice laid over an empty grid must stop intercepting the drag.
+     *
+     * It is `pointer-events: none` with each of its controls taking pointers back,
+     * and those controls sit in the centre of the card - which is the middle of the
+     * empty canvas and exactly where a row gets dropped. So the very controls that
+     * have to answer a click were taking the `dragover` and `drop` the grid needed,
+     * and on a first visit that is the whole of drag-to-add failing in silence.
+     */
+    it('should stop the empty-canvas notice intercepting a drag', async () => {
+      await createCanvas({ layout: of(null) });
+      paint();
+
+      expect(component.isCatalogDragInProgress).toBe(false);
+
+      component.onCatalogDragStart(DashboardModuleType.MARKETS_PREMIUM);
+      paint();
+
+      expect(component.isCatalogDragInProgress).toBe(true);
+
+      component.onCatalogDragEnd();
+      paint();
+
+      expect(component.isCatalogDragInProgress).toBe(false);
+    });
+
+    /**
+     * Raised BEFORE the registry is consulted. A type this build cannot size a
+     * preview for still has to be droppable, so releasing the notice must not sit
+     * behind a lookup that returns nothing.
+     */
+    it('should release the notice even for a module it cannot size', async () => {
+      await createCanvas({ layout: of(null) });
+      paint();
+
+      component.onCatalogDragStart(
+        'legacy-unknown-module' as DashboardModuleType
+      );
+
+      expect(component.isCatalogDragInProgress).toBe(true);
+    });
+
+    it('should hand the drag state to the notice that has to yield to it', async () => {
+      await createCanvas({ layout: of(null) });
+      paint();
+
+      const notice = () => {
+        return fixture.debugElement.query(
+          By.directive(GfEmptyCanvasStateComponent)
+        );
+      };
+
+      expect(notice()).toBeTruthy();
+      expect(notice().componentInstance.isDragInProgress()).toBe(false);
+
+      component.onCatalogDragStart(DashboardModuleType.MARKETS_PREMIUM);
+      paint();
+
+      // Through the binding rather than the flag, because the flag alone would go
+      // on passing if the template were never wired to it.
+      expect(notice().componentInstance.isDragInProgress()).toBe(true);
+
+      component.onCatalogDragEnd();
+      paint();
+
+      expect(notice().componentInstance.isDragInProgress()).toBe(false);
     });
 
     it('should return to the engine default when the drag ends', async () => {
@@ -6031,6 +6357,61 @@ describe('GfDashboardCanvasComponent', () => {
       );
       expect(dataServiceMock.patchUserDashboardLayout).not.toHaveBeenCalled();
     });
+
+    it('should let the viewer take the stored arrangement back instead', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      saveErrorSubject.next(true);
+      paint();
+
+      expect(component.hasSaveError).toBe(true);
+
+      // What the server actually holds, which is what the canvas has to end up
+      // showing: the arrangement on screen is the one that could not be stored.
+      dashboardLayoutServiceMock.get.mockReturnValue(
+        of({
+          modules: [{ cols: 6, moduleType: 'markets', rows: 4, x: 0, y: 0 }],
+          version: 1
+        })
+      );
+
+      component.onDiscardFailedSave();
+      await paintAndSettle();
+
+      // The retained snapshot goes first, because nothing may be left able to flush
+      // the arrangement the viewer has just abandoned.
+      expect(
+        dashboardLayoutServiceMock.discardFailedSave
+      ).toHaveBeenCalledTimes(1);
+      expect(dashboardLayoutServiceMock.retryFailedSave).not.toHaveBeenCalled();
+
+      // Forced, not served from the cache: the whole purpose is to end up agreeing
+      // with the server rather than with this client's own last idea of it.
+      expect(dashboardLayoutServiceMock.get).toHaveBeenLastCalledWith(true);
+
+      expect(component.hasSaveError).toBe(false);
+      expect(renderedModuleTypes()).toEqual([DashboardModuleType.MARKETS]);
+    });
+
+    it('should write nothing while taking the stored arrangement back', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      saveErrorSubject.next(true);
+      paint();
+
+      dashboardLayoutServiceMock.scheduleSave.mockClear();
+
+      component.onDiscardFailedSave();
+      await paintAndSettle();
+
+      // Emptying the grid destroys every cell, and each destruction reaches the
+      // item-removed callback. Those are teardown rather than intent, so a recovery
+      // that wrote would be the one origin able to destroy a document on the way to
+      // reading it.
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
   });
 
   describe('a second viewer resolving into the same canvas', () => {
@@ -6903,6 +7284,120 @@ describe('GfDashboardCanvasComponent', () => {
 
       expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
     });
+
+    it('should take the edge auto-scroll away for the gesture and give it back', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      contentRegion(itemComponent);
+
+      // A drag has it, because a module cannot otherwise be carried to a part of a
+      // canvas taller than its viewport.
+      expect(component.options.disableScrollVertical).toBe(false);
+      expect(component.options.disableScrollHorizontal).toBe(false);
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      // A resize must not, because at the bottom edge the scroll compounds: each
+      // frame scrolls the region, which moves the edge away from the pointer, which
+      // grows the item, which lengthens the grid. A hold of about two seconds
+      // committed a module ninety-five rows tall.
+      expect(component.options.disableScrollVertical).toBe(true);
+      expect(component.options.disableScrollHorizontal).toBe(true);
+
+      component.options.resizable.stop(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mouseup')
+      );
+
+      expect(component.options.disableScrollVertical).toBe(false);
+      expect(component.options.disableScrollHorizontal).toBe(false);
+    });
+
+    it('should hand the configuration to the engine as a new object', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      contentRegion(itemComponent);
+
+      const before = component.options;
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      // Identity, not contents. The engine derives what it reads through a
+      // `computed` over a required signal input, so mutating the object in place
+      // changes nothing it will ever look at again - and spreading forward is what
+      // preserves the runtime bookkeeping it has already written onto it.
+      expect(component.options).not.toBe(before);
+      expect(component.options.itemValidateCallback).toBe(
+        before.itemValidateCallback
+      );
+    });
+
+    it('should give the auto-scroll back when a drag begins', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+
+      contentRegion(itemComponent);
+
+      component.options.resizable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      expect(component.options.disableScrollVertical).toBe(true);
+
+      // A gesture can end in a way the engine never reports - the window losing
+      // focus mid-resize - so the drag hook restores it as well. Without that, one
+      // abandoned resize would take the auto-scroll away from every later drag.
+      component.options.draggable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      expect(component.options.disableScrollVertical).toBe(false);
+      expect(component.options.disableScrollHorizontal).toBe(false);
+    });
+
+    it('should neither hold anything nor write anything when a drag begins', async () => {
+      await createCanvas({ layout: of(placedLayout) });
+      paint();
+
+      const [itemComponent] = gridsterItemComponents();
+      const content = contentRegion(itemComponent);
+
+      dashboardLayoutServiceMock.scheduleSave.mockClear();
+
+      component.options.draggable.start(
+        itemComponent.item(),
+        itemComponent,
+        new MouseEvent('mousedown')
+      );
+
+      // The drag hook exists only to answer the scroll question. A drag that
+      // actually changed the arrangement is reported by `itemChangeCallback`, and
+      // this must not become a fifth persistence trigger.
+      expect(component['resizingContentElement']).toBeNull();
+      expect(content.style.width).toBe('');
+      expect(dashboardLayoutServiceMock.scheduleSave).not.toHaveBeenCalled();
+    });
   });
 
   describe('the catalog trigger', () => {
@@ -7671,6 +8166,90 @@ describe('GfDashboardCanvasComponent', () => {
     });
   });
 
+  /**
+   * A module's own floating action button, at cells too short to give one away.
+   *
+   * Five feature components render one, and it is pinned to its module's bottom edge
+   * over a body that scrolls beneath it. That costs the reader the band it occupies,
+   * which is what a pinned control costs anywhere - until the body gets small enough
+   * that the band IS the body. A two-row cell is 170px, of which the header takes about
+   * 40px, leaving a body near 120px; a 56px button with its 12px inset covers more than
+   * half. A control scrolling past underneath is then hidden, and unlike the END of the
+   * content - which the body reserve clears - a control in the middle has nothing to
+   * clear it.
+   */
+  describe('a module too short to pin its own action button', () => {
+    const readCanvasTemplate = () => {
+      return readFileSync(join(__dirname, 'dashboard-canvas.html'), 'utf8');
+    };
+
+    const readCanvasStyles = () => {
+      return readFileSync(join(__dirname, 'dashboard-canvas.scss'), 'utf8');
+    };
+
+    it('is recognised from the rows it occupies', () => {
+      // The row count is the cell's height, known one layer before the browser lays
+      // anything out, which is what makes this assertable without one.
+      expect(readCanvasTemplate()).toContain(
+        '[class.gf-dashboard-module-compact]="item.rows <= 3"'
+      );
+    });
+
+    it('puts the button back into normal flow', () => {
+      const styles = readCanvasStyles();
+      const rule =
+        /\.gf-dashboard-module-compact \.fab-container \{([^}]*)\}/.exec(
+          styles
+        );
+
+      expect(rule).toBeTruthy();
+
+      // All three declarations that pinned it are undone. Leaving `inset-block-end`
+      // behind would have no effect on a statically positioned box today and would
+      // resume having one the moment anything above it became positioned again.
+      expect(rule[1]).toContain('position: static');
+      expect(rule[1]).toContain('inset-block-end: auto');
+      expect(rule[1]).toContain('inset-inline: auto');
+    });
+
+    it('keeps the trailing alignment, which should not change with the cell', () => {
+      const styles = readCanvasStyles();
+      const compactRule =
+        /\.gf-dashboard-module-compact \.fab-container \{([^}]*)\}/.exec(
+          styles
+        );
+
+      // The button's reading position within its module is the one thing that stays
+      // the same at every size; only whether it floats changes.
+      expect(compactRule[1]).not.toContain('justify-content');
+    });
+
+    it('gives back the space that was reserved for the pinned band', () => {
+      const styles = readCanvasStyles();
+
+      // With the button in flow there is nothing at the bottom edge to scroll clear
+      // of, so the reserve would be a strip of dead space at the end of every one of
+      // those modules.
+      expect(styles).toMatch(
+        /\.gf-dashboard-module-compact\s*\n?\s*\.gridster-item-content:has\(\.fab-container\)/
+      );
+      expect(styles).toContain('--gf-dashboard-module-body-gutter');
+    });
+
+    it('leaves a module large enough for the button pinned', () => {
+      const styles = readCanvasStyles();
+      // `\n {2}\}` rather than two literal spaces: the closing brace of a rule nested
+      // one level deep in the compiled stylesheet is indented by exactly two, and a
+      // run of literal spaces in a pattern is both unreadable and linted against.
+      const pinnedRule = /::ng-deep \.fab-container \{([\s\S]*?)\n {2}\}/.exec(
+        styles
+      );
+
+      expect(pinnedRule).toBeTruthy();
+      expect(pinnedRule[1]).toContain('position: absolute');
+    });
+  });
+
   describe('keeping the catalog dismissible', () => {
     const readCanvasStylesheet = () => {
       return readFileSync(join(__dirname, 'dashboard-canvas.scss'), 'utf8');
@@ -7720,16 +8299,28 @@ describe('GfDashboardCanvasComponent', () => {
       // window never had, so a narrow viewport with nothing hidden from it gains
       // no scrollbar.
       //
-      // Three readers, and every one of them has to take the floor or it reports
-      // on something other than the canvas: the grid, which divides the columns;
-      // the empty-canvas state, which IS the canvas on the branch that has no
-      // grid; and the block-axis edge marks, which span the canvas and would
+      // Two readers take the floor against the WINDOW: the grid, which divides the
+      // columns, and the block-axis edge marks, which span the canvas and would
       // otherwise stop short of it and travel with the inline scroll.
-      const readers = stylesheet.match(
+      const windowReaders = stylesheet.match(
         /min-inline-size:\s*min\(\s*var\(--gf-dashboard-canvas-min-width\),\s*100vw\s*\);/g
       );
 
-      expect(readers).toHaveLength(3);
+      expect(windowReaders).toHaveLength(2);
+
+      // The empty-canvas state takes the same floor against its own CONTAINING
+      // BLOCK instead, and the distinction is a defect rather than a preference.
+      // The drawer is `mode="side"`, so it takes its width out of the pane; a
+      // window-relative floor therefore resolved to the whole window inside a pane
+      // the drawer had already narrowed, and since that state centres itself in the
+      // box, half the card - its description and its only control - was laid out
+      // behind the open catalog. On a first visit the catalog is open by design, so
+      // that was the very first screen a new viewer saw.
+      const paneReaders = stylesheet.match(
+        /min-inline-size:\s*min\(\s*var\(--gf-dashboard-canvas-min-width\),\s*100%\s*\);/g
+      );
+
+      expect(paneReaders).toHaveLength(1);
     });
 
     it('should absorb the floor as inline scroll rather than as a crushed canvas', () => {
@@ -8279,6 +8870,7 @@ describe('GfDashboardCanvasComponent', () => {
       // the policy here, the withholding where hydration is exercised.
       expect(
         createDashboardCanvasConfig({
+          onDragGestureStart: () => undefined,
           onEmptyCellDrop: () => undefined,
           onGridsterDestroy: () => undefined,
           onGridsterInit: () => undefined,

@@ -52,6 +52,25 @@ export class GfFireComponent implements OnInit {
   public safeWithdrawalRateControl = new FormControl<number>(undefined);
   public safeWithdrawalRateOptions = [0.025, 0.03, 0.035, 0.04, 0.045];
   public user: User;
+
+  /**
+   * Formats a safe withdrawal rate for the native `<option>` that offers it.
+   *
+   * These options used to be rendered with the `percent` pipe, which formats against the
+   * locale the BUNDLE was built for. The same rate is rendered a few lines below by
+   * `gf-value` against the locale the VIEWER chose, so the two branches of the same
+   * sentence disagreed with each other - `4.0%` in one and `4,0%` in the other for anyone
+   * whose locale separates decimals differently from the build. A component cannot be
+   * used inside `<option>`, which is why the value is formatted here instead, with the
+   * same `toLocaleString` call and the same digit options `gf-value` uses so the two
+   * agree by construction rather than by coincidence.
+   */
+  protected formatSafeWithdrawalRate(aRate: number) {
+    return `${(aRate * 100).toLocaleString(this.user?.settings?.locale, {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 1
+    })}%`;
+  }
   public withdrawalRatePerMonth: Big;
   public withdrawalRatePerMonthProjected: Big;
   public withdrawalRatePerYear: Big;

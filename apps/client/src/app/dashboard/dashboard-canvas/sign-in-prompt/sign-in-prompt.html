@@ -1,6 +1,15 @@
 <div class="align-items-center d-flex flex-grow-1 justify-content-center">
   <mat-card appearance="outlined" class="sign-in-card">
     <mat-card-content class="align-items-center d-flex flex-column">
+      <!--
+        The heading for this state of the root document, and the only one it has.
+        Visually hidden because the mark below already says it to anybody who can see
+        it, and a second visible copy would be a design change nothing asked for -
+        but the mark is an image, so without this the page a signed-out visitor lands
+        on had no heading at all, and no way to be oriented by one.
+      -->
+      <h1 class="sr-only" i18n>Sign in to Ghostfolio</h1>
+
       <gf-logo class="mb-3" size="large" />
 
       <!--

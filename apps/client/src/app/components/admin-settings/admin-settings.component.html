@@ -1,7 +1,7 @@
 <div class="container">
   <div class="mb-5 row">
     <div class="col">
-      <h2 class="text-center" i18n>Data Providers</h2>
+      <h3 class="h6 text-center" i18n>Data Providers</h3>
       @if (isGhostfolioApiKeyValid === false) {
         <mat-card appearance="outlined" class="my-3 special">
           <mat-card-header>
@@ -161,7 +161,15 @@
               isGhostfolioDataProvider(element) &&
               isGhostfolioApiKeyValid === true
             ) {
+              <!--
+                A `mat-progress-bar` renders `role="progressbar"`, and a progressbar with
+                no accessible name is announced as a bare value with nothing to say what
+                the value is OF. The visible caption beneath states the counts, so the
+                name here says what is being measured rather than repeating them.
+              -->
               <mat-progress-bar
+                aria-label="Remaining daily requests"
+                i18n-aria-label
                 mode="determinate"
                 [value]="
                   100 -
@@ -187,7 +195,19 @@
 
           <td *matCellDef="let element" class="px-1 text-right" mat-cell>
             @if (isGhostfolioDataProvider(element)) {
-              @if (isGhostfolioApiKeyValid === true) {
+              <!--
+                Two independent affordances, keyed on two independent facts.
+
+                Removal is offered whenever a key is STORED - `hasGhostfolioApiKey` -
+                rather than whenever the third party accepts it. Keying it on validity
+                meant an expired, mistyped or currently uncheckable key could not be
+                deleted at all: the only control shown was "Set API key", so the bad
+                value could be overwritten but never cleared.
+
+                Setting is offered while there is no valid key, which covers both the
+                first-time case and replacing one that no longer validates.
+              -->
+              @if (hasGhostfolioApiKey) {
                 <button
                   aria-label="Actions for this data provider"
                   class="mx-1 no-min-width px-2"
@@ -210,7 +230,8 @@
                     </span>
                   </button>
                 </mat-menu>
-              } @else if (isGhostfolioApiKeyValid === false) {
+              }
+              @if (isGhostfolioApiKeyValid === false) {
                 <button
                   class="special"
                   mat-flat-button
@@ -223,7 +244,10 @@
           </td>
         </ng-container>
 
-        <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+        <tr
+          *matHeaderRowDef="displayedColumns; sticky: true"
+          mat-header-row
+        ></tr>
         <tr *matRowDef="let row; columns: displayedColumns" mat-row></tr>
       </table>
       @if (isLoading) {
@@ -240,13 +264,13 @@
   </div>
   <div class="mb-5 row">
     <div class="col">
-      <h2 class="text-center" i18n>Platforms</h2>
+      <h3 class="h6 text-center" i18n>Platforms</h3>
       <gf-admin-platform [locale]="user?.settings?.locale" />
     </div>
   </div>
   <div class="row">
     <div class="col">
-      <h2 class="text-center" i18n>Tags</h2>
+      <h3 class="h6 text-center" i18n>Tags</h3>
       <gf-admin-tag [locale]="user?.settings?.locale" />
     </div>
   </div>

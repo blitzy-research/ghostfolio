@@ -273,6 +273,42 @@ describe('GfAiChatModuleComponent', () => {
     expect(component.hasError).toBe(false);
     expect(jest.getTimerCount()).toBe(0);
   });
+  /**
+   * The prompt box, which scrolls sideways.
+   *
+   * A markdown pipe table row is 126 characters and no width this module reaches can
+   * hold one, so the document is kept at its natural width and the box scrolls. That
+   * makes it a scroll container - and a scroll container that cannot take focus cannot be
+   * scrolled from the keyboard at all, so everything past the right edge was reachable
+   * with a pointer and by no other means.
+   */
+  describe('the prompt box', () => {
+    const renderWithPrompt = () => {
+      fetchPrompt.mockReturnValue(of({ prompt: 'A | B\n--- | ---\n1 | 2' }));
+
+      fixture.detectChanges();
+
+      return fixture.nativeElement.querySelector('.prompt-container');
+    };
+
+    it('can be reached from the keyboard', () => {
+      expect(renderWithPrompt().getAttribute('tabindex')).toBe('0');
+    });
+
+    it('says what it holds, so landing on it is worthwhile', () => {
+      const promptBox = renderWithPrompt();
+
+      expect(promptBox.getAttribute('role')).toBe('region');
+      expect(promptBox.getAttribute('aria-label')).toBe('Generated AI prompt');
+    });
+
+    it('is a preformatted element, because the table depends on it', () => {
+      // A pipe table is aligned by padding cells with spaces, so it reads as a table
+      // only in a face where every character is the same width.
+      expect(renderWithPrompt().tagName).toBe('PRE');
+    });
+  });
+
   describe('while viewing another portfolio', () => {
     /** Brings the module up already impersonating, with a prompt available. */
     const renderWhileImpersonating = () => {

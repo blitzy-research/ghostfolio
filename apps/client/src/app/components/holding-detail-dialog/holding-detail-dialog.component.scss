@@ -14,3 +14,16 @@
     }
   }
 }
+
+// The secondary line on the no-details state, muted so the sentence explaining WHY
+// there is nothing to show reads as support for the statement above it rather than
+// as a second, competing statement.
+.holding-detail-hint {
+  color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+}
+
+:host-context(.theme-dark) {
+  .holding-detail-hint {
+    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+}

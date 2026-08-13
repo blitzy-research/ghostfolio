@@ -347,8 +347,65 @@ body {
   }
 }
 
-button:focus {
+// Suppresses the ring for a POINTER press only.
+//
+// This rule used to read `button:focus`, and that is why nothing in this application
+// showed a focus ring: it removed the indicator for KEYBOARD focus just as thoroughly
+// as for a click. It cannot simply be deleted either, because Material draws its own
+// state layer on a pointer press and a ring appearing on every click is the reason a
+// blanket suppression like it gets written in the first place. `:not(:focus-visible)`
+// is the distinction it lacked, so a mouse press looks exactly as it did and a Tab
+// press does not.
+button:focus:not(:focus-visible) {
   outline: 0;
+}
+
+// Draws the keyboard focus ring, on everything focusable rather than on the handful of
+// controls that happened to keep one.
+//
+// `:focus-visible` is the browser's own judgement about whether focus arrived by a route
+// that warrants an indicator, which in practice means the keyboard. The ring is drawn
+// OUTSIDE the element with a matching offset, so it never covers the control's own text
+// or border, and its colour is the surface foreground - the same token and the same 2px
+// width the module scrollport's own ring uses, which is what makes this one convention
+// rather than two. Stated as `var(--mat-sys-*, fallback)` because the fallback is what
+// paints while the system-token layer is unpopulated.
+//
+// SPECIFICITY IS LOAD-BEARING HERE, and it is the reason for both the `body` prefix and
+// the enumerated second selector. Measured at runtime, a bare `:focus-visible` rule
+// (specificity 0,1,0) lost to Angular Material's own suppressions and 22 of 35 focusable
+// controls stayed ringless while `:focus-visible` matched true on every one of them:
+//
+//   `.mat-sort-header-container { outline: 0 }`      0,1,0 - later in order, so it won
+//   `.mat-button-toggle-button { outline: none }`    0,1,0 - likewise
+//   `.mat-mdc-fab-base:focus { outline: none }`      0,2,0 - outranks 0,1,0 outright
+//   `.mat-mdc-menu-item:focus { outline: 0 }`        0,2,0 - likewise
+//   `.mdc-button:active { outline: none }`           0,2,0 - during an Enter keypress
+//
+// Material writes these because it expects the application to supply the indicator, so
+// out-ranking them is using the library as intended and not fighting it. `body ` lifts
+// the general rule to 0,1,1, which beats every 0,1,0 suppression; the listed controls
+// reach 0,2,1, which beats the 0,2,0 ones. Text inputs are deliberately NOT listed:
+// `.mdc-text-field__input:focus { outline: none }` is correct, because a focused field
+// already indicates itself with its own notched outline and a second ring around it
+// would be a double indicator.
+body :focus-visible,
+body .mat-button-toggle-button:focus-visible,
+body .mat-mdc-button-base:focus-visible,
+body .mat-mdc-menu-item:focus-visible,
+body .mat-sort-header-container:focus-visible {
+  outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  outline-offset: 2px;
+}
+
+body.theme-dark {
+  :focus-visible,
+  .mat-button-toggle-button:focus-visible,
+  .mat-mdc-button-base:focus-visible,
+  .mat-mdc-menu-item:focus-visible,
+  .mat-sort-header-container:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
 }
 
 hr {
@@ -558,6 +615,31 @@ ngx-skeleton-loader {
     .mat-mdc-form-field-subscript-wrapper {
       display: none;
     }
+
+    // Lets a VALIDATION MESSAGE through a field that suppresses its subscript.
+    //
+    // `without-hint` exists to reclaim the fixed strip Material reserves under a field
+    // for a hint that was never written, and on a field with nothing to say it is
+    // correct. It reaches further than intended though: the strip it hides is the one
+    // element Material renders a `mat-error` into, and that element also carries
+    // `aria-live="polite"`, so `display: none` did not merely hide a refusal - it took
+    // the refusal out of the accessibility tree as well and nothing announced it.
+    //
+    // Material renders `.mat-mdc-form-field-error-wrapper` ONLY while the field is in an
+    // error state, so `:has()` reads as exactly the question worth asking: is there
+    // something a viewer has to be told? A field with a hint it chose to suppress is
+    // unaffected, and a field with nothing wrong reserves no space, so nothing about the
+    // normal appearance moves - the strip appears when the message does and goes when it
+    // goes.
+    //
+    // Fixed here rather than by unpicking `without-hint` from individual templates: the
+    // class is on dozens of fields, and any message added to any of them later would
+    // have been silently invisible in exactly the same way.
+    .mat-mdc-form-field-subscript-wrapper:has(
+      .mat-mdc-form-field-error-wrapper
+    ) {
+      display: block;
+    }
   }
 }
 
@@ -730,6 +812,30 @@ ngx-skeleton-loader {
 
 .text-line-through {
   text-decoration: line-through;
+}
+
+// Gain and loss are stated in this application by hue, so these two utilities carry
+// MEANING rather than decoration - and Bootstrap's values for them are theme-invariant
+// colours chosen against a white page. Measured: `.text-success` `#28a745` is 3.13:1 on
+// white, and `.text-danger` `#dc3545` is 3.34:1 on the `#262626` module card. Both miss
+// the 4.5:1 that normal text has to clear, each in a different theme, which is why
+// neither could be fixed by picking one better colour.
+//
+// The semantic properties they now read are declared once per theme in `theme.scss`, so
+// this rule is theme-invariant while its result is not. `!important` is required rather
+// than chosen: Bootstrap's own utilities are emitted with it, so a plain declaration
+// loses regardless of specificity - the same reason the dark theme's `.text-muted`
+// override above carries it.
+//
+// Colour is not the only cue either way: `gf-value` prints an explicit `+` or `-` beside
+// the figure, and the activity chips pair every hue with a distinct glyph. These
+// utilities raise the contrast of a distinction that is already redundantly encoded.
+.text-success {
+  color: var(--gf-color-positive, #1b6e35) !important;
+}
+
+.text-danger {
+  color: var(--gf-color-negative, #b3261e) !important;
 }
 
 .with-placeholder-as-option {

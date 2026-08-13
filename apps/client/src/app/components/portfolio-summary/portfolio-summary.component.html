@@ -10,7 +10,7 @@
     [hidden]="summary?.activityCount === null"
   >
     <div class="d-flex flex-grow-1 ml-3 text-truncate">
-      {{ summary?.activityCount }}
+      {{ formattedActivityCount }}
       <ng-container i18n>{summary?.activityCount, plural,
         =1 {activity}
         other {activities}
@@ -91,7 +91,12 @@
   <div class="flex-nowrap px-3 py-1 row">
     <div class="flex-grow-1 text-truncate" i18n>Fees</div>
     <div class="d-flex justify-content-end">
-      @if (summary?.fees || summary?.fees === 0) {
+      <!--
+        Fees are drawn as a deduction, so the sign belongs in front of the figure rather
+        than inside it. Only when there is something to deduct: the condition this
+        replaced also matched zero exactly, which printed a fee of nothing as "- 0.00".
+      -->
+      @if (summary?.fees > 0) {
         <span class="mr-1">-</span>
       }
       <gf-value
@@ -301,10 +306,12 @@
   <div class="flex-nowrap px-3 py-1 row">
     <div class="flex-grow-1 text-truncate" i18n>Liabilities</div>
     <div class="d-flex justify-content-end">
-      @if (
-        summary?.liabilitiesInBaseCurrency ||
-        summary?.liabilitiesInBaseCurrency === 0
-      ) {
+      <!--
+        As with fees: a deduction sign only when there is a liability to deduct. Zero
+        liabilities read as "- 0.00" before, and a credit - a negative liability - would
+        have been given a second sign on top of its own.
+      -->
+      @if (summary?.liabilitiesInBaseCurrency > 0) {
         <span class="mr-1">-</span>
       }
       <gf-value

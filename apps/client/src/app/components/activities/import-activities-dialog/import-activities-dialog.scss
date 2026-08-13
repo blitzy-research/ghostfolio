@@ -57,6 +57,16 @@
   }
 }
 
+// The failure reported beside the Import control. The error token is the one Material
+// itself uses for a form error, so this reads as the same kind of message as a field
+// validation failure rather than as a second visual language. Right-aligned to sit with
+// the controls it belongs to.
+.import-activities-error {
+  color: var(--mat-sys-error, #ba1a1a);
+  font-size: 75%;
+  text-align: right;
+}
+
 :host-context(.theme-dark) {
   .drop-area {
     border-color: rgba(

@@ -14,10 +14,12 @@ import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { MatSelect } from '@angular/material/select';
+import type { MatSlideToggleChange } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BehaviorSubject, Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
 
 import { GfUserAccountSettingsComponent } from './user-account-settings.component';
 
@@ -71,6 +73,21 @@ describe('GfUserAccountSettingsComponent', () => {
 
   /** How many departures jsdom refused to perform. */
   let departures: number;
+
+  /**
+   * A stand-in for the switch that was used, carrying a mutable `checked` exactly as
+   * Material's own instance does, so a rollback is observable ON THE CONTROL rather
+   * than only in `user.settings` - which is the whole distinction these specs exist to
+   * hold, since the model was always being reconciled while the screen went on lying.
+   */
+  const createToggleEvent = (checked: boolean) => {
+    return { checked, source: { checked } } as unknown as MatSlideToggleChange;
+  };
+
+  /** The same stand-in for a selection, whose mutable member is `value`. */
+  const createSelect = (value: unknown = null) => {
+    return { value } as unknown as MatSelect;
+  };
 
   const createComponent = async () => {
     callOrder = [];
@@ -237,6 +254,256 @@ describe('GfUserAccountSettingsComponent', () => {
         expect(putUserSettingCalls).toEqual([{ [key]: 'any-value' }]);
       }
     );
+
+    it('agrees with the control it was given when the write is accepted', async () => {
+      const component = await createComponent();
+      const source = createSelect('en-GB');
+
+      component.onChangeUserSetting('locale', 'en-GB', source);
+
+      // The rollback runs on both paths on purpose, so there is one path rather than
+      // two. On acceptance the reconciled value IS what was chosen, which makes it a
+      // no-op agreeing with itself - and that is what stops a success from being
+      // reconciled by a second, separate piece of code that could drift.
+      expect(callOrder).toEqual(['putUserSetting:locale', 'get']);
+      expect(source.value).toBe('en-GB');
+    });
+  });
+
+  /**
+   * What happens to the screen when a settings write is refused.
+   *
+   * Every control here is bound to `user.settings`, and Material applies a toggle or a
+   * selection to its own view state the moment it is used. These writes had no failure
+   * handler at all, so a refusal left the control sitting in its new position over a
+   * server that had kept the old one, said nothing, and stayed that way. For restricted
+   * view - which decides whether figures are shown - that is a setting the viewer
+   * believes they have changed and have not.
+   */
+  describe('a settings write that is refused', () => {
+    /**
+     * Rebuilt with a refusing facade and a viewer whose settings differ from what was
+     * just asked for, so the re-read is observable as a genuine rollback rather than as
+     * a no-op.
+     */
+    const createRefusingComponent = async () => {
+      const alert = jest.fn();
+
+      TestBed.resetTestingModule();
+
+      callOrder = [];
+      putUserSettingCalls = [];
+
+      await TestBed.configureTestingModule({
+        imports: [GfUserAccountSettingsComponent],
+        providers: [
+          {
+            provide: DataService,
+            useValue: {
+              fetchInfo: jest.fn(() => ({
+                baseCurrency: 'CHF',
+                currencies: ['CHF', 'USD']
+              })),
+              putUserSetting: (setting: Record<string, unknown>) => {
+                callOrder.push(
+                  `putUserSetting:${Object.keys(setting).join(',')}`
+                );
+                putUserSettingCalls.push(setting);
+
+                return throwError(() => ({ status: 500 }));
+              }
+            }
+          },
+          { provide: MatSnackBar, useValue: { open: jest.fn() } },
+          { provide: NotificationService, useValue: { alert } },
+          {
+            provide: SettingsStorageService,
+            useValue: { getSetting: jest.fn(), setSetting: jest.fn() }
+          },
+          {
+            provide: UserService,
+            useValue: {
+              get: jest.fn(() => {
+                callOrder.push('get');
+
+                // What the server actually holds: restricted view OFF, which is the
+                // opposite of what the toggle was just switched to.
+                return of({
+                  permissions: [],
+                  settings: {
+                    baseCurrency: 'CHF',
+                    isRestrictedView: false,
+                    language: 'en',
+                    locale: 'en-GB'
+                  }
+                });
+              }),
+              stateChanged: new BehaviorSubject({
+                user: {
+                  permissions: [],
+                  settings: {
+                    baseCurrency: 'CHF',
+                    isRestrictedView: false,
+                    language: 'en',
+                    locale: 'en-GB'
+                  }
+                }
+              })
+            }
+          },
+          {
+            provide: WebAuthnService,
+            useValue: { isEnabled: jest.fn(() => false) }
+          }
+        ]
+      })
+        .overrideComponent(GfUserAccountSettingsComponent, {
+          set: { imports: [], template: '' }
+        })
+        .compileComponents();
+
+      const refusingFixture = TestBed.createComponent(
+        GfUserAccountSettingsComponent
+      );
+
+      refusingFixture.detectChanges();
+
+      return { alert, component: refusingFixture.componentInstance };
+    };
+
+    it('re-reads the viewer, which is what rolls the control back', async () => {
+      const { component } = await createRefusingComponent();
+
+      callOrder = [];
+
+      component.onRestrictedViewChange(createToggleEvent(true));
+
+      // The control is bound to what comes back, so whatever the server holds is what
+      // ends up on the screen. Nothing has to be remembered and nothing is assumed
+      // about how far the write got.
+      expect(callOrder).toEqual(['putUserSetting:isRestrictedView', 'get']);
+      expect(component.user.settings.isRestrictedView).toBe(false);
+    });
+
+    it('says so, rather than leaving the viewer to find out', async () => {
+      const { alert, component } = await createRefusingComponent();
+
+      component.onRestrictedViewChange(createToggleEvent(true));
+
+      expect(alert).toHaveBeenCalledWith({
+        title: 'Your setting could not be saved. Please try again.'
+      });
+    });
+
+    it.each([
+      [
+        'a selection',
+        (component: GfUserAccountSettingsComponent) =>
+          component.onChangeUserSetting('baseCurrency', 'USD', createSelect())
+      ],
+      [
+        'the experimental switch',
+        (component: GfUserAccountSettingsComponent) =>
+          component.onExperimentalFeaturesChange(createToggleEvent(true))
+      ],
+      [
+        'the restricted view switch',
+        (component: GfUserAccountSettingsComponent) =>
+          component.onRestrictedViewChange(createToggleEvent(true))
+      ]
+    ])('reconciles %s the same way', async (_label, use) => {
+      const { component } = await createRefusingComponent();
+
+      callOrder = [];
+
+      // Every write goes through one path, so none of them can be the one that was
+      // forgotten - which is how these three came to differ in the first place.
+      use(component);
+
+      expect(callOrder).toContain('get');
+    });
+
+    /**
+     * The re-read alone does not move the control, and runtime is what proved it.
+     *
+     * Angular writes an `@Input` only when the bound expression has CHANGED since it
+     * last wrote it, and the click changed the control's own state rather than the
+     * recorded binding. Turning an absent setting on and being refused therefore leaves
+     * the expression at `undefined` on both sides of the re-read: nothing is written,
+     * and the switch keeps the position the click gave it - reading ON over a server
+     * holding OFF, in a browser, for as long as the module stays mounted.
+     *
+     * So these assert on the CONTROL, not on `user.settings`. The model was already
+     * being reconciled correctly while the screen went on lying.
+     */
+    describe('putting the control back', () => {
+      it('moves the switch itself, not only the model', async () => {
+        const { component } = await createRefusingComponent();
+        const event = createToggleEvent(true);
+
+        component.onRestrictedViewChange(event);
+
+        expect(component.user.settings.isRestrictedView).toBe(false);
+        expect(event.source.checked).toBe(false);
+      });
+
+      it('moves a switch whose setting the server does not hold at all', async () => {
+        const { component } = await createRefusingComponent();
+        const event = createToggleEvent(true);
+
+        // The exact runtime condition: the reconciled viewer carries no
+        // `isExperimentalFeatures` key, so both sides of the re-read read `undefined`
+        // and an unchanged binding is written nowhere. Absent means off.
+        component.onExperimentalFeaturesChange(event);
+
+        expect(component.user.settings.isExperimentalFeatures).toBeUndefined();
+        expect(event.source.checked).toBe(false);
+      });
+
+      it('moves the selection back to what the server holds', async () => {
+        const { component } = await createRefusingComponent();
+        const source = createSelect('USD');
+
+        component.onChangeUserSetting('baseCurrency', 'USD', source);
+
+        expect(source.value).toBe('CHF');
+      });
+
+      it('leaves the served locale in place when a language change is refused', async () => {
+        const { component } = await createRefusingComponent();
+        const source = createSelect('de');
+
+        component.onChangeUserSetting('language', 'de', source);
+
+        // `language` is the locale the document was served under rather than something
+        // read back from the viewer, and a refused change never departs - so the
+        // served locale IS what the control must go back to.
+        expect(source.value).toBe(component.language);
+      });
+
+      it('still writes and still reports when no control was handed over', async () => {
+        const { alert, component } = await createRefusingComponent();
+
+        // The value alone is enough to make the write, so a caller with no Material
+        // selection to hand over must not be made to fail.
+        expect(() =>
+          component.onChangeUserSetting('baseCurrency', 'USD')
+        ).not.toThrow();
+
+        expect(putUserSettingCalls).toEqual([{ baseCurrency: 'USD' }]);
+        expect(alert).toHaveBeenCalled();
+      });
+    });
+
+    it('does not leave the page when a language change is refused', async () => {
+      const { component } = await createRefusingComponent();
+
+      component.onChangeUserSetting('language', 'de');
+
+      // Departing would load a locale the server never accepted, and the reload would
+      // hide the failure on the way out.
+      expect(departures).toBe(0);
+    });
   });
 
   describe('the destination', () => {

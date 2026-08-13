@@ -217,6 +217,22 @@ export class GfDashboardCanvasComponent
   public isDiscardingLayout = false;
 
   /**
+   * Whether a catalog row is being dragged right now.
+   *
+   * Held so the empty-canvas notice can be made transparent to the drag. That
+   * notice is laid over the grid and its controls sit in the centre of it, which is
+   * exactly where a row is dropped onto an empty canvas - so without this the
+   * controls swallowed the `dragover` and `drop` the grid needed, and drag-to-add
+   * failed on precisely the first visit it is most likely to be tried on.
+   *
+   * Raised and lowered by the catalog's own drag events, which the canvas already
+   * receives in order to size the drop indicator. The end event is raised
+   * unconditionally - including for a drag cancelled or released off the grid - so
+   * this cannot be left stuck raised.
+   */
+  public isCatalogDragInProgress = false;
+
+  /**
    * Whether the visitor arrived back from a federated sign-in that produced no
    * identity.
    *
@@ -351,6 +367,18 @@ export class GfDashboardCanvasComponent
   // resize is in flight, which is the normal state.
   private resizingContentElement: HTMLElement | null = null;
 
+  /**
+   * Set for exactly as long as a refresh of every placed module is in progress.
+   *
+   * Bound into the control bar, which owns the control that starts a refresh but
+   * cannot see when it ends - the request travels one way, over the shared reload
+   * bus. Without it the control gave no sign it had been received: every module on
+   * the canvas dropped its content and re-fetched, which for a viewer is the whole
+   * screen blinking, and the control itself looked untouched and pressable
+   * throughout.
+   */
+  public isRefreshing = false;
+
   private catalogFocusOrigin: HTMLElement | null = null;
 
   private hasHydratedLayout = false;
@@ -440,6 +468,7 @@ export class GfDashboardCanvasComponent
         // having room for everything for as long as nobody looked.
         this.refreshCatalogAvailability();
       },
+      onDragGestureStart: () => this.handleDragGestureStart(),
       onItemGeometryChange: (item) => this.handleItemGeometryChange(item),
       onItemInit: (item) => this.handleItemInit(item),
       onLayoutChange: () => this.notifyLayoutChange(),
@@ -467,15 +496,19 @@ export class GfDashboardCanvasComponent
     this.layoutService.shouldReloadContent$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        this.reloadPlacedModules();
-
         // Every module on the canvas discards its content and fetches it again,
         // which for a viewer is the whole screen blinking through skeletons and
         // for a reader was nothing at all: the control that started it reports
         // only its own name, and the arrangement it acts on is elsewhere. Said
         // once for the canvas rather than once per module, because one gesture
-        // happened.
+        // happened - and said BEFORE the work starts, with the companion
+        // completion message coming from the refresh itself once it is over.
         this.announce($localize`Refreshing the dashboard`);
+
+        // Deliberately not awaited: the bus has no caller to answer, and the
+        // refresh reports its own beginning and end through the busy flag and the
+        // live region rather than through this subscription.
+        void this.reloadPlacedModules();
       });
 
     this.dashboardLayoutService.identityTransition$
@@ -635,13 +668,25 @@ export class GfDashboardCanvasComponent
   // dragged before it. A drag cancelled or released outside the grid is the
   // common case, which is why the catalog raises its end event unconditionally.
   public onCatalogDragEnd() {
+    this.isCatalogDragInProgress = false;
+
     this.applyDropPreviewFootprint(
       DEFAULT_DROP_PREVIEW_COLS,
       DEFAULT_DROP_PREVIEW_ROWS
     );
+
+    this.changeDetectorRef.markForCheck();
   }
 
   public onCatalogDragStart(aModuleType: DashboardModuleType) {
+    // Raised before the registry is consulted, and deliberately so: the notice has
+    // to stop intercepting the drag even for a type this build cannot size a preview
+    // for, or the drop would be swallowed for exactly the entries that already
+    // behave least well.
+    this.isCatalogDragInProgress = true;
+
+    this.changeDetectorRef.markForCheck();
+
     const definition = this.moduleRegistryService.get(aModuleType);
 
     if (!definition) {
@@ -794,6 +839,36 @@ export class GfDashboardCanvasComponent
 
   public onRetrySave() {
     this.dashboardLayoutService.retryFailedSave();
+  }
+
+  /**
+   * The way OUT of a failed write: abandon the arrangement that could not be
+   * stored and put the stored one back on screen.
+   *
+   * Without it the failure had no terminal state. The banner offered a retry and
+   * nothing else, so a write the server will refuse every time - a document it
+   * cannot accept, an account whose session has moved on - left the viewer holding
+   * an arrangement that was not saved, being told so, and pressing the only
+   * control there indefinitely. And because what is on screen is the arrangement
+   * that failed, the screen and the server disagreed for as long as that lasted,
+   * which is the whole of what {@link onRetrySave} cannot resolve on its own.
+   *
+   * It performs no write, and that matters: dropping the retained snapshot is what
+   * makes it safe, because nothing is then left to flush the abandoned arrangement
+   * later. The re-read is an ordinary hydration, forced rather than served from
+   * cache, so the canvas ends up showing exactly what the server holds - which is
+   * the reconciliation the failure state was missing.
+   *
+   * The flag is lowered here as well as by the service's own emission, so the
+   * banner goes with the arrangement it was describing rather than one frame after
+   * it.
+   */
+  public onDiscardFailedSave() {
+    this.dashboardLayoutService.discardFailedSave();
+
+    this.hasSaveError = false;
+
+    this.onRetryLayout();
   }
 
   /**
@@ -981,6 +1056,47 @@ export class GfDashboardCanvasComponent
       ...this.options,
       defaultItemCols: aCols,
       defaultItemRows: aRows
+    };
+
+    this.changeDetectorRef.markForCheck();
+  }
+
+  /**
+   * Takes the engine's edge auto-scroll away for the duration of a RESIZE, and
+   * gives it back for a DRAG.
+   *
+   * One grid-wide pair of options, and the two gestures need opposite answers
+   * from it. Dragging a module to a part of a canvas taller than its viewport
+   * needs the scroll. Resizing against the bottom edge must not have it, because
+   * there it compounds: each frame scrolls the region, which moves the edge away
+   * from the pointer, which grows the item, which lengthens the grid, which
+   * leaves the pointer at the edge again. Bounded only by the scroll extent it is
+   * itself creating, a hold of about two seconds committed a module ninety-five
+   * rows tall, and each update on that path cost far more than the hundred
+   * milliseconds a gesture is meant to answer within.
+   *
+   * It takes effect for the gesture that raises it. `resizable.start` is invoked
+   * from the pointer handler INSIDE the Angular zone - the engine only leaves the
+   * zone afterwards, to bind the moves - so the configuration re-issued here
+   * reaches the engine's `options` input in the change-detection pass that ends
+   * that task, and the engine reads its derived options afresh on every move.
+   *
+   * `enableBoundaryControl` is not the alternative: it suppresses the auto-scroll
+   * for BOTH gestures, which also removes legitimate downward dragging.
+   *
+   * A new configuration object spread from the current one, for the reason given
+   * on {@link applyDropPreviewFootprint}. The early return keeps a gesture that
+   * changes nothing from churning that identity.
+   */
+  private applyGestureScrolling(aIsEnabled: boolean) {
+    if (this.options.disableScrollVertical === !aIsEnabled) {
+      return;
+    }
+
+    this.options = {
+      ...this.options,
+      disableScrollHorizontal: !aIsEnabled,
+      disableScrollVertical: !aIsEnabled
     };
 
     this.changeDetectorRef.markForCheck();
@@ -1816,6 +1932,20 @@ export class GfDashboardCanvasComponent
   }
 
   /**
+   * A pointer DRAG has begun, which is the one gesture that legitimately wants
+   * the engine's edge auto-scroll - a module cannot be carried to a part of a
+   * canvas taller than its viewport without it.
+   *
+   * Restoring here rather than only at the end of a resize is what makes the pair
+   * self-correcting: a resize that ends in a way the engine does not report -
+   * a window blur mid-gesture, say - would otherwise leave the bound raised for
+   * every drag that followed. See {@link applyGestureScrolling}.
+   */
+  private handleDragGestureStart() {
+    this.applyGestureScrolling(true);
+  }
+
+  /**
    * Lets the resized module's content find its new size again, in one pass.
    *
    * Deliberately clears the three properties rather than restoring whatever was
@@ -1824,6 +1954,12 @@ export class GfDashboardCanvasComponent
    * pinning a snapshot of it into the element for good.
    */
   private handleResizeGestureEnd() {
+    // Before the early return, because the two holds are independent: a gesture
+    // on a module with no measurable content box pins nothing but still took the
+    // auto-scroll away, and leaving it away would remove it from every later
+    // drag. See {@link applyGestureScrolling}.
+    this.applyGestureScrolling(true);
+
     const content = this.resizingContentElement;
 
     if (!content) {
@@ -1875,6 +2011,11 @@ export class GfDashboardCanvasComponent
     // first costs nothing and is what guarantees no element is ever left pinned
     // by a hold whose counterpart went to a different one.
     this.handleResizeGestureEnd();
+
+    // Taken away for this gesture, and before anything is measured: the release
+    // above restored it, and the engine's first pointer move must already see it
+    // gone. See {@link applyGestureScrolling} for why a resize must not have it.
+    this.applyGestureScrolling(false);
 
     const content = aItemComponent?.el?.querySelector<HTMLElement>(
       `.${MODULE_CONTENT_CLASS}`
@@ -2000,17 +2141,31 @@ export class GfDashboardCanvasComponent
     );
   }
 
-  // `accessId` is not exclusively a share-link parameter: the account access
-  // module produces
-  // `?accessId=<id>&dialogModule=account-access&editDialog=true` against this
-  // very route to reopen its own edit dialog. Matching on `accessId` alone
-  // would replace a signed-in viewer's canvas with a stranger's portfolio the
-  // moment they edited one of their own access grants.
-  private isSharedPortfolioRequest({
-    accessId,
-    editDialog
-  }: GfAppQueryParams): boolean {
-    return !!accessId && !editDialog;
+  /**
+   * `accessId` alone, and that simplicity is the fix rather than a simplification.
+   *
+   * This used to read `!!accessId && !editDialog`, because the account access
+   * module reopened its own edit dialog with `?accessId=<id>&editDialog=true` on
+   * this very route - so the root host had to ignore an `accessId` that was
+   * accompanied by that flag. The consequence was that which of the root's three
+   * states got drawn depended on a *generic* dialog flag, one every module sets
+   * and clears. Two ways that went wrong, both reachable from an ordinary address:
+   *
+   * - a share link carrying another module's flag -
+   *   `?accessId=<valid>&editDialog=true&dialogModule=accounts` - was not treated
+   *   as a share at all, so an anonymous visitor was shown the sign-in prompt
+   *   instead of the portfolio somebody had shared with them;
+   * - a signed-in viewer editing one of their own grants held both parameters, and
+   *   the moment an unrelated module merged `editDialog: null` into the address the
+   *   share activated, tearing down their canvas and replacing it with a
+   *   stranger's portfolio.
+   *
+   * The access module now addresses its dialog with `accessDialogId`, leaving
+   * `accessId` to mean exactly one thing. So the root discriminator reads only the
+   * parameter that owns the decision, and no dialog flag can move it.
+   */
+  private isSharedPortfolioRequest({ accessId }: GfAppQueryParams): boolean {
+    return !!accessId;
   }
 
   /**
@@ -2143,7 +2298,119 @@ export class GfDashboardCanvasComponent
       return !definition || !this.isModulePermitted(definition);
     });
 
-    return [...visible, ...retainedHidden];
+    return [
+      ...visible,
+      ...this.relocateReservedModules(visible, retainedHidden)
+    ];
+  }
+
+  // Half-open on both axes, which is what makes two footprints that merely touch
+  // - one ending on the row the next begins - count as neighbours rather than as
+  // an overlap.
+  private hasFootprintOverlap(
+    aFootprint: { cols: number; rows: number; x: number; y: number },
+    aOther: { cols: number; rows: number; x: number; y: number }
+  ): boolean {
+    return (
+      aFootprint.x < aOther.x + aOther.cols &&
+      aOther.x < aFootprint.x + aFootprint.cols &&
+      aFootprint.y < aOther.y + aOther.rows &&
+      aOther.y < aFootprint.y + aFootprint.rows
+    );
+  }
+
+  /**
+   * Moves a reserved module out from under whatever now occupies its cells, and
+   * leaves every other one exactly where it was saved.
+   *
+   * This is what makes the stored arrangement free of overlaps at all times, not
+   * merely free of the ones the grid engine can see. Nothing else was going to
+   * notice: a module the viewer is not entitled to see, or one whose type this
+   * build does not recognise, holds a saved cell and draws no card, so to the
+   * engine those cells are empty and it will place - or let a viewer drag -
+   * something straight onto them. The overlap then sits in the stored document,
+   * durable and silent, and surfaces only when the entitlement returns and two
+   * modules claim the same cells, at which point which one moves is whichever the
+   * engine happened to relocate.
+   *
+   * Every reported change funnels through {@link mergeCanonicalModules}, so this
+   * covers the drag, the drop, the click-to-add and a document already stored with
+   * an overlap in it - all by the same rule: the module the viewer can see keeps
+   * the cells they put it on, and the one they cannot see is the one that moves.
+   *
+   * Deterministic by construction - reserved entries are considered in the order
+   * the arrangement holds them, and each is offered the first free footprint in
+   * row-major order - so the same arrangement always relocates to the same place,
+   * on every client and on every pass.
+   *
+   * It writes nothing. The corrected geometry becomes part of the canonical
+   * arrangement, which is what the next reported grid change carries to the server
+   * through the one write path, exactly as a normalization correction already does.
+   */
+  private relocateReservedModules(
+    aPlaced: DashboardModuleLayoutItem[],
+    aReserved: DashboardModuleLayoutItem[]
+  ): DashboardModuleLayoutItem[] {
+    if (aReserved.length === 0) {
+      return aReserved;
+    }
+
+    const occupied = [...aPlaced];
+    const settled: DashboardModuleLayoutItem[] = [];
+
+    for (const reserved of aReserved) {
+      const isFree = !occupied.some((other) =>
+        this.hasFootprintOverlap(reserved, other)
+      );
+
+      const module = isFree
+        ? reserved
+        : { ...reserved, ...this.findFreeFootprint(reserved, occupied) };
+
+      occupied.push(module);
+      settled.push(module);
+    }
+
+    return settled;
+  }
+
+  /**
+   * The first cell, scanning left to right and then down, at which the given
+   * footprint fits between the ones already taken.
+   *
+   * The scan reaches one row past everything taken, and that last row is why it
+   * always answers: an empty row admits any footprint the grid's twelve columns
+   * can hold. Bounding it by the arrangement's own extent rather than by the
+   * grid's hundred-row ceiling is what keeps the cost proportional to the
+   * dashboard in front of the viewer.
+   */
+  private findFreeFootprint(
+    aFootprint: DashboardModuleLayoutItem,
+    aOccupied: DashboardModuleLayoutItem[]
+  ): { x: number; y: number } {
+    const extent = aOccupied.reduce(
+      (rowsUsed, { rows, y }) => Math.max(rowsUsed, y + rows),
+      0
+    );
+
+    for (let y = 0; y <= extent; y += 1) {
+      for (let x = 0; x + aFootprint.cols <= GRID_COLUMNS; x += 1) {
+        const candidate = { ...aFootprint, x, y };
+
+        const isFree = !aOccupied.some((other) =>
+          this.hasFootprintOverlap(candidate, other)
+        );
+
+        if (isFree) {
+          return { x, y };
+        }
+      }
+    }
+
+    // Unreachable for a normalized footprint, which is never wider than the grid.
+    // Answering with the row below everything keeps the routine total rather than
+    // letting a value the type system cannot rule out fall through as `undefined`.
+    return { x: 0, y: extent };
   }
 
   /**
@@ -2691,10 +2958,39 @@ export class GfDashboardCanvasComponent
   // Delegated to the chrome that owns the mounting, so a module is made to
   // fetch again without this component knowing what any module fetches. The
   // arrangement is untouched, so no grid callback fires and nothing is written.
-  private reloadPlacedModules() {
-    this.moduleHosts?.forEach((host) => {
-      host.reload();
-    });
+  /**
+   * Refreshes every placed module and reports when that has finished.
+   *
+   * Awaiting all of them is what makes the refresh a bounded operation rather than
+   * an unacknowledged one: the busy state is raised before the first module drops
+   * its content and lowered when the last has been re-resolved, and only then is
+   * completion announced. A viewer who cannot see the screen previously heard that
+   * a refresh had started and never heard that it had ended.
+   *
+   * `allSettled` rather than `all`, because a module whose chunk fails to resolve
+   * must not leave the canvas permanently busy - the module reports its own failure
+   * in its own card, and the refresh as a whole is still over.
+   */
+  private async reloadPlacedModules() {
+    const hosts = this.moduleHosts?.toArray() ?? [];
+
+    if (hosts.length === 0) {
+      return;
+    }
+
+    this.isRefreshing = true;
+
+    this.changeDetectorRef.markForCheck();
+
+    try {
+      await Promise.allSettled(hosts.map((host) => host.reload()));
+    } finally {
+      this.isRefreshing = false;
+
+      this.changeDetectorRef.markForCheck();
+    }
+
+    this.announce($localize`The dashboard has been refreshed`);
   }
 
   /**
@@ -3031,6 +3327,14 @@ export class GfDashboardCanvasComponent
       return true;
     }
 
+    // Deliberately unaware of the cells a module with no card has saved. Reserving
+    // those here would be the other way to answer the overlap problem, and it was
+    // measured against this one and rejected: a viewer whose subscription has
+    // lapsed has several saved-but-undrawn modules, so every module they then add
+    // would be pushed below all of them - a canvas showing two cards with eleven
+    // empty rows above the second. The arrangement the viewer can see stays the
+    // engine's to arrange; the overlap is resolved by moving the module they cannot
+    // see, in {@link relocateReservedModules}.
     return aPosition
       ? this.gridster.getNextPossiblePosition(aItem, { y: aPosition.y })
       : this.gridster.getNextPossiblePosition(aItem);
