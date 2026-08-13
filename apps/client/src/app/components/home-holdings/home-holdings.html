@@ -1,9 +1,16 @@
-<div class="container">
-  <div class="row">
-    <div class="col">
-      <h1 class="d-none d-sm-block h3 mb-3 text-center" i18n>Holdings</h1>
-    </div>
-  </div>
+<!--
+  A module-scale container, not a page-scale one. `container-fluid` keeps the
+  horizontal gutter that cancels the negative margins of the rows below - without
+  it they bleed past their cell - while dropping the responsive max-width that
+  made this content read as a page nested inside a grid cell.
+-->
+<div class="container-fluid">
+  <!--
+    The page heading that stood here is gone: the module chrome around this
+    content already carries "Holdings" as its title, so keeping it would name the
+    module twice on screen and put a second level-one heading inside a dashboard
+    that already has one. Every heading below is a section heading and stays.
+  -->
   <div class="row">
     <div class="col-lg">
       <div class="d-flex">
@@ -13,11 +20,32 @@
               [formControl]="viewModeFormControl"
               [hideSingleSelectionIndicator]="true"
             >
-              <mat-button-toggle i18n-title title="Table" value="TABLE">
-                <ion-icon name="reorder-four-outline" />
+              <!--
+                `aria-label` is required here in addition to `title`, and the two
+                are not redundant. `title` lands on this `mat-button-toggle` host,
+                but the focusable control is the `<button>` Material renders
+                INSIDE it, which inherits nothing from the host and was therefore
+                nameless. `aria-label` is a declared input on this component and
+                is forwarded onto that inner button, which is the only way to name
+                it without touching the library.
+              -->
+              <mat-button-toggle
+                aria-label="Show holdings as a table"
+                i18n-aria-label
+                i18n-title
+                title="Table"
+                value="TABLE"
+              >
+                <ion-icon aria-hidden="true" name="reorder-four-outline" />
               </mat-button-toggle>
-              <mat-button-toggle i18n-title title="Chart" value="CHART">
-                <ion-icon name="grid-outline" />
+              <mat-button-toggle
+                aria-label="Show holdings as a chart"
+                i18n-aria-label
+                i18n-title
+                title="Chart"
+                value="CHART"
+              >
+                <ion-icon aria-hidden="true" name="grid-outline" />
               </mat-button-toggle>
             </mat-button-toggle-group>
           </div>
@@ -56,13 +84,28 @@
           holdings?.length > 0
         ) {
           <div class="text-center">
-            <a
+            <!--
+              A button, not an anchor: this control publishes a reveal-module
+              intent on the canvas rather than navigating to a URL, so it has no
+              href to offer. As a real button it is reachable by keyboard,
+              announced as a button, and activates on both Enter and Space.
+            -->
+            <button
               class="mt-3"
-              i18n
               mat-stroked-button
-              [routerLink]="routerLinkPortfolioActivities"
-              >Manage Activities</a
+              type="button"
+              (click)="onManageActivities()"
             >
+              <!--
+                The `i18n` marker hugs the label on an inner `ng-container`: this
+                tag carries too many attributes to keep its content inline, and
+                Angular folds the surrounding whitespace of a marked element into
+                the message it hashes into an id. Hugging the label keeps the id
+                the anchor this button replaced already had, and with it the
+                twelve existing translations.
+              -->
+              <ng-container i18n>Manage Activities</ng-container>
+            </button>
           </div>
         }
       </div>

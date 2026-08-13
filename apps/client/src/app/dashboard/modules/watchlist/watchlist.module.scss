@@ -1,0 +1,37 @@
+:host {
+  display: block;
+
+  ::ng-deep .container {
+    max-width: none;
+  }
+
+  // Hidden outright, with no exception for the plan mark the hosted heading also
+  // carries.
+  //
+  // Keeping the heading wherever that mark was present, and hiding only the title
+  // text inside it, left a lone 28x28 diamond with no adjacent text and 52px of
+  // empty heading band above the table - and it left it on exactly one of the
+  // three modules that render this same table, so two siblings looked different
+  // for a reason nothing on screen explained. The mark is also a pricing
+  // affordance rather than a status glyph, and the control bar already carries one
+  // of those, named, for the whole canvas: an unnamed second copy inside a module
+  // added a control a reader could not identify and told a viewer nothing the
+  // first one did not.
+  //
+  // Hiding the whole heading is therefore not a loss of the affordance, and it
+  // matters for the document outline too: this heading is a level-1 element, and
+  // re-showing it put a second `h1` on a canvas whose own heading is its root.
+  //
+  // `!important` is required: the hosted heading carries Bootstrap's
+  // `d-none d-sm-block`, and `.d-sm-block { display: block !important }` outranks
+  // any non-important declaration however specific.
+  ::ng-deep .container > h1 {
+    display: none !important;
+  }
+
+  ::ng-deep .col-md-10.offset-md-1 {
+    flex: 0 0 100%;
+    margin-left: 0;
+    max-width: 100%;
+  }
+}

@@ -1,4 +1,5 @@
 import ms from 'ms';
+import { randomBytes } from 'node:crypto';
 
 /**
  * Custom state store for OIDC authentication that doesn't rely on express-session.
@@ -102,13 +103,23 @@ export class OidcStateStore {
   }
 
   /**
-   * Generate a cryptographically secure random handle
+   * Generate a cryptographically secure random handle.
+   *
+   * The handle is the OAuth2 `state` parameter: it travels to the identity
+   * provider and back through the browser, and verifying it on return is what
+   * distinguishes a callback belonging to a flow this server started from one an
+   * attacker composed. Its unpredictability is therefore the whole of its value.
+   *
+   * `Math.random()` cannot supply that, whatever the comment above it says. It is
+   * not a cryptographic generator, and V8 seeds and advances an xorshift128+ state
+   * from which observing a small number of outputs is enough to recover the state
+   * and compute the rest - so a handle built from two of its outputs plus a
+   * timestamp is guessable, and a guessable `state` is no `state` at all.
+   *
+   * 32 bytes from the platform's CSPRNG, rendered base64url so the value is safe
+   * in a URL without escaping.
    */
   private generateHandle() {
-    return (
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15) +
-      Date.now().toString(36)
-    );
+    return randomBytes(32).toString('base64url');
   }
 }

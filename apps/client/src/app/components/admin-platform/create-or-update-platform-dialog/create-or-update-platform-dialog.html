@@ -18,6 +18,13 @@
           matInput
           (keydown.enter)="$event.stopPropagation()"
         />
+        @if (platformForm.get('name')?.hasError('required')) {
+          <mat-error i18n>Please enter a name.</mat-error>
+        } @else if (platformForm.get('name')?.hasError('validationError')) {
+          <mat-error>{{
+            platformForm.get('name').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div>
@@ -28,12 +35,22 @@
           matInput
           (keydown.enter)="$event.stopPropagation()"
         />
-        @if (platformForm.get('url')?.value) {
-          <gf-entity-logo
-            class="mr-3"
-            matSuffix
-            [url]="platformForm.get('url').value"
-          />
+        @if (settledLogoUrl) {
+          <gf-entity-logo class="mr-3" matSuffix [url]="settledLogoUrl" />
+        }
+        <!--
+          The URL is checked as a URL by the DTO rather than by a validator here, so its
+          message arrives through `validationError` after a submission. Rendering it is
+          the whole fix: `validateObjectForForm` has always pushed the constraint's own
+          wording onto the control, and no template in this application displayed it -
+          which is why a rejected URL used to fail silently.
+        -->
+        @if (platformForm.get('url')?.hasError('required')) {
+          <mat-error i18n>Please enter a URL.</mat-error>
+        } @else if (platformForm.get('url')?.hasError('validationError')) {
+          <mat-error>{{
+            platformForm.get('url').getError('validationError')
+          }}</mat-error>
         }
       </mat-form-field>
     </div>
@@ -50,7 +67,8 @@
       color="primary"
       mat-flat-button
       type="submit"
-      [disabled]="!(platformForm.dirty && platformForm.valid)"
+      [attr.aria-busy]="isSubmitting ? 'true' : null"
+      [disabled]="!(platformForm.dirty && platformForm.valid) || isSubmitting"
     >
       <ng-container i18n>Save</ng-container>
     </button>

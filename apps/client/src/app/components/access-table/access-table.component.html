@@ -1,28 +1,65 @@
 <div class="overflow-x-auto">
+  <!--
+    Every header label below sits inside `<ng-container i18n>` instead of the
+    `<th>` carrying `i18n` itself, and that is a translation fix rather than a
+    stylistic preference.
+
+    Angular derives a message id from the message text together with the
+    whitespace surrounding it, and it runs here with `preserveWhitespaces: false`,
+    which collapses a wrapped text node's newline and indentation into a single
+    leading and trailing space - so `Alias` and ` Alias ` hash to two distinct ids.
+    Adding `scope="col"` pushed these `<th>` tags past the 80-column print width,
+    the formatter then moved each label onto a line of its own, and the labels
+    silently lost the twelve community translations keyed to their original ids -
+    the catalogs ended up holding two entries per label, one translated and one
+    not.
+
+    Holding the text hard against an `<ng-container>` short enough never to wrap
+    pins the id however the surrounding attributes grow later on, and the
+    container emits no element, so the rendered table is byte-for-byte what it
+    was. `Alias` and `Permission` end up sharing one id - and one set of
+    translations - with the create-or-update-access dialog that declares the same
+    two labels, which is what the wrapped ids had broken. `admin-jobs.html` marks
+    its own header cells this way for the same reason.
+  -->
   <table class="gf-table w-100" mat-table [dataSource]="dataSource">
     <ng-container matColumnDef="alias">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Alias</th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Alias</ng-container>
+      </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
         {{ element.alias }}
       </td>
     </ng-container>
 
     <ng-container matColumnDef="grantee">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Grantee</th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Grantee</ng-container>
+      </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
         {{ element.grantee }}
       </td>
     </ng-container>
 
     <ng-container matColumnDef="type">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Permission</th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Permission</ng-container>
+      </th>
       <td *matCellDef="let element" class="px-1 text-nowrap" mat-cell>
         <div class="align-items-center d-flex">
           @if (element.permissions.includes('READ')) {
-            <ion-icon class="mr-1" name="lock-open-outline" />
+            <ion-icon
+              aria-hidden="true"
+              class="mr-1"
+              name="lock-open-outline"
+            />
             <ng-container i18n>View</ng-container>
           } @else if (element.permissions.includes('READ_RESTRICTED')) {
-            <ion-icon class="mr-1" name="lock-closed-outline" />
+            <ion-icon
+              aria-hidden="true"
+              class="mr-1"
+              name="lock-closed-outline"
+            />
             <ng-container i18n>Restricted view</ng-container>
           }
         </div>
@@ -30,18 +67,52 @@
     </ng-container>
 
     <ng-container matColumnDef="details">
-      <th *matHeaderCellDef class="px-1" i18n mat-header-cell>Details</th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <ng-container i18n>Details</ng-container>
+      </th>
+      <!--
+        Both addresses below are capped and ellipsized rather than rendered in
+        full, and that is a sizing fix rather than a cosmetic one.
+
+        This cell holds an unbreakable 70-character URL and the row forbids
+        wrapping, so without a cap its own text sets the table's MINIMUM width -
+        and a nowrap cell can give none of that back, so the floor holds at every
+        viewport. Inside a dashboard module a few hundred pixels wide, that floor
+        pushes the trailing actions column - the per-grant edit and revoke menu -
+        clean off the visible area at every ordinary desktop width, reachable only
+        by discovering a horizontal scroll.
+
+        Capping the two addresses is what lowers that floor, and nothing is lost
+        by it: the anchor still carries the complete address as its `href`, the
+        `title` reveals it on hover and to assistive technology, and the actions
+        menu beside it already offers "Copy link to clipboard" for the case where
+        the viewer actually needs the characters. The cap is on the inline boxes
+        rather than on the cell, because CSS leaves the effect of `max-width` on
+        a table cell explicitly undefined.
+      -->
       <td *matCellDef="let element" class="px-1 text-nowrap" mat-cell>
         @if (element.type === 'PUBLIC') {
           <div class="align-items-center d-flex">
-            <ion-icon class="mr-1" name="link-outline" />
-            <a target="_blank" [href]="getPublicUrl(element.id)">{{
-              getPublicUrl(element.id)
-            }}</a>
+            <ion-icon aria-hidden="true" class="mr-1" name="link-outline" />
+            <a
+              class="gf-access-detail-value"
+              target="_blank"
+              [href]="getPublicUrl(element.id)"
+              [title]="getPublicUrl(element.id)"
+              >{{ getPublicUrl(element.id) }}</a
+            >
           </div>
           @if (user()?.settings?.isExperimentalFeatures) {
             <div>
               <code
+                class="gf-access-detail-value"
+                [title]="
+                  'GET ' +
+                  baseUrl +
+                  '/api/v1/public/' +
+                  element.id +
+                  '/portfolio'
+                "
                 >GET {{ baseUrl }}/api/v1/public/{{
                   element.id
                 }}/portfolio</code
@@ -53,16 +124,25 @@
     </ng-container>
 
     <ng-container matColumnDef="actions" stickyEnd>
-      <th *matHeaderCellDef class="px-1 text-center" mat-header-cell></th>
+      <th
+        *matHeaderCellDef
+        class="px-1 text-center"
+        mat-header-cell
+        scope="col"
+      >
+        <span class="sr-only" i18n>Actions</span>
+      </th>
 
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         <button
+          aria-label="Actions for this granted access"
           class="mx-1 no-min-width px-2"
+          i18n-aria-label
           mat-button
           [matMenuTriggerFor]="accessActionsMenu"
           (click)="$event.stopPropagation()"
         >
-          <ion-icon name="ellipsis-horizontal" />
+          <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
         </button>
         <mat-menu
           #accessActionsMenu="matMenu"
@@ -72,7 +152,11 @@
           @if (user()?.settings?.isExperimentalFeatures) {
             <button mat-menu-item (click)="onUpdateAccess(element.id)">
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="create-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="create-outline"
+                />
                 <span><ng-container i18n>Edit</ng-container>...</span>
               </span>
             </button>
@@ -80,7 +164,7 @@
           @if (element.type === 'PUBLIC') {
             <button mat-menu-item (click)="onCopyUrlToClipboard(element.id)">
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="copy-outline" />
+                <ion-icon aria-hidden="true" class="mr-2" name="copy-outline" />
                 <span i18n>Copy link to clipboard</span>
               </span>
             </button>
@@ -93,7 +177,11 @@
           }
           <button mat-menu-item (click)="onDeleteAccess(element.id)">
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="remove-circle-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="mr-2"
+                name="remove-circle-outline"
+              />
               <span i18n>Revoke</span>
             </span>
           </button>
@@ -101,7 +189,7 @@
       </td>
     </ng-container>
 
-    <tr *matHeaderRowDef="displayedColumns()" mat-header-row></tr>
+    <tr *matHeaderRowDef="displayedColumns(); sticky: true" mat-header-row></tr>
     <tr *matRowDef="let row; columns: displayedColumns()" mat-row></tr>
   </table>
 </div>

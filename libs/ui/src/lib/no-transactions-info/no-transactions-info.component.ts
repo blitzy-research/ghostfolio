@@ -1,20 +1,19 @@
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
-
 import {
   CUSTOM_ELEMENTS_SCHEMA,
   ChangeDetectionStrategy,
   Component,
+  EventEmitter,
   HostBinding,
-  Input
+  Input,
+  Output
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
-import { RouterModule } from '@angular/router';
 
 import { GfLogoComponent } from '../logo';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [GfLogoComponent, MatButtonModule, RouterModule],
+  imports: [GfLogoComponent, MatButtonModule],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-no-transactions-info-indicator',
   styleUrls: ['./no-transactions-info.component.scss'],
@@ -23,6 +22,5 @@ import { GfLogoComponent } from '../logo';
 export class GfNoTransactionsInfoComponent {
   @HostBinding('class.has-border') @Input() hasBorder = true;
 
-  public routerLinkPortfolioActivities =
-    internalRoutes.portfolio.subRoutes.activities.routerLink;
+  @Output() createActivityClicked = new EventEmitter<void>();
 }

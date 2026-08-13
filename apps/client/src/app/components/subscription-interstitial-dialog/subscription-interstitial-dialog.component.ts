@@ -18,7 +18,6 @@ import {
   MatDialogModule,
   MatDialogRef
 } from '@angular/material/dialog';
-import { RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { arrowForwardOutline, checkmarkCircleOutline } from 'ionicons/icons';
@@ -26,7 +25,7 @@ import ms from 'ms';
 import { interval } from 'rxjs';
 import { take, tap } from 'rxjs/operators';
 
-import { SubscriptionInterstitialDialogParams } from './interfaces/interfaces';
+import type { SubscriptionInterstitialDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -36,8 +35,7 @@ import { SubscriptionInterstitialDialogParams } from './interfaces/interfaces';
     GfPremiumIndicatorComponent,
     IonIcon,
     MatButtonModule,
-    MatDialogModule,
-    RouterModule
+    MatDialogModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-subscription-interstitial-dialog',
@@ -50,7 +48,7 @@ export class GfSubscriptionInterstitialDialogComponent implements OnInit {
 
   public remainingSkipButtonDelay =
     GfSubscriptionInterstitialDialogComponent.SKIP_BUTTON_DELAY_IN_SECONDS;
-  public routerLinkPricing = publicRoutes.pricing.routerLink;
+  public pricingUrl = `https://ghostfol.io/${document.documentElement.lang}/${publicRoutes.pricing.path}`;
   public variantIndex: number;
 
   public constructor(

@@ -1,5 +1,15 @@
-<div class="container">
-  <h1 class="d-none d-sm-block h3 mb-3 text-center" i18n>Settings</h1>
+<!--
+  A module-scale container, not a page-scale one. `container-fluid` keeps the
+  horizontal gutter that cancels the negative margins of the rows below - without
+  it they bleed past their cell - while dropping the responsive max-width that
+  made this content read as a page nested inside a grid cell.
+-->
+<div class="container-fluid">
+  <!--
+    The page heading that stood here is gone for the same reason as the module
+    chrome names this content already. Section headings within the form are
+    untouched.
+  -->
   <div class="row">
     <div class="col">
       <div class="d-flex py-1">
@@ -15,7 +25,11 @@
                   [disabled]="!hasPermissionToUpdateUserSettings"
                   [value]="user.settings.baseCurrency"
                   (selectionChange)="
-                    onChangeUserSetting('baseCurrency', $event.value)
+                    onChangeUserSetting(
+                      'baseCurrency',
+                      $event.value,
+                      $event.source
+                    )
                   "
                 >
                   @for (currency of currencies; track currency) {
@@ -39,7 +53,8 @@
                     (selectionChange)="
                       onChangeUserSetting(
                         'performanceCalculationType',
-                        $event.value
+                        $event.value,
+                        $event.source
                       )
                     "
                   >
@@ -74,7 +89,7 @@
                   [disabled]="!hasPermissionToUpdateUserSettings"
                   [value]="language"
                   (selectionChange)="
-                    onChangeUserSetting('language', $event.value)
+                    onChangeUserSetting('language', $event.value, $event.source)
                   "
                 >
                   <mat-option [value]="null" />
@@ -151,7 +166,7 @@
                   [disabled]="!hasPermissionToUpdateUserSettings"
                   [value]="user.settings.locale"
                   (selectionChange)="
-                    onChangeUserSetting('locale', $event.value)
+                    onChangeUserSetting('locale', $event.value, $event.source)
                   "
                 >
                   <mat-option [value]="null" />
@@ -175,7 +190,11 @@
                   [placeholder]="appearancePlaceholder"
                   [value]="user?.settings?.colorScheme"
                   (selectionChange)="
-                    onChangeUserSetting('colorScheme', $event.value)
+                    onChangeUserSetting(
+                      'colorScheme',
+                      $event.value,
+                      $event.source
+                    )
                   "
                 >
                   <mat-option i18n [value]="null">Auto</mat-option>
@@ -205,23 +224,25 @@
           />
         </div>
       </div>
-      <div class="d-flex mt-4 py-1">
-        <div class="pr-1 w-50">
-          <div i18n>Zen Mode</div>
-          <div class="hint-text text-muted" i18n>
-            Distraction-free experience for turbulent times
-          </div>
-        </div>
-        <div class="pl-1 w-50">
-          <mat-slide-toggle
-            color="primary"
-            hideIcon="true"
-            [checked]="user.settings.viewMode === 'ZEN'"
-            [disabled]="!hasPermissionToUpdateViewMode"
-            (change)="onViewModeChange($event)"
-          />
-        </div>
-      </div>
+      <!--
+        The Zen Mode toggle was removed here rather than left disabled.
+
+        Zen Mode was a NAVIGATION mode: the setting existed so that a guard could
+        send a viewer to a stripped-down screen instead of the full one. With one
+        canvas there is no second screen to be sent to, so the toggle had become a
+        switch that saved a value and changed nothing a viewer could see - which is
+        worse than an absent control, because it promises a distraction-free
+        experience and silently fails to deliver one.
+
+        What replaces it is the canvas itself: a viewer who wants less on screen
+        removes modules, and that arrangement is what is now persisted per user.
+
+        Only the CONTROL is gone. `Settings.viewMode` is still stored, still
+        returned by the API and still writable through `PATCH /api/v1/user/setting`,
+        and the `updateViewMode` permission is untouched - so nothing is migrated,
+        nothing is dropped from anyone's account, and the value is still there for a
+        future surface that wants it.
+      -->
       <div class="align-items-center d-flex mt-4 py-1">
         <div class="pr-1 w-50">
           <div i18n>Biometric Authentication</div>
@@ -292,12 +313,15 @@
                   [type]="isAccessTokenHidden ? 'password' : 'text'"
                 />
                 <button
+                  aria-label="Show or hide the security token"
+                  i18n-aria-label
                   mat-button
                   matSuffix
                   type="button"
                   (click)="isAccessTokenHidden = !isAccessTokenHidden"
                 >
                   <ion-icon
+                    aria-hidden="true"
                     [name]="
                       isAccessTokenHidden ? 'eye-outline' : 'eye-off-outline'
                     "

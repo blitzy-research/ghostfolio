@@ -1,0 +1,84 @@
+<div class="align-items-center d-flex flex-grow-1 justify-content-center">
+  <mat-card appearance="outlined" class="sign-in-card">
+    <mat-card-content class="align-items-center d-flex flex-column">
+      <!--
+        The heading for this state of the root document, and the only one it has.
+        Visually hidden because the mark below already says it to anybody who can see
+        it, and a second visible copy would be a design change nothing asked for -
+        but the mark is an image, so without this the page a signed-out visitor lands
+        on had no heading at all, and no way to be oriented by one.
+      -->
+      <h1 class="sr-only" i18n>Sign in to Ghostfolio</h1>
+
+      <gf-logo class="mb-3" size="large" />
+
+      <!--
+        Announced as an alert, because unlike every other notice on this canvas the
+        visitor did not cause this by acting on the page they are looking at - they
+        pressed a button, left for a provider, and came back to a card that would
+        otherwise look exactly as it did before. Nothing here is retried
+        automatically: the controls below are the retry, and they are the reason
+        this says what happened rather than offering an action of its own.
+
+        The sentence is fixed in the template rather than assembled from the marker
+        that carried it here, which arrives in an editable address. It names no
+        provider, because the visitor chose one and only one of the buttons below,
+        and because the deployment's operator - not the visitor - is who can act on
+        which provider failed.
+      -->
+      @if (hasSignInError) {
+        <div class="mb-3 sign-in-error text-center" i18n role="alert">
+          Signing in with your identity provider did not complete. Please try
+          again.
+        </div>
+      }
+
+      <!--
+        Both controls are disabled while either dialog's own chunk is being
+        resolved, and marked busy with it.
+
+        Each opens a dialog, the chunk is a network request, and there is only ever
+        one visitor pressing them - so a load slow enough to be pressed again used
+        to stack a second dialog on the first. `aria-busy` carries the same fact to
+        assistive technology, because a control that has gone quiet for a moment is
+        otherwise indistinguishable from one that did nothing.
+
+        `disabledInteractive` is what keeps the wait from costing the visitor their
+        place. A natively disabled element cannot hold focus, so disabling the very
+        button that was just pressed threw focus to the document body BEFORE the
+        dialog opened and recorded what to give it back to - and the dialog then
+        dutifully restored focus to the body on close, stranding a keyboard visitor
+        at the top of the document with no way back. Material's interactive form of
+        the state keeps the element focusable and says `aria-disabled` instead, so
+        the opener is still the focused element when the dialog opens and is still
+        there to receive focus when it closes. It also means a second press reaches
+        the handler rather than being swallowed by the platform, which is why each
+        of those handlers opens with its own re-entry guard.
+      -->
+      <button
+        class="sign-in-button w-100"
+        color="primary"
+        mat-flat-button
+        [attr.aria-busy]="isOpeningDialog ? 'true' : null"
+        [disabled]="isOpeningDialog"
+        [disabledInteractive]="true"
+        (click)="openLoginDialog()"
+      >
+        <ng-container i18n>Sign in</ng-container>
+      </button>
+
+      @if (hasPermissionToCreateUser && hasPermissionForAuthToken) {
+        <button
+          class="d-inline-block mt-2"
+          mat-button
+          [attr.aria-busy]="isOpeningDialog ? 'true' : null"
+          [disabled]="isOpeningDialog"
+          [disabledInteractive]="true"
+          (click)="openShowAccessTokenDialog()"
+        >
+          <ng-container i18n>Create Account</ng-container>
+        </button>
+      }
+    </mat-card-content>
+  </mat-card>
+</div>

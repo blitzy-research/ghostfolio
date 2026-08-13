@@ -1,0 +1,24 @@
+:host {
+  --mat-dialog-with-actions-content-padding: 0;
+
+  a {
+    color: rgba(var(--palette-primary-500), 1);
+    font-weight: 500;
+
+    &:hover {
+      color: rgba(var(--palette-primary-300), 1);
+    }
+  }
+
+  .mat-mdc-dialog-actions {
+    padding: 0 !important;
+  }
+
+  // The fallback is written in this file's own vocabulary - the palette variable,
+  // which is declared once rather than per theme, so this needs no dark mirror -
+  // while the token reference keeps it in step with the rest of the new chrome if
+  // the system layer is ever populated.
+  .registration-error {
+    color: var(--mat-sys-error, rgba(var(--palette-warn-500), 1));
+  }
+}

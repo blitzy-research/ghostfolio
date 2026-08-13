@@ -1,4 +1,7 @@
 @use '@angular/material' as mat;
+// `@use` rather than `@import`: this partial defines a single mixin and emits no
+// top-level CSS, so it needs nothing from the legacy import cascade below.
+@use './styles/gridster' as gridster;
 
 @import './styles/bootstrap';
 @import './styles/table';
@@ -194,6 +197,25 @@
   --palette-warn-contrast-900: 255, 255, 255, 1;
 }
 
+// Paints the eventual surface on the FIRST frame, before the application has
+// decided which theme it is in.
+//
+// The theme class is put on the body by the root shell once the viewer's
+// appearance setting has resolved, and until then the body carries no background
+// at all - so a viewer whose system asks for dark got a full white viewport for
+// as long as the bundle took to boot, then the dark canvas. Painting the dark
+// surface from the system preference closes that window without changing the
+// application's own decision: the `:not()` guards mean this rule stops applying
+// the instant either theme class lands, whichever one the setting resolves to.
+//
+// A user-preference query, not a viewport one, so this introduces no breakpoint.
+@media (prefers-color-scheme: dark) {
+  body:not(.theme-dark):not(.theme-light) {
+    background: var(--dark-background);
+    color: rgba(var(--light-primary-text));
+  }
+}
+
 body {
   font-family: var(--font-family-sans-serif);
   margin: 0;
@@ -239,6 +261,10 @@ body {
       }
     }
 
+    .gf-gridster {
+      @include gridster.gf-gridster(true);
+    }
+
     .gf-table {
       @include gf-table(true);
     }
@@ -265,6 +291,12 @@ body {
     .mdc-button {
       &.mat-accent,
       &.mat-primary {
+        // Dark-theme counterpart of the light-theme correction below; see the
+        // explanation there. The lighter primary is what Material itself computes
+        // for this theme, and it clears 9.72:1 on the canvas surface.
+        --mat-button-outlined-label-text-color: var(--mat-sys-primary, #47dbd7);
+        --mat-button-text-label-text-color: var(--mat-sys-primary, #47dbd7);
+
         --mat-button-filled-label-text-color: rgba(var(--dark-primary-text));
       }
     }
@@ -287,6 +319,20 @@ body {
       }
     }
 
+    // Bootstrap's own `.text-muted` is theme-invariant: it resolves to a dark grey
+    // that was chosen against a white page, so on this theme's near-black surfaces
+    // it measured 3.23:1 and missed the 4.5:1 that body text has to clear. The
+    // override belongs here rather than in the utility layer because the utility is
+    // correct on the light theme and wrong only on this one, and it is scoped inside
+    // the dark block so nothing on the light theme is touched.
+    //
+    // `--light-secondary-text` is the palette's own secondary foreground for a dark
+    // surface - 70% white - which is the same relationship the light theme's own
+    // secondary text has to its background, so the two themes now agree.
+    .text-muted {
+      color: rgba(var(--light-secondary-text)) !important;
+    }
+
     .with-placeholder-as-option {
       .mat-mdc-select-placeholder {
         color: rgba(var(--light-primary-text));
@@ -301,8 +347,65 @@ body {
   }
 }
 
-button:focus {
+// Suppresses the ring for a POINTER press only.
+//
+// This rule used to read `button:focus`, and that is why nothing in this application
+// showed a focus ring: it removed the indicator for KEYBOARD focus just as thoroughly
+// as for a click. It cannot simply be deleted either, because Material draws its own
+// state layer on a pointer press and a ring appearing on every click is the reason a
+// blanket suppression like it gets written in the first place. `:not(:focus-visible)`
+// is the distinction it lacked, so a mouse press looks exactly as it did and a Tab
+// press does not.
+button:focus:not(:focus-visible) {
   outline: 0;
+}
+
+// Draws the keyboard focus ring, on everything focusable rather than on the handful of
+// controls that happened to keep one.
+//
+// `:focus-visible` is the browser's own judgement about whether focus arrived by a route
+// that warrants an indicator, which in practice means the keyboard. The ring is drawn
+// OUTSIDE the element with a matching offset, so it never covers the control's own text
+// or border, and its colour is the surface foreground - the same token and the same 2px
+// width the module scrollport's own ring uses, which is what makes this one convention
+// rather than two. Stated as `var(--mat-sys-*, fallback)` because the fallback is what
+// paints while the system-token layer is unpopulated.
+//
+// SPECIFICITY IS LOAD-BEARING HERE, and it is the reason for both the `body` prefix and
+// the enumerated second selector. Measured at runtime, a bare `:focus-visible` rule
+// (specificity 0,1,0) lost to Angular Material's own suppressions and 22 of 35 focusable
+// controls stayed ringless while `:focus-visible` matched true on every one of them:
+//
+//   `.mat-sort-header-container { outline: 0 }`      0,1,0 - later in order, so it won
+//   `.mat-button-toggle-button { outline: none }`    0,1,0 - likewise
+//   `.mat-mdc-fab-base:focus { outline: none }`      0,2,0 - outranks 0,1,0 outright
+//   `.mat-mdc-menu-item:focus { outline: 0 }`        0,2,0 - likewise
+//   `.mdc-button:active { outline: none }`           0,2,0 - during an Enter keypress
+//
+// Material writes these because it expects the application to supply the indicator, so
+// out-ranking them is using the library as intended and not fighting it. `body ` lifts
+// the general rule to 0,1,1, which beats every 0,1,0 suppression; the listed controls
+// reach 0,2,1, which beats the 0,2,0 ones. Text inputs are deliberately NOT listed:
+// `.mdc-text-field__input:focus { outline: none }` is correct, because a focused field
+// already indicates itself with its own notched outline and a second ring around it
+// would be a double indicator.
+body :focus-visible,
+body .mat-button-toggle-button:focus-visible,
+body .mat-mdc-button-base:focus-visible,
+body .mat-mdc-menu-item:focus-visible,
+body .mat-sort-header-container:focus-visible {
+  outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  outline-offset: 2px;
+}
+
+body.theme-dark {
+  :focus-visible,
+  .mat-button-toggle-button:focus-visible,
+  .mat-mdc-button-base:focus-visible,
+  .mat-mdc-menu-item:focus-visible,
+  .mat-sort-header-container:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
 }
 
 hr {
@@ -356,6 +459,21 @@ ngx-skeleton-loader {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+// The catalog trigger is the only control on the canvas that genuinely floats, so
+// it carries its own class instead of `.fab-container`, which five feature leaves
+// also carry and which is kept in normal flow for that reason. `.has-fab` remains
+// the companion class that clears content beneath these coordinates.
+.gf-dashboard-catalog-trigger {
+  bottom: 2rem;
+  position: fixed;
+  right: 2rem;
+  z-index: 999;
+}
+
+.gf-gridster {
+  @include gridster.gf-gridster;
 }
 
 .gf-pointer-events-none {
@@ -424,7 +542,71 @@ ngx-skeleton-loader {
 .mat-mdc-fab,
 .mat-mdc-unelevated-button {
   &.mat-primary {
-    color: rgba(var(--light-primary-text)) !important;
+    // WCAG 1.4.3, and the correction of an inversion rather than a preference.
+    //
+    // Both of these surfaces are filled with the brand primary, which is a LIGHT
+    // teal in both themes - #36cfcc here, #47dbd7 in the dark theme. A light fill
+    // needs a dark foreground, and the dark theme's counterpart of this very rule
+    // already says so: it asks for `--dark-primary-text`. This one asked for
+    // `--light-primary-text`, which resolves to pure white, so a floating action
+    // button's glyph and a filled button's label were painted white on light teal
+    // and measured 1.92:1 against a required 4.5:1 - short by a factor of 2.34, and
+    // not even clearing the 3:1 floor for large text. The two themes disagreed
+    // about a container they render almost identically, and the light one was
+    // wrong.
+    //
+    // This is where it has to be fixed. The declaration is `!important` on `color`
+    // itself, so it overrides Material's own `color: var(--mat-button-filled-
+    // label-text-color, ...)` outright - which means overriding that token from a
+    // component stylesheet changes nothing at all, and does so silently.
+    // `--dark-primary-text` is the palette's own contrast colour for a light
+    // container and computes 9.27:1 on it.
+    color: var(--mat-sys-on-primary, rgba(var(--dark-primary-text))) !important;
+  }
+
+  // The same inversion, on the same container, for every filled control that is
+  // NOT on a palette this file already names.
+  //
+  // The container is not chosen by the palette class at all: the theme sets
+  // `filled-container-color` and `fab-container-color` to the brand teal keyed on
+  // the theme class, so `.mat-primary`, `.mat-unthemed` and any unrecognised
+  // `color` value - Material emits `color ? 'mat-' + color : ''` plus
+  // `.mat-unthemed` when it is absent, so `color="secondary"` yields a bare
+  // `.mat-secondary` the theme has no styles for - all render the identical
+  // #36cfcc fill. Only `.mat-accent` (#3686cf) and `.mat-warn` (#f44336) differ,
+  // and both are dark enough to keep their light label, so they are the two the
+  // selector excludes and the rest is exhaustive by construction.
+  //
+  // Left on Material's own computed foreground, those controls kept the same
+  // 1.92:1 white-on-teal label the rule above was written to remove - the light
+  // theme's `--mat-button-filled-label-text-color` is `#ffffff`, computed for the
+  // container Material would have drawn rather than the one the theme substituted.
+  // The registration dialog is where that became visible: its `color="secondary"`
+  // copy control and its `color="primary"` confirm control are the identical teal
+  // pill side by side, and only the second one had been corrected. Measured on the
+  // running application, the first went from 1.92:1 to 9.28:1 here while the second
+  // stayed at 9.28:1 exactly.
+  //
+  // Written for both control types even though only the filled button is affected
+  // today, because a fab reaches the same state by the same route and nothing but
+  // the current markup keeps it out: Material defaults a fab's `color` input to
+  // `accent`, so every fab in this workspace already carries a palette class this
+  // selector skips. A fab given an unrecognised `color` would land here, and the
+  // declaration is the one it would need.
+  //
+  // Deliberately a sibling of the rule above rather than a widening of it: the two
+  // selectors are mutually exclusive, so no control changes hands and the palettes
+  // already corrected keep their exact declaration, including in the dark theme
+  // where a higher-specificity counterpart restates it.
+  //
+  // `.special` is excluded because it is where the premise stops holding rather
+  // than an exception to it: that class paints its own pink-to-violet gradient over
+  // the theme's fill and pairs it with a white label, so there is no teal here to
+  // correct and an `!important` foreground would reach past a component that has
+  // already answered the question for itself. It is the only class on any filled or
+  // floating control in this workspace that supplies its own container.
+  &:not(.mat-accent):not(.mat-primary):not(.mat-warn):not(.special) {
+    color: var(--mat-sys-on-primary, rgba(var(--dark-primary-text))) !important;
   }
 }
 
@@ -432,6 +614,31 @@ ngx-skeleton-loader {
   &.without-hint {
     .mat-mdc-form-field-subscript-wrapper {
       display: none;
+    }
+
+    // Lets a VALIDATION MESSAGE through a field that suppresses its subscript.
+    //
+    // `without-hint` exists to reclaim the fixed strip Material reserves under a field
+    // for a hint that was never written, and on a field with nothing to say it is
+    // correct. It reaches further than intended though: the strip it hides is the one
+    // element Material renders a `mat-error` into, and that element also carries
+    // `aria-live="polite"`, so `display: none` did not merely hide a refusal - it took
+    // the refusal out of the accessibility tree as well and nothing announced it.
+    //
+    // Material renders `.mat-mdc-form-field-error-wrapper` ONLY while the field is in an
+    // error state, so `:has()` reads as exactly the question worth asking: is there
+    // something a viewer has to be told? A field with a hint it chose to suppress is
+    // unaffected, and a field with nothing wrong reserves no space, so nothing about the
+    // normal appearance moves - the strip appears when the message does and goes when it
+    // goes.
+    //
+    // Fixed here rather than by unpicking `without-hint` from individual templates: the
+    // class is on dozens of fields, and any message added to any of them later would
+    // have been silently invisible in exactly the same way.
+    .mat-mdc-form-field-subscript-wrapper:has(
+      .mat-mdc-form-field-error-wrapper
+    ) {
+      display: block;
     }
   }
 }
@@ -476,7 +683,34 @@ ngx-skeleton-loader {
 .mdc-button {
   &.mat-accent,
   &.mat-primary {
-    --mat-button-filled-label-text-color: rgba(var(--light-primary-text));
+    // Restores the brand label colour on the container-less button variants.
+    //
+    // The theme asks for these labels in `--dark-primary-text`, but that custom
+    // property holds a bare `r, g, b, a` LIST for `rgba()` to consume - the rest of
+    // this file always writes `rgba(var(--dark-primary-text))` - so passing it
+    // straight through yields `color: 0, 0, 0, 0.87`, which is not a colour. The
+    // declaration is then invalid at computed-value time, `color` falls back to
+    // `inherit`, and a button the author marked as the primary action renders in the
+    // surrounding body text colour: near-black, indistinguishable from a plain one.
+    //
+    // Fixed here rather than at the theme, which is treated as read-only. The values
+    // are Material's own computed primary for each theme - it emits them correctly
+    // before the broken declaration overrides them - so this restores the library's
+    // intent rather than inventing a colour. Both clear WCAG AA for normal text on
+    // the surface they sit on: 6.44:1 here, 9.72:1 in the dark theme.
+    //
+    // The filled variant's label sits on a brand-filled container, so it takes the
+    // on-primary foreground rather than the brand colour. That is the same dark
+    // value, and for the same reason, as the `!important` correction earlier in
+    // this file - kept in step here so the two never disagree about the colour of
+    // one label. White was measurably wrong on this container: 1.92:1.
+    --mat-button-outlined-label-text-color: var(--mat-sys-primary, #006a68);
+    --mat-button-text-label-text-color: var(--mat-sys-primary, #006a68);
+
+    --mat-button-filled-label-text-color: var(
+      --mat-sys-on-primary,
+      rgba(var(--dark-primary-text))
+    );
   }
 }
 
@@ -507,11 +741,16 @@ ngx-skeleton-loader {
   padding-bottom: env(safe-area-inset-bottom);
   padding-bottom: constant(safe-area-inset-bottom);
 
+  // Five feature leaves carry this class (activities, watchlist, admin market
+  // data, account access and accounts) and all of them can be mounted at once, so
+  // the wrapper must stay in normal flow: pinned to a fixed viewport coordinate it
+  // stacks every one of those buttons on the same spot, where only the topmost is
+  // reachable. A leaf stylesheet cannot undo that, because the fixed box would be
+  // this wrapper rather than the button. Trailing alignment keeps each button's
+  // reading position inside its own module's scrolling box at any cell size.
   .fab-container {
-    bottom: 2rem;
-    position: fixed;
-    right: 2rem;
-    z-index: 999;
+    display: flex;
+    justify-content: flex-end;
   }
 
   &:not(.has-tabs) {
@@ -573,6 +812,30 @@ ngx-skeleton-loader {
 
 .text-line-through {
   text-decoration: line-through;
+}
+
+// Gain and loss are stated in this application by hue, so these two utilities carry
+// MEANING rather than decoration - and Bootstrap's values for them are theme-invariant
+// colours chosen against a white page. Measured: `.text-success` `#28a745` is 3.13:1 on
+// white, and `.text-danger` `#dc3545` is 3.34:1 on the `#262626` module card. Both miss
+// the 4.5:1 that normal text has to clear, each in a different theme, which is why
+// neither could be fixed by picking one better colour.
+//
+// The semantic properties they now read are declared once per theme in `theme.scss`, so
+// this rule is theme-invariant while its result is not. `!important` is required rather
+// than chosen: Bootstrap's own utilities are emitted with it, so a plain declaration
+// loses regardless of specificity - the same reason the dark theme's `.text-muted`
+// override above carries it.
+//
+// Colour is not the only cue either way: `gf-value` prints an explicit `+` or `-` beside
+// the figure, and the activity chips pair every hue with a distinct glyph. These
+// utilities raise the contrast of a distinction that is already redundantly encoded.
+.text-success {
+  color: var(--gf-color-positive, #1b6e35) !important;
+}
+
+.text-danger {
+  color: var(--gf-color-negative, #b3261e) !important;
 }
 
 .with-placeholder-as-option {

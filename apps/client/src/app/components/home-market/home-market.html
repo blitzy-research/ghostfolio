@@ -23,6 +23,7 @@
         <gf-fear-and-greed-index
           class="d-flex justify-content-center"
           [fearAndGreedIndex]="fearAndGreedIndex"
+          [isLoading]="isLoadingFearAndGreedIndex"
         />
       </div>
     </div>
@@ -33,6 +34,7 @@
       <gf-benchmark
         [benchmarks]="benchmarks"
         [deviceType]="deviceType"
+        [dialogModule]="benchmarkDialogModule"
         [locale]="user?.settings?.locale || undefined"
         [showSymbol]="false"
         [user]="user"

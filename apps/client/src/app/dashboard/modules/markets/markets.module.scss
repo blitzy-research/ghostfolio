@@ -1,0 +1,20 @@
+:host {
+  display: block;
+
+  ::ng-deep .container {
+    max-width: none;
+  }
+
+  // `!important` is required: the hosted heading carries Bootstrap's
+  // `d-none d-sm-block`, and `.d-sm-block { display: block !important }` outranks
+  // any non-important declaration however specific.
+  ::ng-deep .container > h1 {
+    display: none !important;
+  }
+
+  ::ng-deep .col-md-10.offset-md-1 {
+    flex: 0 0 100%;
+    margin-left: 0;
+    max-width: 100%;
+  }
+}

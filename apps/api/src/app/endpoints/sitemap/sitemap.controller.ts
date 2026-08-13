@@ -1,4 +1,3 @@
-import { ConfigurationService } from '@ghostfolio/api/services/configuration/configuration.service';
 import {
   DATE_FORMAT,
   getYesterday,
@@ -17,10 +16,7 @@ import { SitemapService } from './sitemap.service';
 export class SitemapController {
   public sitemapXml = '';
 
-  public constructor(
-    private readonly configurationService: ConfigurationService,
-    private readonly sitemapService: SitemapService
-  ) {
+  public constructor(private readonly sitemapService: SitemapService) {
     try {
       this.sitemapXml = readFileSync(
         join(__dirname, 'assets', 'sitemap.xml'),
@@ -37,12 +33,6 @@ export class SitemapController {
     response.setHeader('content-type', 'application/xml');
     response.send(
       interpolate(this.sitemapXml, {
-        blogPosts: this.sitemapService.getBlogPosts({ currentDate }),
-        personalFinanceTools: this.configurationService.get(
-          'ENABLE_FEATURE_SUBSCRIPTION'
-        )
-          ? this.sitemapService.getPersonalFinanceTools({ currentDate })
-          : '',
         publicRoutes: this.sitemapService.getPublicRoutes({
           currentDate
         })

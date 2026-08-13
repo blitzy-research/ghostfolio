@@ -1,6 +1,6 @@
 import { UpdateUserSettingDto } from '@ghostfolio/common/dtos';
 import {
-  PortfolioReportRule,
+  type PortfolioReportRule,
   RuleSettings,
   XRayRulesSettings
 } from '@ghostfolio/common/interfaces';

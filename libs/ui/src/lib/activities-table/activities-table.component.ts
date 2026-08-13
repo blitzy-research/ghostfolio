@@ -46,7 +46,7 @@ import {
   MatSort,
   MatSortModule,
   Sort,
-  SortDirection
+  type SortDirection
 } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -125,6 +125,7 @@ export class GfActivitiesTableComponent implements AfterViewInit, OnInit {
   @Output() activityDeleted = new EventEmitter<string>();
   @Output() activityToClone = new EventEmitter<OrderWithAccount>();
   @Output() activityToUpdate = new EventEmitter<OrderWithAccount>();
+  @Output() createActivityClicked = new EventEmitter<void>();
   @Output() export = new EventEmitter<void>();
   @Output() exportDrafts = new EventEmitter<string[]>();
   @Output() import = new EventEmitter<void>();
@@ -343,9 +344,15 @@ export class GfActivitiesTableComponent implements AfterViewInit, OnInit {
     this.importDividends.emit();
   }
 
+  /**
+   * Shows one activity's note. See `gf-accounts-table`: person-authored content is
+   * the message, so it is bounded and scrollable, and the dialog keeps a heading
+   * that names it.
+   */
   public onOpenComment(aComment: string) {
     this.notificationService.alert({
-      title: aComment
+      message: aComment,
+      title: $localize`Note`
     });
   }
 

@@ -26,14 +26,24 @@ export class LogoController {
     @Res() response: Response
   ) {
     try {
-      const { buffer, type } =
-        await this.logoService.getLogoByDataSourceAndSymbol({
-          dataSource,
-          symbol
-        });
+      const logo = await this.logoService.getLogoByDataSourceAndSymbol({
+        dataSource,
+        symbol
+      });
 
-      response.contentType(type);
-      response.send(buffer);
+      if (!logo) {
+        // The profile exists and has no logo, which is an ordinary and permanent
+        // state rather than a failure - so it is answered as an absence of content
+        // and not as a missing resource. An `<img>` treats both identically, and
+        // only one of them fills the log with red for holdings whose owners never
+        // supplied a link.
+        response.status(HttpStatus.NO_CONTENT).send();
+
+        return;
+      }
+
+      response.contentType(logo.type);
+      response.send(logo.buffer);
     } catch {
       response.status(HttpStatus.NOT_FOUND).send();
     }

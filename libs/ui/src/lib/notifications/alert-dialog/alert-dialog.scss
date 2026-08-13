@@ -1,2 +1,43 @@
+// Two properties of this dialog are load-bearing rather than cosmetic, and both
+// exist because the content it is given is arbitrary in size and shape: an
+// account note a person typed, a job's serialised stack trace, a provider's
+// error message.
+//
+// `pre-wrap` preserves the newlines and runs of spaces that the content carries.
+// It has to: the values are now rendered as TEXT rather than as HTML - which is
+// what stops a stored `<img onerror=…>` becoming a real element - and without it
+// every serialised structure would collapse onto one unreadable line.
+//
+// The height bound is what keeps the dialog usable. Material sizes a dialog to
+// its content, so a long stack trace grew the surface past two thousand pixels
+// and pushed the only control that closes it - the button below - off the bottom
+// of the viewport, where a pointer cannot reach it. Bounding the CONTENT and
+// letting it scroll inside keeps the actions on screen at every content length,
+// and a keyboard user's Escape route is unaffected either way.
 :host {
+  display: block;
+
+  .gf-notification-text {
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  // Defensively bounded as well. Long content belongs in the region below and
+  // every caller in this repository now puts it there, but a heading is still a
+  // string a caller supplies, and the failure this bound prevents - a control the
+  // pointer cannot reach - is severe enough not to rest on caller discipline
+  // alone.
+  [mat-dialog-title].gf-notification-text {
+    max-height: 20svh;
+    overflow: auto;
+  }
+
+  [mat-dialog-content].gf-notification-text {
+    // Viewport-relative, so the bound holds on a short window as well as a tall
+    // one. The dialog's own container adds the title and the action row on top of
+    // this, which is why the share left to the content is well under the full
+    // height.
+    max-height: 60svh;
+    overflow: auto;
+  }
 }

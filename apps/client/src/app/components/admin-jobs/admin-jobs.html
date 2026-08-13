@@ -5,14 +5,27 @@
         <div class="d-flex justify-content-end mb-3">
           <button mat-stroked-button (click)="onOpenBullBoard()">
             <span><ng-container i18n>Overview</ng-container></span>
-            <ion-icon class="ml-2" name="open-outline" />
+            <ion-icon aria-hidden="true" class="ml-2" name="open-outline" />
           </button>
         </div>
       }
 
       <form class="align-items-center d-flex" [formGroup]="filterForm">
         <mat-form-field appearance="outline" class="w-100 without-hint">
-          <mat-select formControlName="status">
+          <!--
+            Named with `aria-label` rather than a `mat-label`, deliberately. This
+            field has no visible label, so Material points the select's
+            `aria-labelledby` at its own value element - which resolves to the
+            empty string while nothing is selected, leaving the combobox nameless.
+            Adding a `mat-label` would name it but would also float a caption into
+            the control, and an accessibility correction is not licensed to change
+            what the control looks like.
+          -->
+          <mat-select
+            aria-label="Filter by status"
+            formControlName="status"
+            i18n-aria-label
+          >
             <mat-option />
             @for (
               statusFilterOption of statusFilterOptions;
@@ -39,6 +52,7 @@
             class="px-1 py-2 text-right"
             mat-header-cell
             mat-sort-header="id"
+            scope="col"
           >
             <ng-container i18n>Job ID</ng-container>
           </th>
@@ -53,6 +67,7 @@
             class="px-1 py-2"
             mat-header-cell
             mat-sort-header="name"
+            scope="col"
           >
             <ng-container i18n>Type</ng-container>
           </th>
@@ -73,6 +88,7 @@
             class="px-1 py-2"
             mat-header-cell
             mat-sort-header="data.symbol"
+            scope="col"
           >
             <ng-container i18n>Symbol</ng-container>
           </th>
@@ -87,6 +103,7 @@
             class="px-1 py-2"
             mat-header-cell
             mat-sort-header="data.dataSource"
+            scope="col"
           >
             <ng-container i18n>Data Source</ng-container>
           </th>
@@ -101,20 +118,49 @@
             class="px-1 py-2"
             mat-header-cell
             mat-sort-header="opts.priority"
+            scope="col"
           >
             <ng-container i18n>Priority</ng-container>
           </th>
+          <!--
+            The glyph is the whole of what this cell shows, so it needs a textual
+            equivalent rather than only a decorative marking. Hiding the icon without
+            adding one left the cell announced as empty: a reader was told the column
+            is called "Priority" and then given nothing for any row in it, which is
+            worse than the untranslated glyph name it replaced.
+
+            `.sr-only` rather than an `aria-label` on the icon, and rather than
+            visible text. An `aria-label` on a custom element carries no role, so it
+            is not reliably announced; visible text would change a table that is
+            deliberately glyph-dense. This adds a name for the same three states the
+            colours and arrows already distinguish visually, and nothing else.
+          -->
           <td *matCellDef="let element" class="px-1 py-2" mat-cell>
             @if (element.opts.priority === DATA_GATHERING_QUEUE_PRIORITY_LOW) {
-              <ion-icon class="h6 mb-0" name="chevron-down-circle-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="h6 mb-0"
+                name="chevron-down-circle-outline"
+              />
+              <span class="sr-only" i18n>Low</span>
             } @else if (
               element.opts.priority === DATA_GATHERING_QUEUE_PRIORITY_MEDIUM
             ) {
-              <ion-icon class="h6 mb-0" name="remove-circle-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="h6 mb-0"
+                name="remove-circle-outline"
+              />
+              <span class="sr-only" i18n>Medium</span>
             } @else if (
               element.opts.priority === DATA_GATHERING_QUEUE_PRIORITY_HIGH
             ) {
-              <ion-icon class="h6 mb-0" name="chevron-up-circle-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="h6 mb-0"
+                name="chevron-up-circle-outline"
+              />
+              <span class="sr-only" i18n>High</span>
             }
           </td>
         </ng-container>
@@ -125,6 +171,7 @@
             class="px-1 py-2 text-right"
             mat-header-cell
             mat-sort-header="attemptsMade"
+            scope="col"
           >
             <ng-container i18n>Attempts</ng-container>
           </th>
@@ -139,6 +186,7 @@
             class="px-1 py-2"
             mat-header-cell
             mat-sort-header="timestamp"
+            scope="col"
           >
             <ng-container i18n>Created</ng-container>
           </th>
@@ -148,7 +196,7 @@
         </ng-container>
 
         <ng-container matColumnDef="finished">
-          <th *matHeaderCellDef class="px-1 py-2" mat-header-cell>
+          <th *matHeaderCellDef class="px-1 py-2" mat-header-cell scope="col">
             <ng-container i18n>Finished</ng-container>
           </th>
           <td *matCellDef="let element" class="px-1 py-2" mat-cell>
@@ -157,45 +205,94 @@
         </ng-container>
 
         <ng-container matColumnDef="status">
-          <th *matHeaderCellDef class="px-1 py-2" mat-header-cell>
+          <th *matHeaderCellDef class="px-1 py-2" mat-header-cell scope="col">
             <ng-container i18n>Status</ng-container>
           </th>
+          <!--
+            Every branch pairs a decorative glyph with its own localized name, for
+            the same reason the Priority cell above does: the icon was the cell's
+            only content, so hiding it left the Status column announcing nothing at
+            all for every row.
+
+            The `delayed` branch was additionally the inconsistent inverse of the
+            others - the only glyph NOT marked decorative, and with no name of its
+            own, so a reader was handed whatever the icon element happened to expose.
+            It is now marked and named exactly like its five siblings, and its
+            conditional danger colour stays untouched: that colour distinguishes a
+            delayed job which has already failed at least once, and the distinction
+            now travels in the name as well, because no reader can see a colour.
+          -->
           <td *matCellDef="let element" class="px-1 py-2" mat-cell>
             @if (element.state === 'active') {
-              <ion-icon class="h6 mb-0" name="play-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="h6 mb-0"
+                name="play-outline"
+              />
+              <span class="sr-only" i18n>Active</span>
             } @else if (element.state === 'completed') {
               <ion-icon
+                aria-hidden="true"
                 class="h6 mb-0 text-success"
                 name="checkmark-circle-outline"
               />
+              <span class="sr-only" i18n>Completed</span>
             } @else if (element.state === 'delayed') {
               <ion-icon
+                aria-hidden="true"
                 class="h6 mb-0"
                 name="time-outline"
                 [ngClass]="{ 'text-danger': element.stacktrace?.length > 0 }"
               />
+              @if (element.stacktrace?.length > 0) {
+                <span class="sr-only" i18n>Delayed after an error</span>
+              } @else {
+                <span class="sr-only" i18n>Delayed</span>
+              }
             } @else if (element.state === 'failed') {
               <ion-icon
+                aria-hidden="true"
                 class="h6 mb-0 text-danger"
                 name="alert-circle-outline"
               />
+              <span class="sr-only" i18n>Failed</span>
             } @else if (element.state === 'paused') {
-              <ion-icon class="h6 mb-0" name="pause-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="h6 mb-0"
+                name="pause-outline"
+              />
+              <span class="sr-only" i18n>Paused</span>
             } @else if (element.state === 'waiting') {
-              <ion-icon class="h6 mb-0" name="cafe-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="h6 mb-0"
+                name="cafe-outline"
+              />
+              <span class="sr-only" i18n>Waiting</span>
             }
           </td>
         </ng-container>
 
         <ng-container matColumnDef="actions" stickyEnd>
-          <th *matHeaderCellDef class="px-1 py-2" mat-header-cell>
+          <th *matHeaderCellDef class="px-1 py-2" mat-header-cell scope="col">
+            <!--
+              Named independently of the bulk-actions button beside it, for the
+              same reason as the other tables: a header that is only named because
+              some conditionally rendered control happens to contain text is one
+              permission check away from having no name at all.
+            -->
+            <span class="sr-only" i18n>Actions</span>
+
             <button
+              aria-label="Actions for all jobs"
               class="mx-1 no-min-width px-2"
+              i18n-aria-label
               mat-button
               [matMenuTriggerFor]="jobsActionsMenu"
               (click)="$event.stopPropagation()"
             >
-              <ion-icon name="ellipsis-vertical" />
+              <ion-icon aria-hidden="true" name="ellipsis-vertical" />
             </button>
             <mat-menu #jobsActionsMenu="matMenu" xPosition="before">
               <button mat-menu-item (click)="onDeleteJobs()">
@@ -205,12 +302,14 @@
           </th>
           <td *matCellDef="let element" class="px-1 py-2" mat-cell>
             <button
+              aria-label="Actions for this job"
               class="mx-1 no-min-width px-2"
+              i18n-aria-label
               mat-button
               [matMenuTriggerFor]="jobActionsMenu"
               (click)="$event.stopPropagation()"
             >
-              <ion-icon name="ellipsis-horizontal" />
+              <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
             </button>
             <mat-menu #jobActionsMenu="matMenu" xPosition="before">
               <button mat-menu-item (click)="onViewData(element.data)">
@@ -236,9 +335,35 @@
           </td>
         </ng-container>
 
-        <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+        <tr
+          *matHeaderRowDef="displayedColumns; sticky: true"
+          mat-header-row
+        ></tr>
         <tr *matRowDef="let row; columns: displayedColumns" mat-row></tr>
       </table>
+      <!--
+        The finite state a failed read ends in. It sits BELOW the table rather than
+        replacing it, unlike the single-purpose modules: this screen carries a status
+        filter above the table, and removing the table would remove the context that
+        explains which read failed.
+      -->
+      @if (hasError) {
+        <div
+          class="align-items-center d-flex flex-column py-4 text-center"
+          role="alert"
+        >
+          <div class="mb-3" i18n>The queue could not be loaded.</div>
+          <button
+            color="primary"
+            i18n
+            mat-flat-button
+            type="button"
+            (click)="onRetry()"
+          >
+            Try again
+          </button>
+        </div>
+      }
       @if (isLoading) {
         <ngx-skeleton-loader
           animation="pulse"

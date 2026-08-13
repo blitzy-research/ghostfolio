@@ -1,0 +1,326 @@
+<mat-card
+  appearance="outlined"
+  role="region"
+  [attr.aria-busy]="!resolvedComponent && !hasLoadError"
+  [attr.aria-label]="qualifiedName"
+>
+  <!--
+    Inline padding is kept narrow here, and the drag handle carries no trailing
+    margin, so that a four-column module at a small viewport still has header
+    width left for its title once the handle and the actions trigger have taken
+    theirs. The title also refuses to shrink past a floor - see `.module-title`
+    in `dashboard-module-host.scss`.
+  -->
+  <mat-card-header class="align-items-center px-2 py-2">
+    <!--
+      The class below and the one on the body wrapper are matched by string
+      against the grid's drag configuration, so each is spelled exactly once in
+      this file and nowhere else in it. Keep the handle OUTSIDE that wrapper and
+      everything interactive inside it, or a press anywhere in the module starts
+      a drag - a mismatch compiles and lints cleanly and then fails silently.
+    -->
+    <!--
+      A real button, because the handle acts on the keyboard as well as under the
+      pointer: arrow keys move the module and Shift with an arrow resizes it,
+      which is what `aria-keyshortcuts` advertises. It is the pointer drag handle
+      at the same time - the grid matches the class above by walking up from the
+      pressed element, so which element carries it is irrelevant.
+
+      `type="button"` matters here: the handle sits in no form, but the default
+      submit type would still make Enter and Space do something other than
+      nothing, and this control intentionally has no activation behaviour at all -
+      only its arrow keys act.
+    -->
+    <!--
+      The reference is what lets the canvas hand focus to this module after a
+      neighbour is removed by keyboard. It is deliberately on the handle rather
+      than on the card: the handle is the module's only always-present focusable
+      element, and landing on it puts the arrow keys straight back under the
+      reader's fingers.
+    -->
+    <!--
+      Named from its own CONTENT rather than from an `aria-label`, which is what
+      lets the module's name into the name of the control without inventing a
+      message: a label attribute can hold only one string, so saying which module
+      this handle belongs to would have meant a new parameterised source message
+      and an untranslated string in twelve locales. The action wording stays an
+      already-translated message and the module name is interpolated data.
+
+      Worth saying which module, because on a canvas holding both `Settings`
+      modules there would otherwise be two handles announced identically, and a
+      handle is exactly the control whose effect a reader cannot see. `title`
+      stays as the pointer affordance and becomes the accessible description.
+    -->
+    <button
+      #dragHandle
+      aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
+      class="gf-dashboard-module-drag-handle p-2"
+      i18n-title
+      title="Drag to move module"
+      type="button"
+      (keydown)="onDragHandleKeydown($event)"
+      (pointerdown)="onDragHandlePointerDown()"
+    >
+      <ion-icon aria-hidden="true" name="reorder-two-outline" />
+      <span class="sr-only"
+        ><ng-container i18n>Move or resize module</ng-container>:
+        {{ qualifiedName }}</span
+      >
+    </button>
+
+    <!--
+      Keep the title nested: direct MatCardTitle projection reorders the header,
+      and overflow clipping is required for flex truncation. The wrapper carries a
+      class rather than utilities because it needs a shrink floor as well as the
+      clipping - a clipped flex item contributes an automatic minimum size of
+      ZERO, so without a floor the title can be squeezed away to nothing in a
+      narrow module.
+    -->
+    <!--
+      The qualifier is shown rather than only announced, because the ambiguity is
+      visual first: a viewer looking at two cards both headed `Settings` cannot
+      tell which is the account one either. It appears on exactly the registry
+      entries that declare a context - the two `Settings` modules and the premium
+      `Markets` one - and `text-truncate` handles a narrow module.
+    -->
+    <!--
+      Given a heading role and a level rather than being left as a styled div.
+      Material's card title carries no heading semantics of its own, and with the
+      screens that used to supply the page headings gone the document had NO
+      headings at all - so the heading shortcut every screen-reader user reaches
+      for first, and the outline a rotor draws from it, addressed nothing on the
+      whole canvas.
+
+      Declared as `role`/`aria-level` instead of swapping in an `<h2>` element,
+      because the title is a Material directive on its own element and the level
+      is a property of where the module sits rather than of the component: every
+      module is one level below the canvas's own heading, whatever order the
+      arrangement puts them in. It is also visually inert, which a real heading
+      element would not be - the browser's default heading type and margins would
+      repaint every module header.
+    -->
+    <div class="module-title">
+      <mat-card-title
+        aria-level="2"
+        class="mb-0 text-truncate"
+        role="heading"
+        >{{ qualifiedName }}</mat-card-title
+      >
+    </div>
+
+    <!--
+      No spacer element between the title and this trigger. A spacer that grows
+      shares the free space with the title, which grows too, so half of every
+      module's spare header width would go to nothing while long names ellipsize
+      early. The trigger pushes itself to the trailing edge instead, which leaves
+      the title everything that is left over.
+    -->
+    <!--
+      Named from content for the same reason as the handle above, and it matters more
+      here: this menu's only item REMOVES the module, so a reader arriving at two
+      identically announced triggers has no way to know which arrangement they are
+      about to take apart.
+    -->
+    <button
+      class="module-actions"
+      mat-icon-button
+      [matMenuTriggerFor]="moduleActionsMenu"
+      (click)="$event.stopPropagation()"
+    >
+      <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
+      <span class="sr-only"
+        ><ng-container i18n>Module actions</ng-container>:
+        {{ qualifiedName }}</span
+      >
+    </button>
+    <mat-menu #moduleActionsMenu="matMenu" xPosition="before">
+      <button mat-menu-item (click)="onRemove()">
+        <span class="align-items-center d-flex">
+          <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
+          <span i18n>Remove</span>
+        </span>
+      </button>
+    </mat-menu>
+  </mat-card-header>
+
+  <!--
+    The wrapper exists so the two scroll hints can be positioned against the
+    module's body without being dragged around by the body's own scrolling: an
+    absolutely positioned child of a scroll container is laid out against that
+    container's scrolled content, so a hint placed inside the scroller would slide
+    out of view the moment it became relevant. It changes nothing about dragging -
+    the grid decides what starts a drag by walking UP from the pressed element
+    until it meets either the drag-handle class or the ignore-content class, so an
+    extra ancestor above the ignore-content element is invisible to that walk.
+  -->
+  <div class="gf-dashboard-module-body">
+    <!--
+      The gutter belongs to this region rather than to what it holds. Modules
+      bring no consistent inset of their own: where a module's first element
+      brings none the content sits against the card edge and the top line touches
+      the header rule, and where it brings its own the inset is whatever that
+      module happens to use. Padding the region once gives every module the same
+      inset regardless of what it renders - and is why neither branch below adds
+      an inset of its own.
+    -->
+    <!--
+      `tabindex="0"` because this element is the scrollport, and a scrollport that
+      cannot be focused cannot be scrolled from the keyboard. A cell is sized by
+      the arrangement rather than by its content, so a module that overflows is the
+      normal case here rather than the exception, and several modules overflow with
+      nothing focusable below the fold at all - a summary or an allocation chart is
+      static content. Without a tab stop the arrow keys have nowhere to act and the
+      hidden part of those modules is reachable only with a pointer.
+
+      It adds exactly one stop per module, immediately after that module's handle
+      and actions trigger, so the reading order stays handle -> actions -> content.
+      No `role` is added with it: the card above is already the labelled
+      `role="region"` for this content, and naming the scrollport as well would
+      announce the module's name twice on the way in.
+    -->
+    <!--
+      The gutter is declared in this component's stylesheet rather than by the
+      Bootstrap `p-3` utility this element used to carry, and the reason is a
+      measured defect rather than a preference. That utility resolves to
+      `padding: 1rem !important`, and `!important` outranks every non-important
+      declaration regardless of specificity - including the conditional
+      `padding-block-end` the canvas sets on exactly the modules that pin a
+      floating action button inside themselves. The reserve was therefore
+      computed, emitted and then discarded on every one of those modules, and
+      their last table row sat 16px from the card edge instead of 80px, directly
+      underneath both that button and the canvas's own fixed catalog trigger -
+      making a row's actions menu unreachable at a full viewport.
+
+      The two declarations cannot simply be reordered into one place, because
+      they are authored in two different components: the base gutter belongs to
+      this region and the reserve is the canvas's business, and both compile to
+      selectors of equal specificity, so which one won would come down to
+      stylesheet order in the bundle. They are kept apart on DIFFERENT property
+      names instead - this rule declares the custom property that holds the
+      gutter and reads an optional override, and the canvas declares only that
+      override. No property is written in both files, so no tie exists to
+      resolve and neither file can silently outrank the other.
+    -->
+    <div #moduleContent class="gridster-item-content" tabindex="0">
+      @if (resolvedComponent) {
+        <ng-container [ngComponentOutlet]="resolvedComponent" />
+      } @else if (hasLoadError) {
+        <!--
+          Held against its tags inside `<ng-container i18n>` rather than given a
+          line of its own, so that the extracted text is exactly `Oops! Something
+          went wrong.` and reuses the already-translated id this sentence carries
+          in `dashboard-canvas.html` and `ai-chat.module.html`. Angular hashes an
+          i18n message together with the whitespace around it, collapsing a wrapped
+          text node's indentation into a single leading and trailing space, and
+          `role="alert"` pushes this opening tag past the 80-column print width -
+          so leaving the marker on the `div` would let the formatter move the text
+          onto its own line and mint a second, untranslated id for the very same
+          sentence in all twelve locales while its twin stays translated.
+          `ng-container` renders no DOM, so nothing about the layout changes.
+        -->
+        <!--
+          The failure carries a way out of it. Without one this state was a dead
+          end: the module said only that something had gone wrong, and nothing on
+          the card, in its menu or on the control bar could bring it back - the
+          arrangement-wide refresh asked for it again and got the same failure,
+          and so did removing the module and adding it back.
+
+          A retry first, because it is cheap and reversible and it does recover
+          the failures that are not chunk failures. The document reload only after
+          that retry has failed, because a failed dynamic import is recorded
+          against its url for the lifetime of the document and no amount of asking
+          again within that document will reach the network - so a second retry
+          would be offering the viewer something already known not to work.
+
+          The sentence explaining that is rendered only in the escalated state.
+          Offered up front it would read as an instruction to reload for a failure
+          that a retry was about to fix.
+
+          Neither control is a layout write: `reload()` re-mounts just this module
+          and touches no cell, so no grid callback fires and nothing is persisted -
+          which is the point, because a chunk that failed to arrive was never a
+          layout problem. Both buttons are the plain text variant for the same
+          reason the canvas notices are: a filled button inside a module body would
+          read as that module's own primary action.
+        -->
+        <div class="secondary-text text-center" role="alert">
+          <ng-container i18n>Oops! Something went wrong.</ng-container>
+
+          @if (hasExhaustedInPlaceRecovery) {
+            <div class="mt-2" i18n>
+              This module cannot be loaded again on its own. Reload the page to
+              bring it back.
+            </div>
+
+            <div class="d-flex justify-content-center mt-2">
+              <button mat-button type="button" (click)="onReloadDocument()">
+                <span i18n>Reload page</span>
+              </button>
+            </div>
+          } @else {
+            <div class="d-flex justify-content-center mt-2">
+              <button mat-button type="button" (click)="onRetryLoad()">
+                <span i18n>Try again</span>
+              </button>
+            </div>
+          }
+        </div>
+      } @else {
+        <ngx-skeleton-loader
+          animation="pulse"
+          class="h-100"
+          [theme]="{
+            height: '100%',
+            width: '100%'
+          }"
+        />
+      }
+    </div>
+
+    <!--
+      Says out loud that a module continues past its edge, which nothing else on
+      screen does: this platform paints overlay scrollbars, so the trailing edge
+      of an overflowing module composites identically to one with nothing hidden,
+      and the only accidental cue is a row that happens to be sliced by the fold.
+
+      Deliberately not left to the browser's own scrollbar. The hints are
+      ordinary painted elements, so they survive overlay scrollbars,
+      `--hide-scrollbars` and any platform that hides scrollbars until a scroll is
+      already in progress - exactly the environments where an overflowing module
+      looks complete.
+
+      Rendered only when there really is something in that direction, so a module
+      that fits carries no marking at all and the marking itself means something.
+      `aria-hidden` because they duplicate no information a screen reader lacks:
+      the whole subtree is in the accessibility tree whether or not it is scrolled
+      into view, and the region is reachable and scrollable by keyboard.
+    -->
+    @if (hasOverflowAbove) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-above"
+      ></div>
+    }
+
+    @if (hasOverflowBelow) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-below"
+      ></div>
+    }
+
+    @if (hasOverflowStart) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-start"
+      ></div>
+    }
+
+    @if (hasOverflowEnd) {
+      <div
+        aria-hidden="true"
+        class="gf-dashboard-module-scroll-hint gf-dashboard-module-scroll-hint-end"
+      ></div>
+    }
+  </div>
+</mat-card>

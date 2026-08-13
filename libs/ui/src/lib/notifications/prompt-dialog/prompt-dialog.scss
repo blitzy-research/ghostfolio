@@ -1,0 +1,16 @@
+// See `alert-dialog.scss`: the heading is a string a caller supplies, it is now
+// rendered as text rather than as HTML, and a long one must not push the actions
+// out of reach.
+:host {
+  display: block;
+
+  .gf-notification-text {
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+  }
+
+  [mat-dialog-title].gf-notification-text {
+    max-height: 20svh;
+    overflow: auto;
+  }
+}

@@ -1,0 +1,9 @@
+:host {
+  display: block;
+
+  // Keep the FAB in normal flow at the trailing edge so it cannot overlap
+  // content or gridster resize handles.
+  [mat-fab] {
+    margin-inline-start: auto;
+  }
+}

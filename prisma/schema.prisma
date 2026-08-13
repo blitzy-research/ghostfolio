@@ -236,13 +236,19 @@ model SymbolProfileOverrides {
 }
 
 model Subscription {
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-  id        String   @id @default(uuid())
-  price     Float?
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], onDelete: Cascade, references: [id])
-  userId    String
+  createdAt               DateTime @default(now())
+  expiresAt               DateTime
+  id                      String   @id @default(uuid())
+  price                   Float?
+  // The payment session this entitlement was provisioned from, unique so the
+  // database itself refuses a second subscription for the same payment. Nullable
+  // because a coupon redemption has no payment session, and because every row
+  // that existed before this column did has none either - which is also what
+  // makes the accompanying migration purely additive.
+  stripeCheckoutSessionId String?  @unique
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId                  String
 
   @@index([userId])
 }
@@ -259,32 +265,40 @@ model Tag {
 }
 
 model User {
-  accessesGet   Access[]        @relation("accessGet")
-  accessesGive  Access[]        @relation("accessGive")
-  accessToken   String?
-  accounts      Account[]
-  activities    Order[]
-  analytics     Analytics?
-  apiKeys       ApiKey[]
-  authChallenge String?
-  authDevices   AuthDevice[]
-  createdAt     DateTime        @default(now())
-  id            String          @id @default(uuid())
-  provider      Provider        @default(ANONYMOUS)
-  role          Role            @default(USER)
-  settings      Settings?
-  subscriptions Subscription[]
-  tags          Tag[]
-  thirdPartyId  String?
-  updatedAt     DateTime        @updatedAt
-  watchlist     SymbolProfile[] @relation("UserWatchlist")
-  SymbolProfile SymbolProfile[]
+  accessesGet     Access[]             @relation("accessGet")
+  accessesGive    Access[]             @relation("accessGive")
+  accessToken     String?
+  accounts        Account[]
+  activities      Order[]
+  analytics       Analytics?
+  apiKeys         ApiKey[]
+  authChallenge   String?
+  authDevices     AuthDevice[]
+  createdAt       DateTime             @default(now())
+  dashboardLayout UserDashboardLayout?
+  id              String               @id @default(uuid())
+  provider        Provider             @default(ANONYMOUS)
+  role            Role                 @default(USER)
+  settings        Settings?
+  subscriptions   Subscription[]
+  tags            Tag[]
+  thirdPartyId    String?
+  updatedAt       DateTime             @updatedAt
+  watchlist       SymbolProfile[]      @relation("UserWatchlist")
+  SymbolProfile   SymbolProfile[]
 
   @@index([accessToken])
   @@index([createdAt])
   @@index([provider])
   @@index([role])
   @@index([thirdPartyId])
+}
+
+model UserDashboardLayout {
+  layoutData Json?
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], onDelete: Cascade, references: [id])
+  userId     String   @id
 }
 
 enum AccessPermission {

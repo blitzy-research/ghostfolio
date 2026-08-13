@@ -24,17 +24,19 @@
         mat-stroked-button
         (click)="onImport()"
       >
-        <ion-icon class="mr-2" name="cloud-upload-outline" />
+        <ion-icon aria-hidden="true" class="mr-2" name="cloud-upload-outline" />
         <span><ng-container i18n>Import Activities</ng-container>...</span>
       </button>
       @if (hasPermissionToExportActivities) {
         <button
+          aria-label="Actions for all activities"
           class="mx-1 no-min-width px-2"
+          i18n-aria-label
           mat-stroked-button
           [matMenuTriggerFor]="activitiesMenu"
           (click)="$event.stopPropagation()"
         >
-          <ion-icon name="ellipsis-vertical" />
+          <ion-icon aria-hidden="true" name="ellipsis-vertical" />
         </button>
       }
       <mat-menu
@@ -48,7 +50,11 @@
           (click)="onImportDividends()"
         >
           <span class="align-items-center d-flex">
-            <ion-icon class="mr-2" name="color-wand-outline" />
+            <ion-icon
+              aria-hidden="true"
+              class="mr-2"
+              name="color-wand-outline"
+            />
             <span><ng-container i18n>Import Dividends</ng-container>...</span>
           </span>
         </button>
@@ -60,7 +66,11 @@
             (click)="onExport()"
           >
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="cloud-download-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="mr-2"
+                name="cloud-download-outline"
+              />
               <span i18n>Export Activities</span>
             </span>
           </button>
@@ -73,7 +83,11 @@
             (click)="onExportDrafts()"
           >
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="calendar-clear-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="mr-2"
+                name="calendar-clear-outline"
+              />
               <span i18n>Export Drafts as ICS</span>
             </span>
           </button>
@@ -88,7 +102,7 @@
           (click)="onDeleteActivities()"
         >
           <span class="align-items-center d-flex">
-            <ion-icon class="mr-2" name="trash-outline" />
+            <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
             <span i18n>Delete Activities</span>
           </span>
         </button>
@@ -108,7 +122,7 @@
     [matSortDisabled]="sortDisabled"
   >
     <ng-container matColumnDef="select" sticky>
-      <th *matHeaderCellDef class="px-1" mat-header-cell>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
         <mat-checkbox
           color="primary"
           [checked]="
@@ -131,7 +145,24 @@
     </ng-container>
 
     <ng-container matColumnDef="importStatus">
-      <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <span class="sr-only" i18n>Import status</span>
+      </th>
+      <!--
+        This cell is what tells the person reviewing an import that a row cannot be
+        accepted, and the two things that say so visually reach neither a screen
+        reader nor the keyboard: a red glyph, which is decorative, and a
+        `matTooltip` on a plain `div`. Material wires a tooltip's `aria-describedby`
+        only to the element it sits on, and a non-focusable, non-interactive `div` is
+        never described to anybody - the tooltip is a pointer-hover affordance and
+        nothing more. Without the text below, a row that will be rejected would be
+        indistinguishable from one that will import cleanly.
+
+        The message is exposed as text rather than as a name for the glyph, because
+        it is the actual reason and it is what has to be acted on - the checkbox
+        beside it is disabled precisely because of it. `.sr-only` keeps the visual
+        cell to one red glyph with a hover tooltip.
+      -->
       <td *matCellDef="let element" class="px-1" mat-cell>
         @if (element.error) {
           <div
@@ -139,14 +170,24 @@
             matTooltipPosition="above"
             [matTooltip]="element.error.message"
           >
-            <ion-icon class="text-danger" name="alert-circle-outline" />
+            <ion-icon
+              aria-hidden="true"
+              class="text-danger"
+              name="alert-circle-outline"
+            />
+            <span class="sr-only"
+              ><ng-container i18n>Import error</ng-container>:
+              {{ element.error.message }}</span
+            >
           </div>
         }
       </td>
     </ng-container>
 
     <ng-container matColumnDef="icon" sticky>
-      <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+        <span class="sr-only" i18n>Logo</span>
+      </th>
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         <gf-entity-logo
           [dataSource]="element.SymbolProfile?.dataSource"
@@ -157,7 +198,7 @@
     </ng-container>
 
     <ng-container matColumnDef="nameWithSymbol">
-      <th *matHeaderCellDef class="px-1" mat-header-cell>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
         <ng-container i18n>Name</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
@@ -183,7 +224,13 @@
     </ng-container>
 
     <ng-container matColumnDef="type">
-      <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header>
+      <th
+        *matHeaderCellDef
+        class="px-1"
+        mat-header-cell
+        mat-sort-header
+        scope="col"
+      >
         <ng-container i18n>Type</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
@@ -192,7 +239,13 @@
     </ng-container>
 
     <ng-container matColumnDef="date">
-      <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header>
+      <th
+        *matHeaderCellDef
+        class="px-1"
+        mat-header-cell
+        mat-sort-header
+        scope="col"
+      >
         <ng-container i18n>Date</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
@@ -213,6 +266,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Quantity</ng-container>
       </th>
@@ -237,6 +291,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Unit Price</ng-container>
       </th>
@@ -261,6 +316,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Fee</ng-container>
       </th>
@@ -284,6 +340,7 @@
         *matHeaderCellDef
         class="d-none d-lg-table-cell px-1 text-right"
         mat-header-cell
+        scope="col"
       >
         <ng-container i18n>Value</ng-container>
       </th>
@@ -303,7 +360,12 @@
     </ng-container>
 
     <ng-container matColumnDef="currency">
-      <th *matHeaderCellDef class="d-none d-lg-table-cell px-1" mat-header-cell>
+      <th
+        *matHeaderCellDef
+        class="d-none d-lg-table-cell px-1"
+        mat-header-cell
+        scope="col"
+      >
         <ng-container i18n>Currency</ng-container>
       </th>
       <td
@@ -320,6 +382,7 @@
         *matHeaderCellDef
         class="d-lg-none d-xl-none px-1 text-right"
         mat-header-cell
+        scope="col"
       >
         <ng-container i18n>Value</ng-container>
       </th>
@@ -335,7 +398,7 @@
     </ng-container>
 
     <ng-container matColumnDef="account">
-      <th *matHeaderCellDef class="px-1" mat-header-cell>
+      <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
         <span class="d-none d-lg-block" i18n>Account</span>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
@@ -357,37 +420,67 @@
         *matHeaderCellDef
         class="d-none d-lg-table-cell px-1"
         mat-header-cell
-      ></th>
+        scope="col"
+      >
+        <span class="sr-only" i18n>Note</span>
+      </th>
       <td
         *matCellDef="let element"
         class="d-none d-lg-table-cell px-1"
         mat-cell
       >
+        <!--
+          An icon-only control whose accessible name came entirely from a bare
+          `title`: untranslated in all twelve locale catalogs, and naming the column
+          rather than the action. `aria-label` now states what pressing it does, the
+          `title` is kept as the hover affordance and localized so the two agree, and
+          the glyph stays decorative. Same treatment as the accounts table, which
+          carries the identical control.
+        -->
         @if (element.comment) {
           <button
+            aria-label="Open note"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
+            i18n-title
             mat-button
-            title="Note"
+            title="Open note"
             (click)="onOpenComment(element.comment); $event.stopPropagation()"
           >
-            <ion-icon name="document-text-outline" />
+            <ion-icon aria-hidden="true" name="document-text-outline" />
           </button>
         }
       </td>
     </ng-container>
 
     <ng-container matColumnDef="actions" stickyEnd>
-      <th *matHeaderCellDef class="px-1 text-center" mat-header-cell>
+      <th
+        *matHeaderCellDef
+        class="px-1 text-center"
+        mat-header-cell
+        scope="col"
+      >
+        <!--
+          Named unconditionally, which is the whole point. The bulk-actions button
+          below it is behind a permission check, so on the common path this header
+          rendered no text at all - and a column header with no text is no header,
+          which left every row's actions cell unassociated. The label cannot be
+          allowed to depend on whether a button happens to be visible.
+        -->
+        <span class="sr-only" i18n>Actions</span>
+
         @if (
           !hasPermissionToCreateActivity && hasPermissionToExportActivities
         ) {
           <button
+            aria-label="Actions for all activities"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
             mat-button
             [matMenuTriggerFor]="activitiesMenu"
             (click)="$event.stopPropagation()"
           >
-            <ion-icon name="ellipsis-vertical" />
+            <ion-icon aria-hidden="true" name="ellipsis-vertical" />
           </button>
         }
         <mat-menu
@@ -402,7 +495,11 @@
               (click)="onImport()"
             >
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="cloud-upload-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="cloud-upload-outline"
+                />
                 <span
                   ><ng-container i18n>Import Activities</ng-container>...</span
                 >
@@ -416,7 +513,11 @@
               (click)="onImportDividends()"
             >
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="color-wand-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="color-wand-outline"
+                />
                 <span
                   ><ng-container i18n>Import Dividends</ng-container>...</span
                 >
@@ -431,7 +532,11 @@
               (click)="onExport()"
             >
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="cloud-download-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="cloud-download-outline"
+                />
                 <span i18n>Export Activities</span>
               </span>
             </button>
@@ -444,7 +549,11 @@
               (click)="onExportDrafts()"
             >
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="calendar-clear-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="calendar-clear-outline"
+                />
                 <span i18n>Export Drafts as ICS</span>
               </span>
             </button>
@@ -454,12 +563,14 @@
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         @if (showActions) {
           <button
+            aria-label="Actions for this activity"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
             mat-button
             [matMenuTriggerFor]="activityMenu"
             (click)="$event.stopPropagation()"
           >
-            <ion-icon name="ellipsis-horizontal" />
+            <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
           </button>
         }
         <mat-menu
@@ -470,20 +581,24 @@
           @if (canClickActivity(element)) {
             <button mat-menu-item (click)="onClickActivity(element)">
               <span class="align-items-center d-flex">
-                <ion-icon class="mr-2" name="tablet-landscape-outline" />
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  name="tablet-landscape-outline"
+                />
                 <span><ng-container i18n>View Holding</ng-container>...</span>
               </span>
             </button>
           }
           <button mat-menu-item (click)="onUpdateActivity(element)">
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="create-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="create-outline" />
               <span><ng-container i18n>Edit</ng-container>...</span>
             </span>
           </button>
           <button mat-menu-item (click)="onCloneActivity(element)">
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="copy-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="copy-outline" />
               <span><ng-container i18n>Clone</ng-container>...</span>
             </span>
           </button>
@@ -493,7 +608,11 @@
             (click)="onExportDraft(element.id)"
           >
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="calendar-clear-outline" />
+              <ion-icon
+                aria-hidden="true"
+                class="mr-2"
+                name="calendar-clear-outline"
+              />
               <span i18n>Export Draft as ICS</span>
             </span>
           </button>
@@ -504,7 +623,7 @@
             (click)="onDeleteActivity(element.id)"
           >
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="trash-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
               <span i18n>Delete</span>
             </span>
           </button>
@@ -512,7 +631,7 @@
       </td>
     </ng-container>
 
-    <tr *matHeaderRowDef="displayedColumns()" mat-header-row></tr>
+    <tr *matHeaderRowDef="displayedColumns(); sticky: true" mat-header-row></tr>
     <tr
       *matRowDef="let row; columns: displayedColumns()"
       mat-row
@@ -553,6 +672,9 @@
   !isLoading()
 ) {
   <div class="p-3 text-center">
-    <gf-no-transactions-info-indicator [hasBorder]="false" />
+    <gf-no-transactions-info-indicator
+      [hasBorder]="false"
+      (createActivityClicked)="createActivityClicked.emit()"
+    />
   </div>
 }

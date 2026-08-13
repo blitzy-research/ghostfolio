@@ -4,8 +4,17 @@
   .mat-mdc-dialog-content {
     max-height: unset;
 
+    // 2 / 1 rather than 16 / 9, because the chart in this box is
+    // `gf-investment-chart`, whose canvas carries Bootstrap's `.h-100` - the same
+    // combination, and so the same 1.125x vertical stretch, set out in full on the
+    // sibling container in `portfolio-analysis.scss`.
+    //
+    // This one matters precisely because it is the SAME component: sized at 16 / 9
+    // here and 2 / 1 there, one investment chart would have been stretched and its
+    // twin not, which is the divergence that container's own comment warns has to
+    // be kept from happening.
     .chart-container {
-      aspect-ratio: 16 / 9;
+      aspect-ratio: 2 / 1;
     }
   }
 }

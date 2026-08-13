@@ -21,7 +21,7 @@ import {
   UseInterceptors
 } from '@nestjs/common';
 import { REQUEST } from '@nestjs/core';
-import { Type as ActivityType } from '@prisma/client';
+import { AccessPermission, Type as ActivityType } from '@prisma/client';
 import { Big } from 'big.js';
 import { StatusCodes, getReasonPhrase } from 'http-status-codes';
 
@@ -92,6 +92,17 @@ export class PublicController {
       withExcludedAccountsAndActivities: false
     });
 
+    // Whether this link was granted unrestricted read, which is what decides
+    // below whether exact figures may leave the server.
+    //
+    // Consulted here rather than left to `RedactValuesInResponseInterceptor`,
+    // which cannot help on this route: it decides from the *requesting* viewer
+    // and the impersonation header, and this endpoint is public, so it sees no
+    // viewer at all and redacts nothing. The capability is the only authority
+    // present in the request, so the capability is what has to be read.
+    const hasUnrestrictedReadPermission =
+      access.permissions?.includes(AccessPermission.READ) ?? false;
+
     // Experimental
     const latestActivities = this.configurationService.get(
       'ENABLE_FEATURE_SUBSCRIPTION'
@@ -109,16 +120,33 @@ export class PublicController {
             value,
             valueInBaseCurrency
           }) => {
+            // What a share link discloses is its own decision, made once, on the
+            // server. A restricted link is meant to show *what* was traded and
+            // when - which is the showcase the feature exists for - and not the
+            // exact fee, quantity, unit price or value, which together reconstruct
+            // the size of somebody's position and what they paid for it. Those are
+            // the most sensitive numbers in the payload, and a default
+            // `READ_RESTRICTED` link that carried them would disclose all of them
+            // for the ten most recent trades.
+            //
+            // Redacted to `null` rather than omitted, deliberately: `null` is this
+            // application's established redaction marker, which the value component
+            // renders as `*****`, whereas an absent field is indistinguishable from
+            // one still loading and would leave the table showing skeletons for
+            // ever. The distinction visible to the recipient is therefore
+            // "withheld", not "broken".
+            const isDisclosable = hasUnrestrictedReadPermission;
+
             return {
               currency,
               date,
-              fee,
-              quantity,
               SymbolProfile,
               type,
-              unitPrice,
-              value,
-              valueInBaseCurrency
+              fee: isDisclosable ? fee : null,
+              quantity: isDisclosable ? quantity : null,
+              unitPrice: isDisclosable ? unitPrice : null,
+              value: isDisclosable ? value : null,
+              valueInBaseCurrency: isDisclosable ? valueInBaseCurrency : null
             };
           }
         );

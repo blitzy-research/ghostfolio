@@ -1,19 +1,15 @@
+# The application serves one address per locale - the dashboard canvas - and every
+# other path the router once had redirects to it. A rule naming any of those paths
+# would advertise a screen that no longer exists, which is why there are only two
+# here rather than a list per locale. The indexable set is exactly what
+# /sitemap.xml enumerates: the locale roots.
 User-agent: *
 Allow: /
-Disallow: /de/about/*
-Disallow: /de/faq
-Disallow: /de/markets
-Disallow: /de/portfolio/*
-Disallow: /de/pricing
-Disallow: /de/register
-Disallow: /de/resources
-Disallow: /de/ueber-uns/datenschutzbestimmungen
-Disallow: /en/about/privacy-policy
-Disallow: /en/p/*
-Disallow: /en/portfolio/*
-Disallow: /portfolio/*
-Disallow: /pricing/*
-Disallow: /register/*
-Disallow: /resources/*
+
+# Shared portfolios. A share link is a locale root carrying an access identifier,
+# and each identifier is a capability handed to one particular person: reachable
+# without signing in by design, revocable by whoever issued it, and not something
+# that belongs in a search index. This replaces the retired /<locale>/p/<id> form.
+Disallow: /*?accessId=
 
 Sitemap: https://ghostfol.io/sitemap.xml

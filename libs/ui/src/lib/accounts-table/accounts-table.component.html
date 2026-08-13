@@ -6,7 +6,7 @@
       [disabled]="dataSource?.data.length < 2"
       (click)="onTransferBalance()"
     >
-      <ion-icon class="mr-2" name="arrow-redo-outline" />
+      <ion-icon aria-hidden="true" class="mr-2" name="arrow-redo-outline" />
       <span><ng-container i18n>Transfer Cash Balance</ng-container>...</span>
     </button>
   </div>
@@ -26,15 +26,29 @@
         *matHeaderCellDef
         class="d-none d-lg-table-cell px-1"
         mat-header-cell
-      ></th>
+        scope="col"
+      >
+        <span class="sr-only" i18n>Status</span>
+      </th>
       <td
         *matCellDef="let element"
         class="d-none d-lg-table-cell px-1"
         mat-cell
       >
+        <!--
+          The glyph is the only thing this cell has ever shown, and marking it
+          decorative left the Status column announcing nothing for every row. What it
+          says matters: an excluded account is left out of the portfolio totals the
+          rest of this table is summed into, so a reader who cannot tell which rows
+          are excluded cannot reconcile the footer with the rows above it.
+
+          Named rather than labelled on the icon, and `.sr-only` rather than visible,
+          so the column stays the single-glyph column it is designed as.
+        -->
         <div class="d-flex justify-content-center">
           @if (element.isExcluded) {
-            <ion-icon name="eye-off-outline" />
+            <ion-icon aria-hidden="true" name="eye-off-outline" />
+            <span class="sr-only" i18n>Excluded</span>
           }
         </div>
       </td>
@@ -46,7 +60,13 @@
     </ng-container>
 
     <ng-container matColumnDef="account">
-      <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header="name">
+      <th
+        *matHeaderCellDef
+        class="px-1"
+        mat-header-cell
+        mat-sort-header="name"
+        scope="col"
+      >
         <ng-container i18n>Name</ng-container>
       </th>
       <td *matCellDef="let element" class="px-1" mat-cell>
@@ -68,6 +88,7 @@
         class="d-none d-lg-table-cell px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Currency</ng-container>
       </th>
@@ -89,6 +110,7 @@
         class="d-none d-lg-table-cell px-1"
         mat-header-cell
         mat-sort-header="platform.name"
+        scope="col"
       >
         <ng-container i18n>Platform</ng-container>
       </th>
@@ -121,6 +143,7 @@
         class="justify-content-end px-1"
         mat-header-cell
         mat-sort-header="activitiesCount"
+        scope="col"
       >
         <span class="d-block d-sm-none">#</span>
         <span class="d-none d-sm-block" i18n>Activities</span>
@@ -139,6 +162,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Cash Balance</ng-container>
       </th>
@@ -174,6 +198,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Value</ng-container>
       </th>
@@ -209,6 +234,7 @@
         class="d-lg-none d-xl-none justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Value</ng-container>
       </th>
@@ -244,6 +270,7 @@
         class="d-none d-lg-table-cell justify-content-end px-1"
         mat-header-cell
         mat-sort-header
+        scope="col"
       >
         <ng-container i18n>Allocation</ng-container>
       </th>
@@ -272,20 +299,37 @@
         *matHeaderCellDef
         class="d-none d-lg-table-cell px-1"
         mat-header-cell
-      ></th>
+        scope="col"
+      >
+        <span class="sr-only" i18n>Note</span>
+      </th>
       <td
         *matCellDef="let element"
         class="d-none d-lg-table-cell px-1"
         mat-cell
       >
+        <!--
+          An icon-only control, so its accessible name came entirely from the bare
+          `title` - a string with no `i18n-title`, which meant every locale announced
+          the English word "Note" and none of the twelve translated catalogs carried
+          it. It also named the column rather than the action, which is what a
+          control's name is for.
+
+          `aria-label` states what pressing it does and is what assistive technology
+          announces; the `title` is kept as the hover affordance and is now localized
+          too, so the two agree in every locale. The glyph stays decorative.
+        -->
         @if (element.comment) {
           <button
+            aria-label="Open note"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
+            i18n-title
             mat-button
-            title="Note"
+            title="Open note"
             (click)="onOpenComment(element.comment); $event.stopPropagation()"
           >
-            <ion-icon name="document-text-outline" />
+            <ion-icon aria-hidden="true" name="document-text-outline" />
           </button>
         }
       </td>
@@ -297,26 +341,35 @@
     </ng-container>
 
     <ng-container matColumnDef="actions" stickyEnd>
-      <th *matHeaderCellDef class="px-1 text-center" mat-header-cell></th>
+      <th
+        *matHeaderCellDef
+        class="px-1 text-center"
+        mat-header-cell
+        scope="col"
+      >
+        <span class="sr-only" i18n>Actions</span>
+      </th>
       <td *matCellDef="let element" class="px-1 text-center" mat-cell>
         <button
+          aria-label="Actions for this account"
           class="mx-1 no-min-width px-2"
+          i18n-aria-label
           mat-button
           [matMenuTriggerFor]="accountMenu"
           (click)="$event.stopPropagation()"
         >
-          <ion-icon name="ellipsis-horizontal" />
+          <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
         </button>
         <mat-menu #accountMenu="matMenu" xPosition="before">
           <button mat-menu-item (click)="onOpenAccountDetailDialog(element.id)">
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="wallet-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="wallet-outline" />
               <span><ng-container i18n>View Details</ng-container>...</span>
             </span>
           </button>
           <button mat-menu-item (click)="onUpdateAccount(element)">
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="create-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="create-outline" />
               <span><ng-container i18n>Edit</ng-container>...</span>
             </span>
           </button>
@@ -327,7 +380,7 @@
             (click)="onDeleteAccount(element.id)"
           >
             <span class="align-items-center d-flex">
-              <ion-icon class="mr-2" name="trash-outline" />
+              <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
               <span i18n>Delete</span>
             </span>
           </button>
@@ -336,7 +389,7 @@
       <td *matFooterCellDef class="px-1" mat-footer-cell></td>
     </ng-container>
 
-    <tr *matHeaderRowDef="displayedColumns()" mat-header-row></tr>
+    <tr *matHeaderRowDef="displayedColumns(); sticky: true" mat-header-row></tr>
     <tr
       *matRowDef="let row; columns: displayedColumns()"
       mat-row

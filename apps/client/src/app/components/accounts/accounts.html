@@ -1,0 +1,50 @@
+<div class="row">
+  <div class="col">
+    <gf-accounts-table
+      [accounts]="accounts"
+      [activitiesCount]="activitiesCount"
+      [baseCurrency]="user?.settings?.baseCurrency"
+      [locale]="user?.settings?.locale"
+      [showActions]="
+        !hasImpersonationId &&
+        hasPermissionToUpdateAccount &&
+        !user.settings.isRestrictedView
+      "
+      [totalBalanceInBaseCurrency]="totalBalanceInBaseCurrency"
+      [totalValueInBaseCurrency]="totalValueInBaseCurrency"
+      (accountDeleted)="onDeleteAccount($event)"
+      (accountToUpdate)="onUpdateAccount($event)"
+      (transferBalance)="onTransferBalance()"
+    />
+  </div>
+</div>
+
+@if (
+  !hasImpersonationId &&
+  hasPermissionToCreateAccount &&
+  !user.settings.isRestrictedView
+) {
+  <div class="fab-container">
+    <!--
+      An icon-only control, so its accessible name has to come from an attribute.
+      The label is the title of the dialog this control opens, which is an already
+      translated source message - the name a screen reader announces therefore
+      matches the dialog that appears. The glyph is decorative and hidden so it
+      cannot be announced a second time.
+    -->
+    <a
+      aria-label="Add account"
+      class="align-items-center d-flex justify-content-center"
+      color="primary"
+      i18n-aria-label
+      i18n-title
+      mat-fab
+      queryParamsHandling="merge"
+      title="Add account"
+      [queryParams]="createDialogQueryParams"
+      [routerLink]="[]"
+    >
+      <ion-icon aria-hidden="true" name="add-outline" size="large" />
+    </a>
+  </div>
+}

@@ -1,7 +1,7 @@
 <div class="container">
   <div class="mb-5 row">
     <div class="col">
-      <h2 class="text-center" i18n>Data Providers</h2>
+      <h3 class="h6 text-center" i18n>Data Providers</h3>
       @if (isGhostfolioApiKeyValid === false) {
         <mat-card appearance="outlined" class="my-3 special">
           <mat-card-header>
@@ -29,13 +29,32 @@
             <div class="mx-3 text-muted">
               <small i18n>or</small>
             </div>
+            <!--
+              The label names its destination rather than saying "Learn more".
+              Bare "Learn more" is indistinguishable from every other "Learn
+              more" to anyone reading the page as a list of links, and it is what
+              an SEO audit reports as non-descriptive.
+
+              Carried in the VISIBLE text rather than in an `aria-label`: the
+              accessible name is what assistive technology reads, but the rendered
+              text is what a sighted reader and a crawler read, and only the text
+              serves all three. An `aria-label` would satisfy none of the latter
+              two - the check compares the element's own text, never its accessible
+              name - while also risking a "label in name" mismatch by making the
+              spoken name diverge from the printed one. With no override the two are
+              identical, so nothing can drift.
+
+              It fits: the row is a fraction of the card's width, and the button is
+              a flex item that wraps rather than overflowing if a viewer makes the
+              module narrow.
+            -->
             <a
               color="accent"
               mat-stroked-button
               target="_blank"
               [href]="pricingUrl"
             >
-              <ng-container i18n>Learn more</ng-container>
+              <ng-container i18n>Learn more about Premium</ng-container>
             </a>
           </mat-card-actions>
         </mat-card>
@@ -54,6 +73,7 @@
             class="px-1"
             mat-header-cell
             mat-sort-header="name"
+            scope="col"
           >
             <ng-container i18n>Name</ng-container>
           </th>
@@ -100,7 +120,7 @@
         </ng-container>
 
         <ng-container matColumnDef="status">
-          <th *matHeaderCellDef class="px-1" mat-header-cell>
+          <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
             <ng-container i18n>Status</ng-container>
           </th>
           <td *matCellDef="let element" class="px-1" mat-cell>
@@ -119,6 +139,7 @@
             class="justify-content-end px-1"
             mat-header-cell
             mat-sort-header="assetProfileCount"
+            scope="col"
           >
             <ng-container i18n>Asset Profiles</ng-container>
           </th>
@@ -132,13 +153,23 @@
         </ng-container>
 
         <ng-container matColumnDef="usage">
-          <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+          <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+            <span class="sr-only" i18n>Usage</span>
+          </th>
           <td *matCellDef="let element" class="px-1" mat-cell>
             @if (
               isGhostfolioDataProvider(element) &&
               isGhostfolioApiKeyValid === true
             ) {
+              <!--
+                A `mat-progress-bar` renders `role="progressbar"`, and a progressbar with
+                no accessible name is announced as a bare value with nothing to say what
+                the value is OF. The visible caption beneath states the counts, so the
+                name here says what is being measured rather than repeating them.
+              -->
               <mat-progress-bar
+                aria-label="Remaining daily requests"
+                i18n-aria-label
                 mode="determinate"
                 [value]="
                   100 -
@@ -158,28 +189,49 @@
         </ng-container>
 
         <ng-container matColumnDef="actions">
-          <th *matHeaderCellDef class="px-1" mat-header-cell></th>
+          <th *matHeaderCellDef class="px-1" mat-header-cell scope="col">
+            <span class="sr-only" i18n>Actions</span>
+          </th>
 
           <td *matCellDef="let element" class="px-1 text-right" mat-cell>
             @if (isGhostfolioDataProvider(element)) {
-              @if (isGhostfolioApiKeyValid === true) {
+              <!--
+                Two independent affordances, keyed on two independent facts.
+
+                Removal is offered whenever a key is STORED - `hasGhostfolioApiKey` -
+                rather than whenever the third party accepts it. Keying it on validity
+                meant an expired, mistyped or currently uncheckable key could not be
+                deleted at all: the only control shown was "Set API key", so the bad
+                value could be overwritten but never cleared.
+
+                Setting is offered while there is no valid key, which covers both the
+                first-time case and replacing one that no longer validates.
+              -->
+              @if (hasGhostfolioApiKey) {
                 <button
+                  aria-label="Actions for this data provider"
                   class="mx-1 no-min-width px-2"
+                  i18n-aria-label
                   mat-button
                   [matMenuTriggerFor]="ghostfolioApiMenu"
                   (click)="$event.stopPropagation()"
                 >
-                  <ion-icon name="ellipsis-horizontal" />
+                  <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
                 </button>
                 <mat-menu #ghostfolioApiMenu="matMenu" xPosition="before">
                   <button mat-menu-item (click)="onRemoveGhostfolioApiKey()">
                     <span class="align-items-center d-flex">
-                      <ion-icon class="mr-2" name="trash-outline" />
+                      <ion-icon
+                        aria-hidden="true"
+                        class="mr-2"
+                        name="trash-outline"
+                      />
                       <span i18n>Remove API key</span>
                     </span>
                   </button>
                 </mat-menu>
-              } @else if (isGhostfolioApiKeyValid === false) {
+              }
+              @if (isGhostfolioApiKeyValid === false) {
                 <button
                   class="special"
                   mat-flat-button
@@ -192,7 +244,10 @@
           </td>
         </ng-container>
 
-        <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+        <tr
+          *matHeaderRowDef="displayedColumns; sticky: true"
+          mat-header-row
+        ></tr>
         <tr *matRowDef="let row; columns: displayedColumns" mat-row></tr>
       </table>
       @if (isLoading) {
@@ -209,13 +264,13 @@
   </div>
   <div class="mb-5 row">
     <div class="col">
-      <h2 class="text-center" i18n>Platforms</h2>
+      <h3 class="h6 text-center" i18n>Platforms</h3>
       <gf-admin-platform [locale]="user?.settings?.locale" />
     </div>
   </div>
   <div class="row">
     <div class="col">
-      <h2 class="text-center" i18n>Tags</h2>
+      <h3 class="h6 text-center" i18n>Tags</h3>
       <gf-admin-tag [locale]="user?.settings?.locale" />
     </div>
   </div>

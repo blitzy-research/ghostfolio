@@ -4,7 +4,7 @@
     (keydown.tab)="$event.stopPropagation()"
   >
     <div class="align-items-center d-flex search-container">
-      <ion-icon class="ml-2 mr-0" name="search-outline" />
+      <ion-icon aria-hidden="true" class="ml-2 mr-0" name="search-outline" />
       <input
         #search
         autocomplete="off"
@@ -20,19 +20,27 @@
       }
       @if (searchFormControl.value) {
         <button
+          aria-label="Clear the search field"
           class="h-100 no-min-width px-3 rounded-0"
+          i18n-aria-label
           mat-button
           (click)="initialize()"
         >
-          <ion-icon class="m-0" name="close-circle-outline" />
+          <ion-icon
+            aria-hidden="true"
+            class="m-0"
+            name="close-circle-outline"
+          />
         </button>
       } @else {
         <button
+          aria-label="Close the assistant"
           class="h-100 no-min-width px-3 rounded-0"
+          i18n-aria-label
           mat-button
           (click)="onCloseAssistant()"
         >
-          <ion-icon class="m-0" name="close-outline" />
+          <ion-icon aria-hidden="true" class="m-0" name="close-outline" />
         </button>
       }
     </div>
@@ -64,6 +72,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.quickLinks) {
@@ -90,6 +99,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.accounts) {
@@ -116,6 +126,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.holdings) {
@@ -146,6 +157,7 @@
                 <gf-assistant-list-item
                   [item]="searchResultItem"
                   (clicked)="onCloseAssistant()"
+                  (moduleSelected)="onSelectModule($event)"
                 />
               }
               @if (isLoading.assetProfiles) {

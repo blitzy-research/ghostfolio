@@ -1,5 +1,7 @@
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import {
   AssetProfileIdentifier,
   PortfolioPosition,
@@ -7,7 +9,6 @@ import {
   User
 } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { HoldingType, HoldingsViewMode } from '@ghostfolio/common/types';
 import { GfHoldingsTableComponent } from '@ghostfolio/ui/holdings-table';
 import { DataService } from '@ghostfolio/ui/services';
@@ -26,7 +27,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import { gridOutline, reorderFourOutline } from 'ionicons/icons';
@@ -42,8 +43,7 @@ import { DeviceDetectorService } from 'ngx-device-detector';
     IonIcon,
     MatButtonModule,
     MatButtonToggleModule,
-    ReactiveFormsModule,
-    RouterModule
+    ReactiveFormsModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-home-holdings',
@@ -63,8 +63,6 @@ export class GfHomeHoldingsComponent implements OnInit {
     { label: $localize`Active`, value: 'ACTIVE' },
     { label: $localize`Closed`, value: 'CLOSED' }
   ];
-  public routerLinkPortfolioActivities =
-    internalRoutes.portfolio.subRoutes.activities.routerLink;
   public user: User;
   public viewModeFormControl = new FormControl<HoldingsViewMode>(
     GfHomeHoldingsComponent.DEFAULT_HOLDINGS_VIEW_MODE
@@ -72,10 +70,12 @@ export class GfHomeHoldingsComponent implements OnInit {
 
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
+    private dashboardIntentService: DashboardIntentService,
     private dataService: DataService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
     private impersonationStorageService: ImpersonationStorageService,
+    private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
   ) {
@@ -141,10 +141,29 @@ export class GfHomeHoldingsComponent implements OnInit {
 
   public onHoldingClicked({ dataSource, symbol }: AssetProfileIdentifier) {
     if (dataSource && symbol) {
-      this.router.navigate([], {
-        queryParams: { dataSource, symbol, holdingDetailDialog: true }
+      // Merging in turn obliges this producer to null what it is taking over.
+      // `dataSource` and `symbol` are shared identifiers: three flags read that
+      // same pair, and the other two belong to the market data administration
+      // module and to the benchmark table. Leaving either up would re-point
+      // *their* dialog at this holding rather than merely leaving it alone.
+      void this.router.navigate([], {
+        queryParams: {
+          dataSource,
+          symbol,
+          assetProfileDialog: null,
+          benchmarkDetailDialog: null,
+          holdingDetailDialog: true
+        },
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
       });
     }
+  }
+
+  public onManageActivities() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
   }
 
   private fetchHoldings() {

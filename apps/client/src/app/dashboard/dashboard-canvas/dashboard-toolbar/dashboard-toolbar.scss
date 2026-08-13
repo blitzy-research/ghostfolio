@@ -1,0 +1,149 @@
+// Keyboard focus ring for every control this bar declares.
+//
+// Two things remove it otherwise: the global stylesheet resets `button:focus`,
+// and this theme builds with `mat.define-theme()` rather than opting into
+// Material's strong focus indicators, leaving only a state layer that falls far
+// short of the 3:1 advisory for a non-text indicator.
+//
+// Deliberately NOT nested inside `:host`. The menu rows declared in this
+// template are moved into an overlay attached to the document body, so no
+// `:host`-prefixed selector could ever reach them. Emulated encapsulation still
+// stamps them as this component's content, which is what keeps a bare `button`
+// selector from leaking: it matches the elements this template writes, in the bar
+// and in its menus, and nothing a child component renders.
+//
+// The colour resolves through the same token every other focus ring in this
+// chrome names, so the recipe is declared once and in one shape; what differs is
+// the FALLBACK, and only because of where this rule has to reach.
+//
+// `currentColor` is the only fallback that works for BOTH of those places: the
+// bar sets a themed `color` that every control inherits, and a menu row inherits
+// the themed colour of the panel it sits in, so one declaration is correct in
+// both themes and in the overlay with nothing left to keep in step. A literal ink
+// plus a `.theme-dark { … }` mirror cannot do the same job - emulated
+// encapsulation rewrites that mirror to
+// `.theme-dark[_ngcontent-x] button[_ngcontent-x]`, and `.theme-dark` sits on the
+// document body, which carries no content attribute of this component, so it
+// matches nothing while compiling, linting and shipping cleanly.
+//
+// The measured cost of the fallback differing is 1.065:1 in light
+// (`rgb(25, 28, 28)` inherited here against `rgb(33, 33, 33)` painted by the
+// module chrome) and 1.292:1 in dark - indistinguishable - while both clear their
+// own backgrounds by 16.07:1 and 12.76:1. `currentColor` is among the values the
+// design-system rules name as exempt from resolving through a token, so this is
+// compliant rather than an escape hatch; naming the token anyway is what lets the
+// ring join the system layer if it is ever populated, without giving up the
+// inheritance the overlay depends on today.
+//
+// `:host-context(.theme-dark)` would reach the bar and NOT the menus, which is
+// the trap worth recording: it tests the ancestors of the host, and a menu panel
+// is attached to the document body outside this component's host altogether.
+// That asymmetry is why a theme-conditional rule is the wrong shape here and an
+// inherited value is the right one.
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--mat-sys-on-surface, currentColor);
+  outline-offset: 2px;
+
+  // Drawn inside the row for a menu item, not around it. A menu panel is sized
+  // to its widest row and clips its overflow, so an outward offset here is
+  // trimmed on the left and right and only the top and bottom edges of the ring
+  // survive. A negative offset keeps all four edges inside the clip.
+  &.mat-mdc-menu-item {
+    outline-offset: -2px;
+  }
+
+  // Inward for the refresh mark as well. It is the first control in the bar and
+  // the bar carries no inline padding, so it sits flush against the leading edge
+  // and fills the bar's height: an outward ring falls outside the viewport on the
+  // left and outside the bar above and below, leaving one visible edge out of
+  // four. Inside its own box all four edges paint, and the mark keeps its own
+  // 8px inset so the ring does not touch the wordmark.
+  &.gf-dashboard-refresh {
+    outline-offset: -2px;
+  }
+}
+
+:host {
+  display: block;
+
+  // Keep the toolbar below overlay-hosted menus/dialogs while above page
+  // content.
+  //
+  // `position` is what makes the `z-index` below mean anything: on a statically
+  // positioned box a stacking order is simply ignored, so the declaration was
+  // inert and a module dragged upward painted straight over the control bar -
+  // the one piece of chrome that must stay legible while an arrangement is being
+  // rearranged. `relative` with no offsets moves nothing and changes no layout;
+  // it only lets the box take the order it already declared. Overlay-hosted
+  // menus and dialogs are attached to the document body at a higher level, so
+  // they still draw above this.
+  position: relative;
+
+  z-index: 999;
+
+  .mat-toolbar {
+    background-color: var(--mat-sys-surface-container, #ffffff);
+
+    // Vendor-default neutralisation: Bootstrap right-margins every inline list
+    // item but the last, which would pad the control list. Cancelling a library
+    // default is categorically different from authoring spacing, which is why
+    // this lone declaration is not delegated to a utility class.
+    .list-inline-item {
+      margin: 0;
+    }
+
+    ion-icon {
+      // Load-bearing: the assistant trigger glyph is authored with no size
+      // attribute. Material names no icon-size token, so the metric is taken
+      // from the type-scale step that already measures 24px; only the `-size`
+      // members are plain lengths, the unsuffixed names being `font` shorthands.
+      font-size: var(--mat-sys-headline-small-size, 1.5rem);
+
+      &.rotate-90 {
+        transform: rotate(90deg);
+      }
+    }
+
+    // The discount mark. Drawn rather than delegated to the shared utility class,
+    // because that class carries a literal colour of its own and every value here
+    // has to resolve through a system token first.
+    //
+    // The fallbacks are that class's own values, so the mark paints exactly as
+    // the shared stylesheet would draw it until the theme populates the system
+    // layer: the amber that stylesheet defines for a warning, and the dark ink it
+    // contrasts that amber with. They are deliberately not mirrored for the dark
+    // theme - the pair is legible against both surfaces, so splitting it would
+    // introduce a difference rather than remove one.
+    .gf-promotion-mark {
+      background: var(--mat-sys-tertiary-container, #ffc107);
+      border-radius: var(--mat-sys-corner-small, 4px);
+      color: var(--mat-sys-on-tertiary-container, #212529);
+      font: var(
+        --mat-sys-label-small,
+        700 0.75rem/1rem var(--font-family-sans-serif)
+      );
+      padding: 0.25em 0.4em;
+    }
+
+    // A persistent, visible identity-state marker. The menu retains its radio
+    // semantics for choosing an identity; this pill ensures the borrowed state
+    // is also apparent while that menu is closed.
+    .gf-impersonation-indicator {
+      background-color: var(--mat-sys-error-container, #ffdad6);
+      border-radius: var(--mat-sys-corner-small, 4px);
+      color: var(--mat-sys-on-error-container, #410002);
+      font: var(
+        --mat-sys-label-medium,
+        500 0.75rem/1rem var(--font-family-sans-serif)
+      );
+      white-space: nowrap;
+    }
+  }
+}
+
+:host-context(.theme-dark) {
+  .mat-toolbar {
+    background-color: var(--mat-sys-surface-container, #262626);
+  }
+}

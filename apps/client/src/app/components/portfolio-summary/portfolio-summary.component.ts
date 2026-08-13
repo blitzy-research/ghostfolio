@@ -1,6 +1,6 @@
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
 import { getDateFnsLocale, getLocale } from '@ghostfolio/common/helper';
-import { PortfolioSummary, User } from '@ghostfolio/common/interfaces';
+import type { PortfolioSummary, User } from '@ghostfolio/common/interfaces';
 import { translate } from '@ghostfolio/ui/i18n';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { GfValueComponent } from '@ghostfolio/ui/value';
@@ -22,6 +22,7 @@ import {
   ellipsisHorizontalCircleOutline,
   informationCircleOutline
 } from 'ionicons/icons';
+import { isNumber } from 'lodash';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -46,6 +47,9 @@ export class GfPortfolioSummaryComponent implements OnChanges {
   public buyAndSellActivitiesTooltip = translate(
     'BUY_AND_SELL_ACTIVITIES_TOOLTIP'
   );
+
+  /** The activity count as text, grouped for {@link locale}. */
+  public formattedActivityCount = '';
 
   public precision = 2;
   public timeInMarket: string;
@@ -76,13 +80,28 @@ export class GfPortfolioSummaryComponent implements OnChanges {
 
   public ngOnChanges() {
     if (this.summary) {
-      if (
+      // Derived on every change rather than lowered once. The condition is a property
+      // of the figures currently on screen, and those change without this component
+      // being rebuilt: on a single canvas the module outlives every filter, date range
+      // and impersonation switch that re-feeds it. Assigning only in the narrowing
+      // direction latched the reduced precision for the rest of the session, so a total
+      // that had briefly crossed the threshold left every currency row on this screen
+      // without its decimal places - permanently, and for figures nowhere near the
+      // threshold that had caused it.
+      this.precision =
         this.deviceType === 'mobile' &&
         this.summary.totalValueInBaseCurrency >=
           NUMERICAL_PRECISION_THRESHOLD_6_FIGURES
-      ) {
-        this.precision = 0;
-      }
+          ? 0
+          : 2;
+
+      // Grouped for the viewer's locale, as every other figure on this screen is. It
+      // was the one number here rendered straight from the model, so a five-figure
+      // count appeared as an unbroken run of digits beside neighbours that were
+      // separated - and in a locale that groups differently, wrongly.
+      this.formattedActivityCount = isNumber(this.summary.activityCount)
+        ? this.summary.activityCount.toLocaleString(this.locale)
+        : '';
 
       if (this.summary.dateOfFirstActivity) {
         this.timeInMarket = formatDistanceToNow(
@@ -95,6 +114,8 @@ export class GfPortfolioSummaryComponent implements OnChanges {
         this.timeInMarket = '-';
       }
     } else {
+      this.formattedActivityCount = '';
+      this.precision = 2;
       this.timeInMarket = undefined;
     }
   }
@@ -108,7 +129,8 @@ export class GfPortfolioSummaryComponent implements OnChanges {
       },
       confirmLabel: $localize`Save`,
       defaultValue: this.summary.emergencyFund?.total?.toString() ?? '0',
-      title: $localize`Please set the amount of your emergency fund.`
+      title: $localize`Please set the amount of your emergency fund.`,
+      valueLabel: $localize`Emergency fund`
     });
   }
 }

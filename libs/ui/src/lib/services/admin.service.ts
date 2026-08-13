@@ -3,7 +3,10 @@ import {
   HEADER_KEY_SKIP_INTERCEPTOR,
   HEADER_KEY_TOKEN
 } from '@ghostfolio/common/config';
-import {
+// Type-only for the same reason as the sibling facade: these are parameter types,
+// and a value import would drag the whole DTO barrel and its validation
+// decorators into every bundle that reaches this service.
+import type {
   CreatePlatformDto,
   UpdateAssetProfileDto,
   UpdatePlatformDto
@@ -30,7 +33,7 @@ import { DataSource, MarketData, Platform } from '@prisma/client';
 import { JobStatus } from 'bull';
 import { isNumber } from 'lodash';
 
-import { DataService } from './data.service';
+import { DataService, encodeApiPath } from './data.service';
 
 @Injectable({
   providedIn: 'root'
@@ -42,13 +45,15 @@ export class AdminService {
 
   public addAssetProfile({ dataSource, symbol }: AssetProfileIdentifier) {
     return this.http.post<void>(
-      `/api/v1/admin/profile-data/${dataSource}/${symbol}`,
+      encodeApiPath`/api/v1/admin/profile-data/${dataSource}/${symbol}`,
       null
     );
   }
 
   public deleteJob(aId: string) {
-    return this.http.delete<void>(`/api/v1/admin/queue/job/${aId}`);
+    return this.http.delete<void>(
+      encodeApiPath`/api/v1/admin/queue/job/${aId}`
+    );
   }
 
   public deleteJobs({ status }: { status: JobStatus[] }) {
@@ -64,21 +69,39 @@ export class AdminService {
   }
 
   public deletePlatform(aId: string) {
-    return this.http.delete<void>(`/api/v1/platform/${aId}`);
+    return this.http.delete<void>(encodeApiPath`/api/v1/platform/${aId}`);
   }
 
   public deleteProfileData({ dataSource, symbol }: AssetProfileIdentifier) {
     return this.http.delete<void>(
-      `/api/v1/admin/profile-data/${dataSource}/${symbol}`
+      encodeApiPath`/api/v1/admin/profile-data/${dataSource}/${symbol}`
     );
   }
 
   public executeJob(aId: string) {
-    return this.http.get<void>(`/api/v1/admin/queue/job/${aId}/execute`);
+    return this.http.get<void>(
+      encodeApiPath`/api/v1/admin/queue/job/${aId}/execute`
+    );
   }
 
+  /**
+   * Coalesced through the sibling facade's register, because the callers are
+   * structurally simultaneous rather than occasionally unlucky: the admin
+   * overview and the admin settings both read this document on init, and on a
+   * canvas that mounts whatever the viewer has arranged the two are routinely on
+   * screen together - so each pairing was previously one duplicate request. The
+   * asset-profile dialogs read it too, and can be opened over either of them.
+   *
+   * Safe to share by construction: the response is handed back exactly as it
+   * arrived, with no mapping to re-run and nothing rewritten in place, and every
+   * caller reads it without modifying it.
+   *
+   * The read is joined only while it is OUTSTANDING - the register drops the entry
+   * as soon as it settles - so `initialize()` re-reading after a setting is written
+   * still reaches the server, which is exactly what that caller needs.
+   */
   public fetchAdminData() {
-    return this.http.get<AdminData>('/api/v1/admin');
+    return this.dataService.coalesceGet<AdminData>('/api/v1/admin');
   }
 
   public fetchAdminMarketData({
@@ -146,7 +169,9 @@ export class AdminService {
   }
 
   public fetchUserById(id: string) {
-    return this.http.get<AdminUserResponse>(`/api/v1/admin/user/${id}`);
+    return this.http.get<AdminUserResponse>(
+      encodeApiPath`/api/v1/admin/user/${id}`
+    );
   }
 
   public fetchUsers({
@@ -186,7 +211,7 @@ export class AdminService {
     symbol
   }: AssetProfileIdentifier) {
     return this.http.post<void>(
-      `/api/v1/admin/gather/profile-data/${dataSource}/${symbol}`,
+      encodeApiPath`/api/v1/admin/gather/profile-data/${dataSource}/${symbol}`,
       {}
     );
   }
@@ -204,7 +229,7 @@ export class AdminService {
       params = params.append('range', range);
     }
 
-    const url = `/api/v1/admin/gather/${dataSource}/${symbol}`;
+    const url = encodeApiPath`/api/v1/admin/gather/${dataSource}/${symbol}`;
 
     return this.http.post<MarketData | void>(url, undefined, { params });
   }
@@ -218,7 +243,7 @@ export class AdminService {
     dateString: string;
     symbol: string;
   }) {
-    const url = `/api/v1/symbol/${dataSource}/${symbol}/${dateString}`;
+    const url = encodeApiPath`/api/v1/symbol/${dataSource}/${symbol}/${dateString}`;
 
     return this.http.get<DataProviderHistoricalResponse>(url);
   }
@@ -242,7 +267,7 @@ export class AdminService {
     }: UpdateAssetProfileDto
   ) {
     return this.http.patch<EnhancedSymbolProfile>(
-      `/api/v1/admin/profile-data/${dataSource}/${symbol}`,
+      encodeApiPath`/api/v1/admin/profile-data/${dataSource}/${symbol}`,
       {
         assetClass,
         assetSubClass,
@@ -267,7 +292,7 @@ export class AdminService {
 
   public putPlatform(aPlatform: UpdatePlatformDto) {
     return this.http.put<Platform>(
-      `/api/v1/platform/${aPlatform.id}`,
+      encodeApiPath`/api/v1/platform/${aPlatform.id}`,
       aPlatform
     );
   }
@@ -282,7 +307,7 @@ export class AdminService {
     symbol
   }: AssetProfileIdentifier & UpdateAssetProfileDto['scraperConfiguration']) {
     return this.http.post<{ price: number }>(
-      `/api/v1/admin/market-data/${dataSource}/${symbol}/test`,
+      encodeApiPath`/api/v1/admin/market-data/${dataSource}/${symbol}/test`,
       {
         scraperConfiguration
       }

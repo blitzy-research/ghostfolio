@@ -37,10 +37,13 @@ import { AbstractMatFormField } from '../shared/abstract-mat-form-field';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: {
-    '[attr.aria-describedBy]': 'describedBy',
-    '[id]': 'id'
-  },
+  // No `id` and no `aria-describedby` host binding: both are bound on the inner input
+  // instead. While they sat here they named `<gf-currency-selector>`, which is not a
+  // labelable element, so `mat-form-field`'s `<label for>` resolved to the host and the
+  // input a viewer actually focused had no accessible name at all - the label rendered
+  // and looked right, which is why nothing pointed at the failure. Leaving the host
+  // binding in place while ALSO binding the input produced two elements sharing one id,
+  // and the host wins that lookup because it comes first in document order.
   imports: [
     FormsModule,
     MatAutocompleteModule,
@@ -110,10 +113,13 @@ export class GfCurrencySelectorComponent
       const control = formGroup.get(this.formControlName());
 
       if (control) {
-        this.value =
+        // Adopted rather than assigned, so reading the model's own value back does not
+        // report an edit the viewer never made and leave the form born dirty.
+        this.adoptModelValue(
           this.currencies().find((value) => {
             return value === control.value;
-          }) ?? null;
+          }) ?? null
+        );
       }
     }
 

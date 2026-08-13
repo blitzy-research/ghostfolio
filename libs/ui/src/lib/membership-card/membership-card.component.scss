@@ -230,3 +230,11 @@
     }
   }
 }
+
+:host-context(.theme-dark) {
+  .card-container:not(.premium) {
+    .text-muted {
+      color: rgba(var(--dark-secondary-text)) !important;
+    }
+  }
+}

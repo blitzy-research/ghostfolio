@@ -1,0 +1,70 @@
+<!--
+  `inert` while a row is being dragged.
+
+  One attribute rather than a class per control, because it is the whole card that
+  has to become transparent to the drag and `inert` is the platform's own way to say
+  so: it removes every descendant from hit-testing, from the tab order and from the
+  accessibility tree for as long as it is set. That last part is the reason it is
+  preferable to switching pointer events off - during a drag these controls genuinely
+  are not available, and saying so to assistive technology is more honest than
+  leaving them announced but unreachable.
+-->
+<mat-card appearance="outlined" [attr.inert]="isDragInProgress() ? '' : null">
+  <div class="p-3">
+    <div class="d-flex justify-content-center mb-1">
+      <gf-logo size="large" [showLabel]="false" />
+    </div>
+    <div class="mb-1 text-center" i18n>Your dashboard is empty.</div>
+    <div class="mb-3 secondary-text text-center" i18n>
+      Add modules from the catalog to build your dashboard.
+    </div>
+    <!--
+      Outlined rather than the text variant. A text button paints no fill, no
+      border and no underline, so this - the empty canvas's only action - read as
+      another line of centred prose rather than as something to press. Outlined is
+      Material's own treatment for an action inside a card and needs no brand fill
+      to be unmistakable, which also keeps the label off the brand container and
+      well clear of the contrast floor.
+    -->
+    <div class="d-flex justify-content-center">
+      <button
+        class="browse-modules-button"
+        mat-stroked-button
+        (click)="openCatalog.emit()"
+      >
+        <span i18n>Browse modules</span>
+      </button>
+    </div>
+    <!--
+      Drawn only where something is actually saved that this canvas is not showing:
+      a module the viewer is no longer permitted to see, or a module type this build
+      does not recognise. Both are retained on purpose - it is what stops a lapsed
+      subscription or a renamed module from deleting a saved module - but a stored
+      document nobody can see or reach is not one the viewer owns, and this is the
+      one place it can be cleared.
+
+      A text button below the primary action rather than beside it, because it is
+      the destructive option and must not compete with the one that builds a
+      dashboard. The explanation is stated too: an empty canvas with a delete
+      control on it makes no sense until the viewer is told there is something left
+      to delete.
+    -->
+    @if (canDiscardLayout()) {
+      <div class="mt-3 pt-3 secondary-text text-center discard-section">
+        <div class="mb-1" i18n>
+          Some modules in your saved dashboard cannot be shown here.
+        </div>
+        <button
+          mat-button
+          type="button"
+          [attr.aria-busy]="isDiscardingLayout() ? 'true' : null"
+          [disabled]="isDiscardingLayout()"
+          [disabledInteractive]="true"
+          (click)="discardLayout.emit()"
+        >
+          <span i18n>Start over with a blank dashboard</span>
+        </button>
+      </div>
+    }
+  </div>
+</mat-card>

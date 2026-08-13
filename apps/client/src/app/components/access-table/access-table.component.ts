@@ -1,6 +1,5 @@
 import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import { Access, User } from '@ghostfolio/common/interfaces';
-import { publicRoutes } from '@ghostfolio/common/routes/routes';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
@@ -91,7 +90,7 @@ export class GfAccessTableComponent {
   protected getPublicUrl(aId: string) {
     const languageCode = this.user().settings.language;
 
-    return `${this.baseUrl}/${languageCode}/${publicRoutes.public.path}/${aId}`;
+    return `${this.baseUrl}/${languageCode}/?accessId=${encodeURIComponent(aId)}`;
   }
 
   protected onCopyUrlToClipboard(aId: string) {

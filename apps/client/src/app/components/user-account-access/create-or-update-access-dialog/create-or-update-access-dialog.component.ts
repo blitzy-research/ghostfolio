@@ -2,6 +2,7 @@ import { CreateAccessDto, UpdateAccessDto } from '@ghostfolio/common/dtos';
 import { validateObjectForForm } from '@ghostfolio/common/utils';
 import { NotificationService } from '@ghostfolio/ui/notifications';
 import { DataService } from '@ghostfolio/ui/services';
+import { confirmDismissWhenDirty } from '@ghostfolio/ui/shared/confirm-dismiss-when-dirty';
 
 import type { HttpErrorResponse } from '@angular/common/http';
 import {
@@ -51,6 +52,18 @@ import { CreateOrUpdateAccessDialogParams } from './interfaces/interfaces';
   templateUrl: 'create-or-update-access-dialog.html'
 })
 export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
+  /**
+   * Whether a submission is already under way.
+   *
+   * Explicit here rather than incidental, and this is the dialog where the difference is
+   * not academic: it issues the write ITSELF, so two presses send two requests and grant
+   * or update access twice. Elsewhere in this codebase the same double press was absorbed
+   * by `MatDialogRef.close` ignoring its second call - a detail of a library this code
+   * does not own, which happens to protect the dialogs that only close and protects
+   * nothing at all here.
+   */
+  protected isSubmitting = false;
+
   protected accessForm: FormGroup;
   protected mode: 'create' | 'update';
 
@@ -107,6 +120,15 @@ export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
 
         this.changeDetectorRef.markForCheck();
       });
+
+    // Asked before the form is thrown away. A backdrop click or Escape used to discard
+    // whatever had been typed here silently and irreversibly.
+    confirmDismissWhenDirty({
+      destroyRef: this.destroyRef,
+      dialogRef: this.dialogRef,
+      isDirty: () => this.accessForm?.dirty === true,
+      notificationService: this.notificationService
+    });
   }
 
   public onCancel() {
@@ -114,6 +136,12 @@ export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
   }
 
   public async onSubmit() {
+    if (this.isSubmitting) {
+      return;
+    }
+
+    this.isSubmitting = true;
+
     if (this.mode === 'create') {
       await this.createAccess();
     } else {
@@ -139,6 +167,12 @@ export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
         .postAccess(access)
         .pipe(
           catchError((error: HttpErrorResponse) => {
+            // Released, because this dialog stays open on a refusal: the viewer keeps
+            // the form they filled in and has to be able to submit it again.
+            this.isSubmitting = false;
+
+            this.changeDetectorRef.markForCheck();
+
             if (error.status === StatusCodes.BAD_REQUEST) {
               this.notificationService.alert({
                 title: $localize`Oops! Could not grant access.`
@@ -153,6 +187,12 @@ export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
           this.dialogRef.close(access);
         });
     } catch (error) {
+      // Released, because the form is still on screen with a validation failure
+      // reported into it.
+      this.isSubmitting = false;
+
+      this.changeDetectorRef.markForCheck();
+
       console.error(error);
     }
   }
@@ -176,6 +216,11 @@ export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
         .putAccess(access)
         .pipe(
           catchError(({ status }: HttpErrorResponse) => {
+            // See `createAccess`: released so a refused update can be resubmitted.
+            this.isSubmitting = false;
+
+            this.changeDetectorRef.markForCheck();
+
             if (status === StatusCodes.BAD_REQUEST) {
               this.notificationService.alert({
                 title: $localize`Oops! Could not update access.`
@@ -190,6 +235,12 @@ export class GfCreateOrUpdateAccessDialogComponent implements OnInit {
           this.dialogRef.close(access);
         });
     } catch (error) {
+      // Released, because the form is still on screen with a validation failure
+      // reported into it.
+      this.isSubmitting = false;
+
+      this.changeDetectorRef.markForCheck();
+
       console.error(error);
     }
   }

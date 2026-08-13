@@ -35,6 +35,13 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # Type-checks the spec sources themselves. Jest transpiles each spec in
+      # isolation and the production builds exclude specs altogether, so without
+      # this step a type error inside a test can sit in the repository while the
+      # test run and the build both stay green.
+      - name: Check test types
+        run: npm run typecheck:tests
+
       - name: Execute tests
         run: npm test
 

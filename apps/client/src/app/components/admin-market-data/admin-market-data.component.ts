@@ -1,9 +1,14 @@
+import type { GfAppQueryParams } from '@ghostfolio/client/interfaces/interfaces';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import {
   DEFAULT_PAGE_SIZE,
   ghostfolioScraperApiSymbolPrefix
 } from '@ghostfolio/common/config';
-import { getDateFormatString } from '@ghostfolio/common/helper';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
+import {
+  getDateFormatString,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
 import {
   AssetProfileIdentifier,
   Filter,
@@ -15,6 +20,7 @@ import { hasPermission, permissions } from '@ghostfolio/common/permissions';
 import { GfSymbolPipe } from '@ghostfolio/common/pipes';
 import { GfActivitiesFilterComponent } from '@ghostfolio/ui/activities-filter';
 import { translate } from '@ghostfolio/ui/i18n';
+import { NotificationService } from '@ghostfolio/ui/notifications';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 import { GfValueComponent } from '@ghostfolio/ui/value';
@@ -71,6 +77,18 @@ import { GfAssetProfileDialogComponent } from './asset-profile-dialog/asset-prof
 import { AssetProfileDialogParams } from './asset-profile-dialog/interfaces/interfaces';
 import { GfCreateAssetProfileDialogComponent } from './create-asset-profile-dialog/create-asset-profile-dialog.component';
 import { CreateAssetProfileDialogParams } from './create-asset-profile-dialog/interfaces/interfaces';
+
+/**
+ * The stable event identifiers this screen's failures are reported under.
+ *
+ * Fixed so they stay searchable, and carrying the reason only - never the response -
+ * because market data names the symbols a deployment tracks.
+ */
+const ADMIN_MARKET_DATA_FETCH_FAILED_EVENT =
+  'GF-ADMIN-MARKET-DATA-FETCH-FAILED';
+
+const ADMIN_ASSET_PROFILE_CREATE_FAILED_EVENT =
+  'GF-ADMIN-ASSET-PROFILE-CREATE-FAILED';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -157,6 +175,15 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
   public ghostfolioScraperApiSymbolPrefix = ghostfolioScraperApiSymbolPrefix;
   public hasPermissionForSubscription: boolean;
   public info: InfoItem;
+  /**
+   * Whether the market data could not be read.
+   *
+   * Needed because the placeholder is drawn from `isLoading`, and the read had no
+   * failure handler - so a rejection left the flag raised and the screen animated
+   * indefinitely over whichever rows happened to be there already.
+   */
+  public hasError = false;
+
   public isLoading = false;
   public isUUID = isUUID;
   public placeholder = '';
@@ -164,6 +191,47 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
   public selection: SelectionModel<Partial<SymbolProfile>>;
   public totalItems = 0;
   public user: User;
+
+  /**
+   * The query parameters that ask this module for a blank asset profile form.
+   *
+   * Bound by the floating action button in this component's template.
+   * `assetProfileDialog` and the identifier pair it reads are nulled because
+   * `assetProfileDialog` is tested *ahead* of `createAssetProfileDialog`, so a stale
+   * request would re-open an existing profile instead of the blank form.
+   */
+  public readonly createDialogQueryParams = {
+    assetProfileDialog: null as boolean,
+    createAssetProfileDialog: true,
+    dataSource: null as string,
+    dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
+    symbol: null as string
+  };
+
+  /**
+   * The dialog request this module has already served, or `null` for none.
+   *
+   * Every producer on the canvas merges its query parameters rather than replacing
+   * them - it has to, or it would drop a sibling module's and the shared-portfolio
+   * identifier - so `route.queryParams` emits again whenever any *other* module
+   * writes to the URL. Without this each of those emissions would open a second copy
+   * of a dialog that is already up. Keyed on the asset rather than held as a flag,
+   * so a request for a different asset profile is still honoured. Reset by the
+   * parameters ceasing to ask for anything rather than by a dialog closing - see
+   * {@link serveDialogRequest}.
+   */
+  private openedDialogAddress: string = null;
+
+  /**
+   * The query parameters as they stand, held rather than consumed on arrival.
+   *
+   * The dialogs this module opens are sized from `deviceType`, which is resolved in
+   * `ngOnInit` - after the constructor. That ordering only matters on one canvas,
+   * where a module is materialised lazily *in response to* a request that is already
+   * on the URL, so the parameters arrive before the module can honour them properly:
+   * the dialog was laid out for the wrong device every time it was reached this way.
+   */
+  private queryParams: GfAppQueryParams;
 
   public constructor(
     public adminMarketDataService: AdminMarketDataService,
@@ -173,6 +241,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
     private dialog: MatDialog,
+    private notificationService: NotificationService,
     private route: ActivatedRoute,
     private router: Router,
     private userService: UserService
@@ -208,19 +277,10 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
 
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => {
-        if (
-          params['assetProfileDialog'] &&
-          params['dataSource'] &&
-          params['symbol']
-        ) {
-          this.openAssetProfileDialog({
-            dataSource: params['dataSource'],
-            symbol: params['symbol']
-          });
-        } else if (params['createAssetProfileDialog']) {
-          this.openCreateAssetProfileDialog();
-        }
+      .subscribe((queryParams: GfAppQueryParams) => {
+        this.queryParams = queryParams;
+
+        this.applyQueryParams();
       });
 
     this.userService.stateChanged
@@ -275,6 +335,10 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
     this.deviceType = this.deviceService.getDeviceInfo().deviceType;
 
     this.selection = new SelectionModel(true);
+
+    // Re-evaluated now that the device is known, so a request that was already on
+    // the URL when this module was created is honoured at the right size.
+    this.applyQueryParams();
   }
 
   public onChangePage(page: PageEvent) {
@@ -343,16 +407,137 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
       .subscribe();
   }
 
-  public onOpenAssetProfileDialog({
+  /**
+   * The query parameters that ask this module to open an asset profile.
+   *
+   * Built here rather than inline in the template so that the row menu's edit link
+   * and {@link onOpenAssetProfileDialog} cannot drift apart - a duplicated payload
+   * is a match no compiler checks.
+   *
+   * Merged rather than replacing, because this URL is shared with every other placed
+   * module and restating only these keys would drop the rest - a sibling module's
+   * open dialog and the shared-portfolio access identifier among them. Merging in
+   * turn obliges the request to null what it takes over: `dataSource` and `symbol`
+   * are shared identifiers read by three different flags, the other two belonging to
+   * the application shell and to the benchmark table, so leaving either up would
+   * re-point *their* dialog at this asset. `dialogModule` names this module so the
+   * flag is unambiguous even though this module is currently its only consumer.
+   */
+  public getAssetProfileQueryParams({
     dataSource,
     symbol
   }: AssetProfileIdentifier) {
-    this.router.navigate([], {
+    return {
+      dataSource,
+      symbol,
+      assetProfileDialog: true,
+      benchmarkDetailDialog: null,
+      createAssetProfileDialog: null,
+      dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
+      holdingDetailDialog: null
+    };
+  }
+
+  /**
+   * Reads the market data again, keeping whichever filters and sort are applied.
+   *
+   * `loadData` reads them from the component rather than taking them as arguments, so a
+   * retry answers the question the viewer is currently asking.
+   */
+  public onRetry() {
+    this.loadData();
+  }
+
+  public onOpenAssetProfileDialog(
+    aAssetProfileIdentifier: AssetProfileIdentifier
+  ) {
+    void this.router.navigate([], {
+      queryParams: this.getAssetProfileQueryParams(aAssetProfileIdentifier),
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
+    });
+  }
+
+  /**
+   * Opens a dialog unless the same request has already been served.
+   *
+   * Keyed on the request the URL is making rather than on the dialog's own
+   * lifecycle. Resetting the record when the dialog closed instead was not
+   * equivalent: the close handler removes the parameters through a navigation, and
+   * until that navigation is applied the parameters still ask for the dialog that
+   * has just been dismissed.
+   *
+   * The address carries the asset profile's identity, so being asked for a
+   * *different* profile while one is open is honoured as the genuine second request
+   * it is.
+   */
+  private serveDialogRequest(aAddress: string, aOpen?: () => void) {
+    if (this.openedDialogAddress === aAddress) {
+      return;
+    }
+
+    this.openedDialogAddress = aAddress;
+
+    aOpen?.();
+  }
+
+  /**
+   * Opens whatever the current query parameters ask this module for, once it is in a
+   * position to open it properly.
+   *
+   * Reached from two places - a parameter change and the device becoming known -
+   * because either can be the last to arrive, which makes idempotence a requirement
+   * rather than a nicety.
+   */
+  private applyQueryParams() {
+    if (!this.deviceType) {
+      return;
+    }
+
+    const { assetProfileDialog, createAssetProfileDialog, dataSource, symbol } =
+      this.queryParams ?? {};
+
+    if (assetProfileDialog && dataSource && symbol) {
+      this.serveDialogRequest(
+        `assetProfileDialog:${dataSource}:${symbol}`,
+        () => {
+          this.openAssetProfileDialog({ dataSource, symbol });
+        }
+      );
+    } else if (createAssetProfileDialog) {
+      this.serveDialogRequest('createAssetProfileDialog', () => {
+        this.openCreateAssetProfileDialog();
+      });
+    } else {
+      // Nothing is being asked of this module. Forgetting what was last served is
+      // what lets the same profile be asked for a second time: the close handler
+      // removes the parameters it travelled on, this branch observes their absence,
+      // and the next identical request is therefore new again.
+      this.serveDialogRequest(null);
+    }
+  }
+
+  /**
+   * Removes the query parameters this module's dialogs travel on, and only those.
+   *
+   * The empty command array keeps the request on the current URL - the workspace's
+   * route-agnostic convention - and merging is what makes the clear safe on a single
+   * canvas. The `navigate(['.'])` this replaced named a route segment instead, which
+   * dropped every query parameter on the canvas: closing this module's dialog also
+   * closed a sibling module's and discarded the shared-portfolio access identifier
+   * along with it.
+   */
+  private clearDialogQueryParams() {
+    void this.router.navigate([], {
       queryParams: {
-        dataSource,
-        symbol,
-        assetProfileDialog: true
-      }
+        assetProfileDialog: null,
+        createAssetProfileDialog: null,
+        dataSource: null,
+        dialogModule: null,
+        symbol: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -367,6 +552,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
       sortDirection?: SortDirection;
     } = { pageIndex: 0 }
   ) {
+    this.hasError = false;
     this.isLoading = true;
 
     this.pageSize =
@@ -393,24 +579,41 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
         take: this.pageSize
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ count, marketData }) => {
-        this.totalItems = count;
+      .subscribe({
+        error: (error: unknown) => {
+          // Both halves matter here. The flag draws the placeholder, so leaving it
+          // raised left the screen looking busy for as long as the module stayed on the
+          // canvas; and the rows are replaced only on success, so whatever was there
+          // before stayed on display beside it - a table of values that no longer
+          // reflected anything, with no way to tell. Emptied and explained instead.
+          this.dataSource = new MatTableDataSource([]);
+          this.hasError = true;
+          this.isLoading = false;
+          this.totalItems = 0;
 
-        this.dataSource = new MatTableDataSource(
-          marketData.map((marketDataItem) => {
-            return {
-              ...marketDataItem,
-              isBenchmark: this.benchmarks.some(({ id }) => {
-                return id === marketDataItem.id;
-              })
-            };
-          })
-        );
-        this.dataSource.sort = this.sort;
+          reportSanitizedError(ADMIN_MARKET_DATA_FETCH_FAILED_EVENT, error);
 
-        this.isLoading = false;
+          this.changeDetectorRef.markForCheck();
+        },
+        next: ({ count, marketData }) => {
+          this.totalItems = count;
 
-        this.changeDetectorRef.markForCheck();
+          this.dataSource = new MatTableDataSource(
+            marketData.map((marketDataItem) => {
+              return {
+                ...marketDataItem,
+                isBenchmark: this.benchmarks.some(({ id }) => {
+                  return id === marketDataItem.id;
+                })
+              };
+            })
+          );
+          this.dataSource.sort = this.sort;
+
+          this.isLoading = false;
+
+          this.changeDetectorRef.markForCheck();
+        }
       });
   }
 
@@ -451,7 +654,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
               if (newAssetProfileIdentifier) {
                 this.onOpenAssetProfileDialog(newAssetProfileIdentifier);
               } else {
-                this.router.navigate(['.'], { relativeTo: this.route });
+                this.clearDialogQueryParams();
               }
             }
           );
@@ -482,7 +685,7 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe((result) => {
             if (!result) {
-              this.router.navigate(['.'], { relativeTo: this.route });
+              this.clearDialogQueryParams();
 
               return;
             }
@@ -493,14 +696,38 @@ export class GfAdminMarketDataComponent implements AfterViewInit, OnInit {
               this.adminService
                 .addAssetProfile({ dataSource, symbol })
                 .pipe(takeUntilDestroyed(this.destroyRef))
-                .subscribe(() => {
-                  this.loadData();
+                .subscribe({
+                  error: (error: unknown) => {
+                    // No detail dialog for a profile that was not created. Opening one
+                    // regardless is what produced the masked values: it read a profile
+                    // that did not exist, was answered 404, and presented the empty
+                    // result as the profile's contents.
+                    this.clearDialogQueryParams();
+
+                    this.notificationService.alert({
+                      title: $localize`The asset profile could not be created. Please try again.`
+                    });
+
+                    reportSanitizedError(
+                      ADMIN_ASSET_PROFILE_CREATE_FAILED_EVENT,
+                      error
+                    );
+                  },
+                  next: () => {
+                    this.loadData();
+
+                    // Opened only AFTER the create has been acknowledged. This used to
+                    // run outside the subscription, so it fired while the create was
+                    // still in flight: the dialog asked for a profile the server did
+                    // not have yet, and every field came back masked.
+                    this.onOpenAssetProfileDialog({ dataSource, symbol });
+                  }
                 });
             } else {
               this.loadData();
-            }
 
-            this.onOpenAssetProfileDialog({ dataSource, symbol });
+              this.onOpenAssetProfileDialog({ dataSource, symbol });
+            }
           });
       });
   }

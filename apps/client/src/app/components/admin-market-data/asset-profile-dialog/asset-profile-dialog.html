@@ -4,13 +4,15 @@
       {{ assetProfile?.name ?? data.symbol }}
     </h1>
     <button
+      aria-label="Actions for this asset profile"
       class="mx-1 no-min-width px-2"
+      i18n-aria-label
       mat-button
       type="button"
       [matMenuTriggerFor]="assetProfileActionsMenu"
       (click)="$event.stopPropagation()"
     >
-      <ion-icon name="ellipsis-vertical" />
+      <ion-icon aria-hidden="true" name="ellipsis-vertical" />
     </button>
     <mat-menu
       #assetProfileActionsMenu="matMenu"
@@ -108,9 +110,22 @@
       [dynamicHeight]="true"
       [mat-stretch-tabs]="false"
     >
-      <mat-tab>
+      <!--
+        Named on the tab itself rather than left to its projected label. The label
+        template is a decorative glyph plus a `d-none d-sm-block` caption, so below
+        the `sm` breakpoint the caption is `display: none` and the tab has no
+        accessible name at all - a reader met three unnamed tabs and no way to tell
+        which was which.
+
+        `aria-label` on `mat-tab` is a real Material input (`ariaLabel`, aliased to
+        `aria-label`) which the tab header applies to the tab element, so it names
+        the control at EVERY width and does not double up with the caption when the
+        caption is visible. The alternative - an independent `.sr-only` caption -
+        would be announced alongside the visible one above `sm`.
+      -->
+      <mat-tab aria-label="Overview" i18n-aria-label>
         <ng-template mat-tab-label>
-          <ion-icon name="reader-outline" />
+          <ion-icon aria-hidden="true" name="reader-outline" />
           <div class="d-none d-sm-block ml-2" i18n>Overview</div>
         </ng-template>
         <div class="container mt-3 p-0">
@@ -135,6 +150,21 @@
                       formControlName="assetProfileIdentifier"
                       [includeIndices]="true"
                     />
+                    <!--
+                      Says why "Apply" is refusing. Choosing the profile that is already
+                      in force disables it, and that looked identical to having chosen
+                      nothing at all.
+                    -->
+                    @if (
+                      assetProfileIdentifierForm
+                        .get('assetProfileIdentifier')
+                        .hasError('equalsPreviousProfileIdentifier')
+                    ) {
+                      <mat-error i18n
+                        >This is the asset profile already in use. Please choose
+                        a different one.</mat-error
+                      >
+                    }
                   </mat-form-field>
                   <button
                     class="ml-2 no-min-width px-2"
@@ -147,7 +177,8 @@
                         'assetProfileIdentifier'
                       ) ||
                       assetProfileIdentifierForm.hasError(
-                        'equalsPreviousProfileIdentifier'
+                        'equalsPreviousProfileIdentifier',
+                        'assetProfileIdentifier'
                       )
                     "
                   >
@@ -183,13 +214,15 @@
                   class="edit-asset-profile-identifier-container position-absolute"
                 >
                   <button
+                    aria-label="Edit the asset profile identifier"
                     class="h-100 no-min-width px-2"
+                    i18n-aria-label
                     mat-button
                     type="button"
                     [disabled]="!canSaveAssetProfileIdentifier"
                     (click)="onSetEditAssetProfileIdentifierMode()"
                   >
-                    <ion-icon name="create-outline" />
+                    <ion-icon aria-hidden="true" name="create-outline" />
                   </button>
                 </div>
               </div>
@@ -309,6 +342,13 @@
               <mat-form-field appearance="outline" class="w-100 without-hint">
                 <mat-label i18n>Name</mat-label>
                 <input formControlName="name" matInput type="text" />
+                <!--
+                  Says why saving is refusing. The name is required and clearing it
+                  greyed the control out with nothing to read.
+                -->
+                @if (assetProfileForm.get('name').hasError('required')) {
+                  <mat-error i18n>Please enter a name.</mat-error>
+                }
               </mat-form-field>
             </div>
             @if (assetProfile?.dataSource === 'MANUAL') {
@@ -443,9 +483,9 @@
           </form>
         </div>
       </mat-tab>
-      <mat-tab>
+      <mat-tab aria-label="Historical Market Data" i18n-aria-label>
         <ng-template mat-tab-label>
-          <ion-icon name="server-outline" />
+          <ion-icon aria-hidden="true" name="server-outline" />
           <div class="d-none d-sm-block ml-2" i18n>Historical Market Data</div>
         </ng-template>
         <div class="container mt-3 p-0">
@@ -466,9 +506,9 @@
         </div>
       </mat-tab>
       @if (assetProfile?.dataSource === 'MANUAL') {
-        <mat-tab>
+        <mat-tab aria-label="Scraper Configuration" i18n-aria-label>
           <ng-template mat-tab-label>
-            <ion-icon name="code-slash-outline" />
+            <ion-icon aria-hidden="true" name="code-slash-outline" />
             <div class="d-none d-sm-block ml-2" i18n>Scraper Configuration</div>
           </ng-template>
           <div class="container mt-3 p-0">

@@ -1,7 +1,18 @@
-import { getAssetProfileIdentifier } from '@ghostfolio/common/helper';
-import { Filter, PortfolioPosition, User } from '@ghostfolio/common/interfaces';
-import { InternalRoute } from '@ghostfolio/common/routes/interfaces/internal-route.interface';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
+import {
+  DashboardModule,
+  DashboardModuleType,
+  dashboardModules,
+  isDashboardModulePermitted
+} from '@ghostfolio/common/dashboard';
+import {
+  getAssetProfileIdentifier,
+  reportSanitizedError
+} from '@ghostfolio/common/helper';
+import {
+  Filter,
+  PortfolioPosition,
+  type User
+} from '@ghostfolio/common/interfaces';
 import { AccountWithPlatform, DateRange } from '@ghostfolio/common/types';
 import { AdminService, DataService } from '@ghostfolio/ui/services';
 
@@ -29,7 +40,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatMenuTrigger } from '@angular/material/menu';
 import { MatSelectModule } from '@angular/material/select';
-import { RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { AssetClass, DataSource } from '@prisma/client';
 import { differenceInYears, eachYearOfInterval, format } from 'date-fns';
@@ -40,7 +50,6 @@ import {
   closeOutline,
   searchOutline
 } from 'ionicons/icons';
-import { isFunction } from 'lodash';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { EMPTY, Observable, merge, of } from 'rxjs';
 import {
@@ -77,8 +86,7 @@ import {
     MatFormFieldModule,
     MatSelectModule,
     NgxSkeletonLoaderModule,
-    ReactiveFormsModule,
-    RouterModule
+    ReactiveFormsModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-assistant',
@@ -113,7 +121,12 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
     quickLinks: false
   };
   public isOpen = false;
-  public placeholder = $localize`Find account, holding or page...`;
+  // Names what the third result group actually is now. This field's quick links
+  // used to be routes, and the placeholder named them "page" accordingly; they are
+  // dashboard modules, and searching for one reveals it on the canvas rather than
+  // navigating anywhere - so "page" was the last place in this component still
+  // describing the surface that was replaced.
+  public placeholder = $localize`Find account, holding or module...`;
   public portfolioFilterFormControl = new FormControl<PortfolioFilterFormValue>(
     {
       account: null,
@@ -134,6 +147,16 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
   protected readonly closed = output<void>();
   protected readonly dateRangeChanged = output<DateRange>();
   protected readonly filtersChanged = output<Filter[]>();
+
+  /**
+   * The only channel through which a module selection leaves this library: it lives
+   * in the shared library and so cannot reach the application that hosts the
+   * modules, leaving the consumer to decide how to surface one.
+   *
+   * Emitted before {@link GfAssistantComponent.closed}, so a consumer that closes the
+   * assistant on selection never observes the close ahead of the selection.
+   */
+  protected readonly moduleSelected = output<DashboardModuleType>();
 
   private readonly PRESELECTION_DELAY = 100;
 
@@ -253,7 +276,10 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                 )
               })),
               catchError((error) => {
-                console.error('Error fetching accounts for assistant:', error);
+                reportSanitizedError(
+                  'GF-ASSISTANT-ACCOUNTS-SEARCH-FAILED',
+                  error
+                );
                 return of({ accounts: [] as SearchResultItem[] });
               }),
               tap(() => {
@@ -272,8 +298,8 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                   )
                 })),
                 catchError((error) => {
-                  console.error(
-                    'Error fetching asset profiles for assistant:',
+                  reportSanitizedError(
+                    'GF-ASSISTANT-ASSET-PROFILES-SEARCH-FAILED',
                     error
                   );
                   return of({ assetProfiles: [] as SearchResultItem[] });
@@ -299,7 +325,10 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                 )
               })),
               catchError((error) => {
-                console.error('Error fetching holdings for assistant:', error);
+                reportSanitizedError(
+                  'GF-ASSISTANT-HOLDINGS-SEARCH-FAILED',
+                  error
+                );
                 return of({ holdings: [] as SearchResultItem[] });
               }),
               tap(() => {
@@ -349,7 +378,7 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
           this.changeDetectorRef.markForCheck();
         },
         error: (error) => {
-          console.error('Assistant search stream error:', error);
+          reportSanitizedError('GF-ASSISTANT-SEARCH-FAILED', error);
           this.searchResults = {
             accounts: [],
             assetProfiles: [],
@@ -556,6 +585,10 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
     this.onCloseAssistant();
   }
 
+  public onSelectModule(moduleType: DashboardModuleType) {
+    this.moduleSelected.emit(moduleType);
+  }
+
   public setIsOpen(aIsOpen: boolean) {
     this.isOpen = aIsOpen;
   }
@@ -643,8 +676,8 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
             return {
               id,
               name,
-              routerLink: internalRoutes.accounts.routerLink,
-              mode: SearchMode.ACCOUNT as const
+              mode: SearchMode.ACCOUNT as const,
+              moduleType: DashboardModuleType.ACCOUNTS
             };
           });
         }),
@@ -678,7 +711,15 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
                 name,
                 symbol,
                 assetSubClassString: translate(assetSubClass ?? ''),
-                mode: SearchMode.ASSET_PROFILE as const
+                mode: SearchMode.ASSET_PROFILE as const,
+                // The dialog these results open belongs to the market data
+                // administration module, so each result names it. Without the
+                // discriminator the result would only be able to set query
+                // parameters, which nothing reads unless that module happens
+                // to be on the canvas already. This branch only runs for a
+                // viewer who may access administration, so the module named
+                // here is always one they are permitted to see.
+                moduleType: DashboardModuleType.ADMIN_MARKET_DATA
               };
             }
           );
@@ -722,32 +763,25 @@ export class GfAssistantComponent implements OnChanges, OnDestroy, OnInit {
   private searchQuickLinks(aSearchTerm: string): SearchResultItem[] {
     const searchTerm = aSearchTerm.toLowerCase();
 
-    const allRoutes = Object.values<InternalRoute>(internalRoutes)
-      .filter(({ excludeFromAssistant }) => {
-        if (isFunction(excludeFromAssistant)) {
-          return excludeFromAssistant(this.user);
-        }
+    const availableModules = Object.values<DashboardModule>(
+      dashboardModules
+    ).filter((dashboardModule) => {
+      return isDashboardModulePermitted(
+        dashboardModule,
+        this.user?.permissions
+      );
+    });
 
-        return !excludeFromAssistant;
-      })
-      .reduce<InternalRoute[]>((acc, route) => {
-        acc.push(route);
-        if (route.subRoutes) {
-          acc.push(...Object.values(route.subRoutes));
-        }
-        return acc;
-      }, []);
-
-    const fuse = new Fuse(allRoutes, {
-      keys: ['title'],
+    const fuse = new Fuse(availableModules, {
+      keys: ['name'],
       threshold: 0.3
     });
 
-    return fuse.search(searchTerm).map(({ item: { routerLink, title } }) => {
+    return fuse.search(searchTerm).map(({ item: { moduleType, name } }) => {
       return {
-        routerLink,
-        mode: SearchMode.QUICK_LINK as const,
-        name: title
+        moduleType,
+        name,
+        mode: SearchMode.QUICK_LINK as const
       };
     });
   }

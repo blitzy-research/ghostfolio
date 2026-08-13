@@ -169,6 +169,29 @@ export abstract class PortfolioCalculator {
     this.computeTransactionPoints();
 
     this.snapshotPromise = this.initialize();
+
+    // Marked as handled the moment it is created, and that is a process-level
+    // safety property rather than a tidiness one.
+    //
+    // `initialize()` waits on the snapshot computation job, so it rejects
+    // whenever that job fails - including when the queue declares it stalled,
+    // which a computation long enough to block the event loop past its own lock
+    // duration will cause. Node treats a promise that rejects with no reaction
+    // attached as fatal, so whether that rejection ends the process comes down
+    // to whether anyone happened to be waiting on this promise at that instant.
+    // For every caller that reaches a calculator through one of the accessors
+    // below, someone is: each of them awaits `snapshotPromise` and receives the
+    // failure as a failed request. The snapshot PROCESSOR is the case that is
+    // not covered - it calls `computeSnapshot()`, which never touches this
+    // promise - so the calculator it builds holds a rejection nobody claims, and
+    // a single stalled job takes the whole API down with it rather than failing
+    // one request.
+    //
+    // Attaching the reaction here closes that hole without changing what any
+    // caller sees: a promise may carry any number of reactions, so every
+    // `await this.snapshotPromise` still rejects exactly as before. What it no
+    // longer does is decide the fate of the process.
+    this.snapshotPromise.catch(() => undefined);
   }
 
   protected abstract calculateOverallPerformance(
@@ -1128,21 +1151,33 @@ export abstract class PortfolioCalculator {
       );
 
       if (isCachedPortfolioSnapshotExpired) {
-        // Compute in the background
-        this.portfolioSnapshotService.addJobToQueue({
-          data: {
-            calculationType: this.getPerformanceCalculationType(),
-            filters: this.filters,
-            userCurrency: this.currency,
-            userId: this.userId
-          },
-          name: PORTFOLIO_SNAPSHOT_PROCESS_JOB_NAME,
-          opts: {
-            ...PORTFOLIO_SNAPSHOT_PROCESS_JOB_OPTIONS,
-            jobId,
-            priority: PORTFOLIO_SNAPSHOT_COMPUTATION_QUEUE_PRIORITY_LOW
-          }
-        });
+        // Compute in the background. Deliberately not awaited - the caller is
+        // served the cached snapshot it already has - but the rejection is still
+        // claimed, for the same process-level reason as the constructor above: an
+        // unclaimed one is fatal, and enqueueing can fail whenever the queue's
+        // backing store is unavailable. Reported rather than discarded, because
+        // the visible consequence is a snapshot that silently stops refreshing.
+        this.portfolioSnapshotService
+          .addJobToQueue({
+            data: {
+              calculationType: this.getPerformanceCalculationType(),
+              filters: this.filters,
+              userCurrency: this.currency,
+              userId: this.userId
+            },
+            name: PORTFOLIO_SNAPSHOT_PROCESS_JOB_NAME,
+            opts: {
+              ...PORTFOLIO_SNAPSHOT_PROCESS_JOB_OPTIONS,
+              jobId,
+              priority: PORTFOLIO_SNAPSHOT_COMPUTATION_QUEUE_PRIORITY_LOW
+            }
+          })
+          .catch((error: Error) => {
+            Logger.warn(
+              `Portfolio snapshot computation of user '${this.userId}' could not be enqueued: ${error.message}`,
+              'PortfolioCalculator'
+            );
+          });
       }
     } else {
       // Wait for computation
@@ -1164,7 +1199,24 @@ export abstract class PortfolioCalculator {
       const job = await this.portfolioSnapshotService.getJob(jobId);
 
       if (job) {
-        await job.finished();
+        try {
+          await job.finished();
+        } catch (error) {
+          // The job id is derived from the user, so every request for this user
+          // deduplicates onto the same job. A job that has already settled as
+          // failed therefore answers each of them with the failure it settled
+          // with - immediately, and for as long as it stays under that id. The
+          // job options ask the queue to discard a job when it fails, which
+          // covers everything enqueued from here; this discards one that reached
+          // the failed state without that option - written by an earlier build,
+          // or by anything else that enqueues under the same id - so a single
+          // failure cannot outlive itself. Removal is best-effort: a job the
+          // queue declines to remove is no reason to change what the caller is
+          // told, which is the original failure either way.
+          await job.remove().catch(() => undefined);
+
+          throw error;
+        }
       }
 
       await this.initialize();

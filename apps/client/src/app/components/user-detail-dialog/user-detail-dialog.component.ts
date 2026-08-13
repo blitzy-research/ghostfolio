@@ -22,7 +22,7 @@ import { ellipsisVertical } from 'ionicons/icons';
 import { EMPTY } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
-import { UserDetailDialogParams } from './interfaces/interfaces';
+import type { UserDetailDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,

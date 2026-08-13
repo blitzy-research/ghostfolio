@@ -1,0 +1,155 @@
+<!--
+  Use native draggable events because gridster listens for browser drag/drop
+  events. `is-dragging` is the drag-active state hook the stylesheet paints, and
+  it is cleared from dragend because a drag can also end in a cancel or an
+  out-of-bounds drop, neither of which fires a drop event.
+
+  The card is presentation; the button inside it is the actionable element. That
+  split is deliberate: a `FocusKeyManager` focuses the option it moves to, so the
+  option has to own something the browser can actually focus, and a real button
+  is what announces the add command and activates on Enter and Space without any
+  key handling of our own. The card cannot be that element - it renders a div -
+  so the button carries the focus, the drag and the activation, and the card
+  keeps drawing every state around it.
+
+  The button is a Material button rather than a bare one, and that is a
+  correctness fix rather than a flourish: an unstyled `button` paints the user
+  agent's own control chrome - an opaque grey face, a 2 px outset border and
+  square corners - straight over the card's tokenised surface, which both looks
+  broken and violates the design-system rule that a library component is used
+  wherever one exists. `mat-button` resolves its own surface, shape, typography
+  and state layer from Material's tokens, so the card supplies the container and
+  the button supplies the control.
+
+  The `mat-button` spelling rather than the newer `matButton` one, because it is
+  what the rest of this workspace writes. Material 21 accepts both and resolves
+  them to the same thing - an attribute-less `matButton` takes the `text`
+  appearance from its own input default, and `mat-button` is inferred to that same
+  appearance, so both land on `.mat-mdc-button` with identical rendering - which
+  leaves the choice purely one of consistency, and one spelling is what keeps the
+  buttons of this application greppable as a set.
+-->
+<mat-card
+  appearance="outlined"
+  [class.is-dragging]="isDragging"
+  [class.is-placed]="isPlaced"
+  [class.is-unavailable]="isUnavailable"
+>
+  <!--
+    The accessible name is composed in the class rather than declared here,
+    because it interpolates the module name and Angular cannot localize a bound
+    attribute - `i18n-aria-label` only applies to a static one.
+
+    `tabindex` is bound rather than fixed at -1. The rows share ONE tab stop
+    between them - the roving pattern the parent's key manager drives - and that
+    pattern needs exactly one row reachable by Tab at a time. Fixing every row at
+    -1 leaves no tab stop at all, which makes the whole result list unreachable
+    from the keyboard: Tab goes from the search field straight past every module.
+
+    It is bound as the `tabIndex` PROPERTY, not as `[attr.tabindex]`. That is the
+    canonical form for this one attribute - Angular's own property-name mapping
+    rewrites `tabindex` to `tabIndex` - and it is the form that takes effect here:
+    the attribute binding sets nothing at all on this element, while the sibling
+    `[attr.aria-label]` binds normally. The property also reflects back into the
+    content attribute, so both the focus order the browser computes and the
+    attribute assistive technology reads end up correct.
+  -->
+  <button
+    #row
+    class="align-items-center d-flex justify-content-start px-3 py-2 text-left w-100"
+    draggable="true"
+    mat-button
+    type="button"
+    [attr.aria-disabled]="isUnavailable ? 'true' : null"
+    [attr.aria-label]="ariaLabel"
+    [tabIndex]="isTabbable ? 0 : -1"
+    (blur)="removeFocus()"
+    (click)="onClick()"
+    (dragend)="onDragEnd()"
+    (dragstart)="onDragStart($event)"
+    (focus)="onFocus()"
+  >
+    <span class="text-truncate">{{ definition.name }}</span>
+    <!--
+      The qualifier that tells two modules sharing one name apart - `Markets` for
+      both market modules, `Settings` for both settings modules - which they share
+      because each name is the route registry's title for the screen it replaces,
+      reused verbatim so every locale already translates it.
+
+      Rendered as its own element rather than appended to the name above, because
+      the name is the authoritative localized string and stays untouched. Hidden
+      from assistive technology for the same reason the placed and unavailable
+      markers are: the button's accessible name already carries the qualifier, and
+      announcing it twice is noise.
+
+      The leading `&nbsp;` is load-bearing, and it is INSIDE this span rather than
+      between the two, which is the whole fix. Angular strips whitespace between
+      elements, so the separator has to be written explicitly - but written
+      between them it becomes a text node of its own, and Material lays this row
+      out inside a flex container of its own making, where a whitespace-only
+      anonymous item is not rendered at all. Measured at 0.000px: the row painted
+      `Markets· Market Data` while `textContent` read correctly, so nothing about
+      the markup looked wrong. Held inside the qualifier's own text run the space
+      is part of a real inline box, so it paints - and it is still exactly one
+      space in the text, which is what a copied selection and a screen reader get.
+      Non-breaking so it can never become the point the row wraps at.
+    -->
+    @if (definition.context) {
+      <span aria-hidden="true" class="context-qualifier text-truncate"
+        >&nbsp;· {{ definition.context }}</span
+      >
+    }
+
+    <!--
+      Tells the viewer this module is already on their canvas, so a row whose
+      click reveals the existing module rather than adding a second one no longer
+      looks identical to one that adds. Hidden from assistive technology because
+      the button's own name already carries the same distinction - announcing it
+      twice would be noise - and marked as decorative rather than removed from
+      the flow so the visual and the spoken form stay in step.
+
+      Two elements rather than one, and each does a different job. The outer span
+      positions the marker and carries the separator; the inner span is the badge,
+      and it is what makes this state legible: as plain secondary body copy the
+      word sat at the same weight as everything else on the row, so the only
+      distinguishing cue left was a three-pixel edge, and QA read the pair as one
+      state. As a filled, outlined pill it reads as a status about the row from
+      across the panel, while the row itself deliberately stays actionable -
+      clicking it reveals the module that is already placed, so making it look
+      inert would be a lie about what it does.
+
+      The `&nbsp;` is in the outer span, OUTSIDE the badge. It exists for the text
+      rather than for the paint - the visual gap is the automatic margin and the
+      padding beside it - and putting it outside means the badge's own box is not
+      padded asymmetrically by a leading space. Without it `textContent` ran the
+      label and the marker together as `Settings · AccountAdded`, which is what a
+      copied selection and anything reading the row programmatically saw.
+
+      The `i18n` marker moves to the badge with the words, so the message stays
+      exactly `Added` and keeps the trans-unit - and the twelve translations - it
+      already has.
+    -->
+    @if (isPlaced) {
+      <span aria-hidden="true" class="ml-auto placed-marker pl-2"
+        >&nbsp;<span class="marker-badge" i18n>Added</span></span
+      >
+    } @else if (isUnavailable) {
+      <!--
+        Tells the viewer why this row will not add anything: the grid has no room
+        left for this module's footprint. Chained to the placed marker rather than
+        rendered independently so a row can never claim to be both, and hidden
+        from assistive technology for the same reason the placed marker is - the
+        button's own name already carries it, and saying it twice is noise.
+
+        The same badge, deliberately in its OUTLINED form rather than the filled
+        one the placed marker takes. That is the second axis these two states are
+        told apart on - alongside the solid against dotted leading edge and the
+        words themselves - so neither rests on colour and neither rests on the
+        same cue as the other.
+      -->
+      <span aria-hidden="true" class="ml-auto pl-2 unavailable-marker"
+        >&nbsp;<span class="marker-badge" i18n>No room</span></span
+      >
+    }
+  </button>
+</mat-card>

@@ -12,7 +12,7 @@
     </colgroup>
 
     <ng-container matColumnDef="name">
-      <th *matHeaderCellDef class="px-2" mat-header-cell>
+      <th *matHeaderCellDef class="px-2" mat-header-cell scope="col">
         <ng-container i18n>Name</ng-container>
       </th>
       <td *matCellDef="let element" class="px-2" mat-cell>
@@ -21,7 +21,7 @@
     </ng-container>
 
     <ng-container matColumnDef="valueInBaseCurrency">
-      <th *matHeaderCellDef class="px-2 text-right" mat-header-cell>
+      <th *matHeaderCellDef class="px-2 text-right" mat-header-cell scope="col">
         <ng-container i18n>Value</ng-container>
       </th>
       <td *matCellDef="let element" class="px-2" mat-cell>
@@ -36,7 +36,7 @@
     </ng-container>
 
     <ng-container matColumnDef="allocationInPercentage" stickyEnd>
-      <th *matHeaderCellDef class="px-2 text-right" mat-header-cell>
+      <th *matHeaderCellDef class="px-2 text-right" mat-header-cell scope="col">
         <span class="d-none d-sm-block" i18n>Allocation</span>
         <span class="d-block d-sm-none" title="Allocation">%</span>
       </th>
@@ -134,7 +134,7 @@
       </td>
     </ng-container>
 
-    <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+    <tr *matHeaderRowDef="displayedColumns; sticky: true" mat-header-row></tr>
     <tr
       *matRowDef="let element; columns: displayedColumns"
       mat-row

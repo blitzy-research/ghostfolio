@@ -1,0 +1,26 @@
+:host {
+  display: block;
+
+  // Body copy at the size every other module's body copy renders at.
+  //
+  // Like the FIRE leaf, this one writes prose rather than tables, so its text inherited
+  // Bootstrap's 16px page base while every table-based module rendered 14px - two body
+  // sizes on one canvas, and prose that out-sized the section headings above it. Material
+  // components state their own type size through their tokens, so only the inherited text
+  // moves.
+  font-size: 0.875rem;
+
+  .icon-container {
+    background-color: rgba(var(--palette-foreground-base), 0.02);
+    border-radius: 0.25rem;
+    height: 2rem;
+
+    &.okay {
+      color: var(--success);
+    }
+
+    &.warn {
+      color: var(--danger);
+    }
+  }
+}

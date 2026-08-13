@@ -45,6 +45,7 @@ Ghostfolio is for you if you are...
 
 ## Features
 
+- ✅ Customizable dashboard: add the features you need as modules from a searchable catalog by click or drag and drop, move them by their drag handle, resize them from their bottom and right edges on a single 12-column grid with a fixed row height, and remove them again from the actions menu in each module header, with your layout saved per user and the catalog opening automatically while no layout has been saved yet
 - ✅ Create, update and delete transactions
 - ✅ Multi account management
 - ✅ Portfolio performance: Return on Average Investment (ROAI) for `Today`, `WTD`, `MTD`, `YTD`, `1Y`, `5Y`, `Max`
@@ -52,8 +53,8 @@ Ghostfolio is for you if you are...
 - ✅ Static analysis to identify potential risks in your portfolio
 - ✅ Import and export transactions
 - ✅ Dark Mode
-- ✅ Zen Mode
-- ✅ Progressive Web App (PWA) with a mobile-first design
+- ✅ Distraction-free view: place only the modules you want to focus on
+- ✅ Progressive Web App (PWA) designed for the desktop
 
 <div align="center">
 
@@ -71,7 +72,7 @@ The backend is based on [NestJS](https://nestjs.com) using [PostgreSQL](https://
 
 ### Frontend
 
-The frontend is built with [Angular](https://angular.dev) and uses [Angular Material](https://material.angular.io) with utility classes from [Bootstrap](https://getbootstrap.com).
+The frontend is built with [Angular](https://angular.dev) and uses [Angular Material](https://material.angular.io) with utility classes from [Bootstrap](https://getbootstrap.com). The dashboard canvas is served from a single root route, laid out by [angular-gridster2](https://github.com/tiberiuzuld/angular-gridster2) version `21.0.1` on a 12-column grid with a fixed row height, and its chrome is composed of Angular Material components.
 
 ## Self-hosting
 
@@ -85,26 +86,28 @@ We provide official container images hosted on [Docker Hub](https://hub.docker.c
 
 ### Supported Environment Variables
 
-| Name                        | Type                  | Default Value         | Description                                                                                                          |
-| --------------------------- | --------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `ACCESS_TOKEN_SALT`         | `string`              |                       | A random string used as salt for access tokens                                                                       |
-| `API_KEY_COINGECKO_DEMO`    | `string` (optional)   |                       | The _CoinGecko_ Demo API key                                                                                         |
-| `API_KEY_COINGECKO_PRO`     | `string` (optional)   |                       | The _CoinGecko_ Pro API key                                                                                          |
-| `DATABASE_URL`              | `string`              |                       | The database connection URL, e.g. `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}` |
-| `ENABLE_FEATURE_AUTH_TOKEN` | `boolean` (optional)  | `true`                | Enables authentication via security token                                                                            |
-| `HOST`                      | `string` (optional)   | `0.0.0.0`             | The host where the Ghostfolio application will run on                                                                |
-| `JWT_SECRET_KEY`            | `string`              |                       | A random string used for _JSON Web Tokens_ (JWT)                                                                     |
-| `LOG_LEVELS`                | `string[]` (optional) |                       | The logging levels for the Ghostfolio application, e.g. `["debug","error","log","warn"]`                             |
-| `PORT`                      | `number` (optional)   | `3333`                | The port where the Ghostfolio application will run on                                                                |
-| `POSTGRES_DB`               | `string`              |                       | The name of the _PostgreSQL_ database                                                                                |
-| `POSTGRES_PASSWORD`         | `string`              |                       | The password of the _PostgreSQL_ database                                                                            |
-| `POSTGRES_USER`             | `string`              |                       | The user of the _PostgreSQL_ database                                                                                |
-| `REDIS_DB`                  | `number` (optional)   | `0`                   | The database index of _Redis_                                                                                        |
-| `REDIS_HOST`                | `string`              |                       | The host where _Redis_ is running                                                                                    |
-| `REDIS_PASSWORD`            | `string`              |                       | The password of _Redis_                                                                                              |
-| `REDIS_PORT`                | `number`              |                       | The port where _Redis_ is running                                                                                    |
-| `REQUEST_TIMEOUT`           | `number` (optional)   | `2000`                | The timeout of network requests to data providers in milliseconds                                                    |
-| `ROOT_URL`                  | `string` (optional)   | `http://0.0.0.0:3333` | The root URL of the Ghostfolio application, used for generating callback URLs and external links.                    |
+| Name                          | Type                  | Default Value         | Description                                                                                                                                                              |
+| ----------------------------- | --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ACCESS_TOKEN_SALT`           | `string`              |                       | A random string used as salt for access tokens                                                                                                                           |
+| `API_KEY_COINGECKO_DEMO`      | `string` (optional)   |                       | The _CoinGecko_ Demo API key                                                                                                                                             |
+| `API_KEY_COINGECKO_PRO`       | `string` (optional)   |                       | The _CoinGecko_ Pro API key                                                                                                                                              |
+| `DATABASE_CONNECTION_TIMEOUT` | `number` (optional)   | `30000`               | The maximum time in milliseconds a request may spend obtaining a database connection, whether establishing a new one or waiting for a pooled one; `0` disables the limit |
+| `DATABASE_QUERY_TIMEOUT`      | `number` (optional)   | `30000`               | The maximum time in milliseconds a single database statement may run before it is abandoned; `0` disables the limit                                                      |
+| `DATABASE_URL`                | `string`              |                       | The database connection URL, e.g. `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}`                                                     |
+| `ENABLE_FEATURE_AUTH_TOKEN`   | `boolean` (optional)  | `true`                | Enables authentication via security token                                                                                                                                |
+| `HOST`                        | `string` (optional)   | `0.0.0.0`             | The host where the Ghostfolio application will run on                                                                                                                    |
+| `JWT_SECRET_KEY`              | `string`              |                       | A random string used for _JSON Web Tokens_ (JWT)                                                                                                                         |
+| `LOG_LEVELS`                  | `string[]` (optional) |                       | The logging levels for the Ghostfolio application, e.g. `["debug","error","log","warn"]`                                                                                 |
+| `PORT`                        | `number` (optional)   | `3333`                | The port where the Ghostfolio application will run on                                                                                                                    |
+| `POSTGRES_DB`                 | `string`              |                       | The name of the _PostgreSQL_ database                                                                                                                                    |
+| `POSTGRES_PASSWORD`           | `string`              |                       | The password of the _PostgreSQL_ database                                                                                                                                |
+| `POSTGRES_USER`               | `string`              |                       | The user of the _PostgreSQL_ database                                                                                                                                    |
+| `REDIS_DB`                    | `number` (optional)   | `0`                   | The database index of _Redis_                                                                                                                                            |
+| `REDIS_HOST`                  | `string`              |                       | The host where _Redis_ is running                                                                                                                                        |
+| `REDIS_PASSWORD`              | `string`              |                       | The password of _Redis_                                                                                                                                                  |
+| `REDIS_PORT`                  | `number`              |                       | The port where _Redis_ is running                                                                                                                                        |
+| `REQUEST_TIMEOUT`             | `number` (optional)   | `2000`                | The timeout of network requests to data providers in milliseconds                                                                                                        |
+| `ROOT_URL`                    | `string` (optional)   | `http://0.0.0.0:3333` | The root URL of the Ghostfolio application, used for generating callback URLs and external links.                                                                        |
 
 #### OpenID Connect OIDC (Experimental)
 
@@ -300,6 +303,51 @@ Grant access of type _Public_ in the _Access_ tab of _My Ghostfolio_.
   }
 }
 ```
+
+### Dashboard Layout (experimental)
+
+#### Prerequisites
+
+[Bearer Token](#authorization-bearer-token) for authorization
+
+#### Request
+
+`GET http://localhost:3333/api/v1/user/layout` to load the dashboard layout of the current user
+
+`PATCH http://localhost:3333/api/v1/user/layout` to save the dashboard layout of the current user
+
+**Info:** Both endpoints are protected by the _JSON Web Token_ (JWT) authentication of the application and are not accessible anonymously
+
+#### Body
+
+Required for `PATCH` only. Each module is placed via `x` and `y` and sized via `cols` and `rows`, expressed in cells of the 12-column grid.
+
+```
+{
+  "modules": [
+    {
+      "cols": 6,
+      "moduleType": "portfolio-overview",
+      "rows": 4,
+      "x": 0,
+      "y": 0
+    }
+  ],
+  "version": 1
+}
+```
+
+#### Response
+
+##### Success
+
+`200 OK`
+
+Both endpoints respond with the layout document of the current user. The current client always writes `version` `1`, so a document it saved is shaped exactly as shown above; a document saved by an earlier client may omit `version`, and that absence is preserved on read rather than filled in. `GET` responds with `null` if the current user has not saved a layout yet.
+
+##### Error
+
+`401 Unauthorized`
 
 ## Community Projects
 

@@ -2,13 +2,20 @@
   <div class="d-flex justify-content-center mb-1">
     <gf-logo size="large" [showLabel]="false" />
   </div>
-  <a
+  <!--
+    A button, not an anchor: this control raises an in-application intent through
+    createActivityClicked rather than navigating. An anchor with no href is
+    unreachable by keyboard, and Material aliases MatAnchor straight to MatButton
+    without contributing one. Both element forms are styled through the same
+    .mat-mdc-button class, so the native button costs nothing visually.
+  -->
+  <button
     class="align-items-center justify-content-center"
     color="primary"
     mat-button
-    [queryParams]="{ createDialog: true }"
-    [routerLink]="routerLinkPortfolioActivities"
+    type="button"
+    (click)="createActivityClicked.emit()"
   >
     <span i18n>Time to add your first activity.</span>
-  </a>
+  </button>
 </div>

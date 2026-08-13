@@ -46,7 +46,7 @@ import {
 import { UserWithSettings } from '@ghostfolio/common/types';
 import { PerformanceCalculationType } from '@ghostfolio/common/types/performance-calculation-type.type';
 
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, Role, User } from '@prisma/client';
 import { differenceInDays, subDays } from 'date-fns';
@@ -259,7 +259,6 @@ export class UserService {
         user.settings.settings = {};
       }
     } else if (user) {
-      // Set default settings if needed
       user.settings = {
         settings: {},
         updatedAt: new Date(),
@@ -267,44 +266,36 @@ export class UserService {
       };
     }
 
-    // Set default value for annual interest rate
     if (!(user.settings.settings as UserSettings)?.annualInterestRate) {
       (user.settings.settings as UserSettings).annualInterestRate = 5;
     }
 
-    // Set default value for base currency
     if (!(user.settings.settings as UserSettings)?.baseCurrency) {
       (user.settings.settings as UserSettings).baseCurrency = DEFAULT_CURRENCY;
     }
 
-    // Set default value for date range
     (user.settings.settings as UserSettings).dateRange =
       (user.settings.settings as UserSettings).viewMode === 'ZEN'
         ? 'max'
         : ((user.settings.settings as UserSettings)?.dateRange ?? 'max');
 
-    // Set default value for performance calculation type
     if (!(user.settings.settings as UserSettings)?.performanceCalculationType) {
       (user.settings.settings as UserSettings).performanceCalculationType =
         PerformanceCalculationType.ROAI;
     }
 
-    // Set default value for projected total amount
     if (!(user.settings.settings as UserSettings)?.projectedTotalAmount) {
       (user.settings.settings as UserSettings).projectedTotalAmount = 0;
     }
 
-    // Set default value for safe withdrawal rate
     if (!(user.settings.settings as UserSettings)?.safeWithdrawalRate) {
       (user.settings.settings as UserSettings).safeWithdrawalRate = 0.04;
     }
 
-    // Set default value for savings rate
     if (!(user.settings.settings as UserSettings)?.savingsRate) {
       (user.settings.settings as UserSettings).savingsRate = 0;
     }
 
-    // Set default value for view mode
     if (!(user.settings.settings as UserSettings).viewMode) {
       (user.settings.settings as UserSettings).viewMode = 'DEFAULT';
     }
@@ -431,13 +422,6 @@ export class UserService {
       currentPermissions.push(permissions.updateOwnAccessToken);
     }
 
-    if (!(user.settings.settings as UserSettings).isExperimentalFeatures) {
-      // currentPermissions = without(
-      //   currentPermissions,
-      //   permissions.xyz
-      // );
-    }
-
     if (this.configurationService.get('ENABLE_FEATURE_SUBSCRIPTION')) {
       user.subscription = await this.subscriptionService.getSubscription({
         subscriptions,
@@ -481,10 +465,8 @@ export class UserService {
           permissions.updateMarketDataOfOwnAssetProfile
         );
 
-        // Reset benchmark
         user.settings.settings.benchmark = undefined;
 
-        // Reset holdings view mode
         user.settings.settings.holdingsViewMode = undefined;
       } else if (user.subscription?.type === SubscriptionType.Premium) {
         if (!hasRole(user, Role.DEMO)) {
@@ -499,7 +481,6 @@ export class UserService {
           permissions.deleteOwnUser
         );
 
-        // Reset offer
         user.subscription.offer.coupon = undefined;
         user.subscription.offer.couponId = undefined;
         user.subscription.offer.durationExtension = undefined;
@@ -567,6 +548,23 @@ export class UserService {
     });
   }
 
+  /**
+   * Creates an account.
+   *
+   * The registration gate is asserted HERE, at the point of creation, and not only
+   * where creation is requested. Both existing callers do check first - the public
+   * endpoint answers 403 and the external-identity path refuses - so this changes
+   * nothing that happens today. It changes what happens the next time somebody adds
+   * a third caller: the gate is a deployment operator's decision to stop admitting
+   * accounts, and a check that lives only in the callers is one a new caller can
+   * omit without anything failing. Enforced at the single place that actually
+   * creates a row, omitting it is no longer possible.
+   *
+   * The callers keep their own checks, deliberately. They are what turn the refusal
+   * into the right answer for the surface asking - a status code in one case, a
+   * refusal the sign-in flow reports in the other - which is a translation this
+   * method has no business making.
+   */
   public async createUser(
     {
       data
@@ -574,6 +572,13 @@ export class UserService {
       data: Prisma.UserCreateInput;
     } = { data: {} }
   ): Promise<User> {
+    const isUserSignupEnabled =
+      await this.propertyService.isUserSignupEnabled();
+
+    if (!isUserSignupEnabled) {
+      throw new ForbiddenException('Sign up forbidden');
+    }
+
     if (!data.provider) {
       data.provider = 'ANONYMOUS';
     }
@@ -592,7 +597,7 @@ export class UserService {
             currency: DEFAULT_CURRENCY,
             name: this.i18nService.getTranslation({
               id: 'myAccount',
-              languageCode: DEFAULT_LANGUAGE_CODE // TODO
+              languageCode: DEFAULT_LANGUAGE_CODE
             })
           }
         },
@@ -657,6 +662,12 @@ export class UserService {
 
     try {
       await this.prismaService.settings.delete({
+        where: { userId: where.id }
+      });
+    } catch {}
+
+    try {
+      await this.prismaService.userDashboardLayout.delete({
         where: { userId: where.id }
       });
     } catch {}

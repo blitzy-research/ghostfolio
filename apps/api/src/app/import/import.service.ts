@@ -31,7 +31,7 @@ import {
   UserWithSettings
 } from '@ghostfolio/common/types';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, Prisma } from '@prisma/client';
 import { Big } from 'big.js';
 import { endOfToday, isAfter, isSameSecond, parseISO } from 'date-fns';
@@ -173,7 +173,67 @@ export class ImportService {
     }
   }
 
-  public async import({
+  /**
+   * Imports accounts, asset profiles, tags and activities, and undoes the asset
+   * profiles it created if it cannot finish.
+   *
+   * An import is not one statement and cannot be made into one: it creates accounts
+   * through one service, tags through another, market data through a third, and each
+   * activity through a fourth, with data-provider validation and exchange-rate lookups
+   * interleaved. So a failure halfway through leaves whatever preceded it committed.
+   *
+   * For most of what it writes that is untidy but recoverable - a half-imported set of
+   * activities and accounts is visible in the interface and can be deleted there. Asset
+   * profiles are the exception, and that is why they get this treatment. A `MANUAL`
+   * profile is brought into existence as a side effect of creating an activity that
+   * references it (`connectOrCreate`), or directly when the file carries market data for
+   * it. If the import then fails, that profile survives with nothing pointing at it -
+   * and there is no screen outside the administration area where its owner could remove
+   * it, so it is permanent litter in their data that they cannot see or reach.
+   *
+   * What happens instead: the profiles that already existed are noted first, and if the
+   * import throws, any profile among the ones it touched that is now unreferenced and
+   * was not there beforehand is deleted before the failure is re-raised. The caller sees
+   * the same error either way - this changes what is left behind, not what is reported.
+   *
+   * A dry run writes nothing, so it is passed straight through.
+   */
+  public async import(aParameters: {
+    accountsWithBalancesDto: ImportDataDto['accounts'];
+    activitiesDto: ImportDataDto['activities'];
+    assetProfilesWithMarketDataDto: ImportDataDto['assetProfiles'];
+    isDryRun?: boolean;
+    maxActivitiesToImport: number;
+    tagsDto: ImportDataDto['tags'];
+    user: UserWithSettings;
+  }): Promise<Activity[]> {
+    if (aParameters.isDryRun) {
+      return this.importData(aParameters);
+    }
+
+    const assetProfileIdentifiers =
+      this.getReferencedAssetProfileIdentifiers(aParameters);
+
+    // Read BEFORE anything is written, which is what makes the cleanup precise: a
+    // profile that was already here is never removed, however unreferenced it is.
+    const preExistingAssetProfileKeys = await this.getAssetProfileKeys(
+      assetProfileIdentifiers
+    );
+
+    try {
+      return await this.importData(aParameters);
+    } catch (error) {
+      await this.removeAssetProfilesOrphanedByFailedImport({
+        assetProfileIdentifiers,
+        preExistingAssetProfileKeys,
+        userId: aParameters.user.id
+      });
+
+      throw error;
+    }
+  }
+
+  private async importData({
     accountsWithBalancesDto,
     activitiesDto,
     assetProfilesWithMarketDataDto,
@@ -633,6 +693,121 @@ export class ImportService {
     }
 
     return activities;
+  }
+
+  /**
+   * The keys of whichever of these asset profiles exist right now.
+   *
+   * Keyed by data source and symbol together, because that pair is what identifies a
+   * profile - the same symbol from two providers is two different profiles.
+   */
+  private async getAssetProfileKeys(
+    aAssetProfileIdentifiers: AssetProfileIdentifier[]
+  ): Promise<Set<string>> {
+    if (!aAssetProfileIdentifiers.length) {
+      return new Set<string>();
+    }
+
+    const assetProfiles = await this.symbolProfileService.getSymbolProfiles(
+      aAssetProfileIdentifiers
+    );
+
+    return new Set(
+      assetProfiles.map(({ dataSource, symbol }) => {
+        return getAssetProfileIdentifier({ dataSource, symbol });
+      })
+    );
+  }
+
+  /**
+   * Every asset profile this import could bring into existence.
+   *
+   * Both routes are covered: the profiles the file carries market data for, which are
+   * created directly, and the ones its activities reference, which are created as a side
+   * effect of `connectOrCreate`. Duplicates are harmless here - the set this feeds
+   * removes them - and a superset is safe, because nothing is deleted on the strength of
+   * being in this list alone.
+   */
+  private getReferencedAssetProfileIdentifiers({
+    activitiesDto,
+    assetProfilesWithMarketDataDto
+  }: {
+    activitiesDto: ImportDataDto['activities'];
+    assetProfilesWithMarketDataDto: ImportDataDto['assetProfiles'];
+  }): AssetProfileIdentifier[] {
+    const identifiers: AssetProfileIdentifier[] = [];
+
+    for (const { dataSource, symbol } of assetProfilesWithMarketDataDto ?? []) {
+      if (dataSource && symbol) {
+        identifiers.push({ dataSource, symbol });
+      }
+    }
+
+    for (const { dataSource, symbol } of activitiesDto ?? []) {
+      if (dataSource && symbol) {
+        identifiers.push({ dataSource, symbol });
+      }
+    }
+
+    return uniqBy(identifiers, (identifier) => {
+      return getAssetProfileIdentifier(identifier);
+    });
+  }
+
+  /**
+   * Deletes the asset profiles a failed import created and left pointing at nothing.
+   *
+   * Three conditions have to hold together, and each excludes a way this could destroy
+   * something it should not. The profile must be `MANUAL` and owned by this user, so a
+   * shared provider-sourced profile that other people's activities rely on is never
+   * touched. It must have no activities at all, so a partially successful import keeps
+   * every profile that something now references. And it must not have existed before the
+   * import started, so a profile its owner created earlier and has not used yet survives
+   * an unrelated import failing.
+   *
+   * Failures here are swallowed on purpose. This runs inside the failure path of an
+   * import that is already going to be reported to the caller, and replacing that report
+   * with a cleanup error would hide the thing the caller actually needs to know.
+   */
+  private async removeAssetProfilesOrphanedByFailedImport({
+    assetProfileIdentifiers,
+    preExistingAssetProfileKeys,
+    userId
+  }: {
+    assetProfileIdentifiers: AssetProfileIdentifier[];
+    preExistingAssetProfileKeys: Set<string>;
+    userId: string;
+  }) {
+    if (!assetProfileIdentifiers.length) {
+      return;
+    }
+
+    try {
+      const assetProfiles = await this.symbolProfileService.getSymbolProfiles(
+        assetProfileIdentifiers
+      );
+
+      for (const assetProfile of assetProfiles) {
+        const key = getAssetProfileIdentifier({
+          dataSource: assetProfile.dataSource,
+          symbol: assetProfile.symbol
+        });
+
+        if (
+          assetProfile.activitiesCount === 0 &&
+          assetProfile.dataSource === DataSource.MANUAL &&
+          assetProfile.userId === userId &&
+          !preExistingAssetProfileKeys.has(key)
+        ) {
+          await this.symbolProfileService.deleteById(assetProfile.id);
+        }
+      }
+    } catch (error) {
+      Logger.error(
+        error,
+        `${ImportService.name}#removeAssetProfilesOrphanedByFailedImport`
+      );
+    }
   }
 
   private async extendActivitiesWithErrors({

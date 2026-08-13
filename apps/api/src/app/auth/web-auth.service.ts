@@ -31,6 +31,93 @@ import {
 import { isoBase64URL, isoUint8Array } from '@simplewebauthn/server/helpers';
 import ms from 'ms';
 
+const WEB_AUTHN_VERIFICATION_FAILED_EVENT = 'GF-WEBAUTHN-VERIFICATION-FAILED';
+
+/**
+ * The reasons a credential ceremony can be rejected, as a closed vocabulary.
+ *
+ * A verification failure is worth recording - it is how an operator sees a
+ * misconfigured relying party or a client that is being tampered with - but the
+ * library's own exception is not what should record it. Its message quotes the
+ * challenge, the origin and the relying-party identifier it was given, and its
+ * stack names the verification internals and their file paths, all of which end up
+ * in a log that is far more widely readable than the request was.
+ *
+ * These names carry the operational answer instead: which way the ceremony failed.
+ * They are emitted verbatim and are never derived from anything a caller supplied,
+ * so a log line cannot be steered by a crafted request.
+ */
+const WEB_AUTHN_FAULT_CATEGORIES = {
+  challengeMismatch: 'CHALLENGE_MISMATCH',
+  counterRegression: 'COUNTER_REGRESSION',
+  credentialTypeUnexpected: 'CREDENTIAL_TYPE_UNEXPECTED',
+  malformedResponse: 'MALFORMED_RESPONSE',
+  originMismatch: 'ORIGIN_MISMATCH',
+  relyingPartyMismatch: 'RELYING_PARTY_MISMATCH',
+  signatureRejected: 'SIGNATURE_REJECTED',
+  unclassified: 'UNCLASSIFIED',
+  userVerificationMissing: 'USER_VERIFICATION_MISSING'
+} as const;
+
+/**
+ * How a rejection is recognised, in order.
+ *
+ * Ordered rather than a lookup because the library reports these as prose, and the
+ * first match wins - the more specific patterns therefore precede the general
+ * `malformedResponse` catch. Anything unrecognised becomes `UNCLASSIFIED` rather
+ * than falling back to the message, so a library upgrade that rewords an error
+ * degrades the precision of a log line and never its safety.
+ */
+const WEB_AUTHN_FAULT_PATTERNS: {
+  category: WebAuthnFaultCategory;
+  pattern: RegExp;
+}[] = [
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.challengeMismatch,
+    pattern: /challenge/i
+  },
+  { category: WEB_AUTHN_FAULT_CATEGORIES.originMismatch, pattern: /origin/i },
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.relyingPartyMismatch,
+    pattern: /\brp\s?id\b/i
+  },
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.userVerificationMissing,
+    pattern: /user (?:could not be )?verif/i
+  },
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.signatureRejected,
+    pattern: /signature/i
+  },
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.counterRegression,
+    pattern: /counter/i
+  },
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.credentialTypeUnexpected,
+    pattern: /credential type/i
+  },
+  {
+    category: WEB_AUTHN_FAULT_CATEGORIES.malformedResponse,
+    pattern: /base64|missing|invalid|unable to parse|no attestation/i
+  }
+];
+
+/**
+ * The ceremony a rejection belongs to, so the two call sites stay distinguishable
+ * in a log without either of them describing its input.
+ */
+const WEB_AUTHN_CEREMONIES = {
+  authentication: 'AUTHENTICATION',
+  registration: 'REGISTRATION'
+} as const;
+
+type WebAuthnCeremony =
+  (typeof WEB_AUTHN_CEREMONIES)[keyof typeof WEB_AUTHN_CEREMONIES];
+
+type WebAuthnFaultCategory =
+  (typeof WEB_AUTHN_FAULT_CATEGORIES)[keyof typeof WEB_AUTHN_FAULT_CATEGORIES];
+
 @Injectable()
 export class WebAuthService {
   public constructor(
@@ -103,8 +190,14 @@ export class WebAuthService {
 
       verification = await verifyRegistrationResponse(opts);
     } catch (error) {
-      Logger.error(error, 'WebAuthService');
-      throw new InternalServerErrorException(error.message);
+      this.reportVerificationFault(WEB_AUTHN_CEREMONIES.registration, error);
+
+      // The same generic message this method already uses for a ceremony that
+      // completes without verifying, so the two outcomes are indistinguishable to
+      // the caller. Returning `error.message` told an authenticated caller which of
+      // the challenge, origin or relying-party checks their crafted response had
+      // tripped, which is an oracle for probing the ceremony one field at a time.
+      throw new InternalServerErrorException('An unknown error occurred');
     }
 
     const { registrationInfo, verified } = verification;
@@ -210,8 +303,14 @@ export class WebAuthService {
 
       verification = await verifyAuthenticationResponse(opts);
     } catch (error) {
-      Logger.error(error, 'WebAuthService');
-      throw new InternalServerErrorException({ error: error.message });
+      this.reportVerificationFault(WEB_AUTHN_CEREMONIES.authentication, error);
+
+      // Genericised, and also unified with the registration path above, which threw
+      // a bare string where this one threw `{ error: … }`. Two shapes for the same
+      // class of failure told a caller which ceremony it had reached before it told
+      // them anything else; no consumer reads either body - both sign-in and
+      // enrolment surface a fixed message of their own.
+      throw new InternalServerErrorException('An unknown error occurred');
     }
 
     const { authenticationInfo, verified } = verification;
@@ -230,5 +329,38 @@ export class WebAuthService {
     }
 
     throw new Error();
+  }
+
+  /**
+   * Records that a credential ceremony was rejected, without recording anything
+   * about the request that was rejected.
+   *
+   * Three things are emitted and nothing else: a fixed event identifier, which
+   * ceremony it was, and which category of check failed. Absent by design are the
+   * exception object, its message and its stack; the credential and device
+   * identifiers, which are stable per browser and would let separate log lines be
+   * joined into one device's history; and the account, which is already recoverable
+   * from the request log if an investigation genuinely needs it.
+   *
+   * @param aCeremony which ceremony rejected the credential.
+   * @param aFault the caught value, read only to categorise it and then discarded.
+   */
+  private reportVerificationFault(
+    aCeremony: WebAuthnCeremony,
+    aFault: unknown
+  ) {
+    const { message } = (aFault ?? {}) as { message?: unknown };
+
+    const category =
+      (typeof message === 'string' &&
+        WEB_AUTHN_FAULT_PATTERNS.find(({ pattern }) => {
+          return pattern.test(message);
+        })?.category) ||
+      WEB_AUTHN_FAULT_CATEGORIES.unclassified;
+
+    Logger.error(
+      `${WEB_AUTHN_VERIFICATION_FAILED_EVENT} (ceremony ${aCeremony}, category ${category})`,
+      'WebAuthService'
+    );
   }
 }

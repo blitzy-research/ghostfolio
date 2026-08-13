@@ -1,0 +1,380 @@
+<!--
+  `role="banner"` restores the landmark the deleted shell used to provide: the
+  chrome was wrapped in a `<header>` element there, and a `mat-toolbar` renders a
+  plain `<div>`, so collapsing the shell left the page with `main` and the module
+  regions as its only landmarks and no way to jump to the controls. The role is
+  declared explicitly rather than by wrapping this in a `<header>`, because a
+  `<header>` inside the router outlet is NOT a banner - the element maps to that
+  role only while it has no sectioning ancestor, and this bar has `<main>` above
+  it - whereas the explicit role applies wherever it is written.
+
+  Named, because a landmark without a name is announced only as its type, and
+  this page carries several regions: the name is what makes the bar addressable
+  by what it does. The wording says `controls` rather than naming the product,
+  because the bar acts on the arrangement rather than identifying the site.
+-->
+<mat-toolbar
+  aria-label="Dashboard controls"
+  class="px-0"
+  i18n-aria-label
+  role="banner"
+>
+  <!--
+    Only the signed-in half of the control surface lives here: the signed-out
+    state is a sibling component the canvas renders in place of the canvas body,
+    which is why this guard has no companion branch. The guard is still required,
+    because the viewer is resolved asynchronously and the bar has to render as
+    empty chrome until it arrives rather than fault on the first pass.
+  -->
+  @if (user) {
+    <!--
+      A button rather than a link, because activating the mark reloads every
+      module on the canvas in place instead of going anywhere.
+
+      It deliberately carries NO `aria-label`. The mark renders the visible word
+      "Ghostfolio", and an `aria-label` of "Refresh dashboard" would replace that
+      name wholesale, leaving an accessible name that does not contain the visible
+      label - a WCAG 2.2 SC 2.5.3 (Label in Name) failure that leaves a
+      speech-input user unable to address the control by the word they can see.
+      Letting the name come from the mark's own text avoids that, and the action
+      is carried by the tooltip instead, which is also exposed as the control's
+      accessible DESCRIPTION rather than competing with its name.
+    -->
+    <button
+      class="gf-dashboard-refresh"
+      i18n-title
+      mat-button
+      title="Refresh dashboard"
+      [attr.aria-busy]="isRefreshing ? 'true' : null"
+      [disabled]="isRefreshing"
+      (click)="onLogoClick()"
+    >
+      <gf-logo class="px-2" />
+    </button>
+    <span class="gf-spacer"></span>
+    <ul class="align-items-center d-flex list-inline m-0 px-2">
+      @if (hasPermissionToAccessAssistant) {
+        <li class="d-inline-flex list-inline-item">
+          <!--
+            The badge content is a bare non-breaking mark because the badge is a
+            dot, not a count: it reports only that filters are in force, and the
+            library hides a textless badge from assistive technology of its own
+            accord. The badge itself stays without a spoken description - a fixed
+            one would be announced even while the dot is suppressed, since
+            suppression is presentational - and the state is carried by the
+            BUTTON'S OWN NAME below instead, which changes with it and so is
+            re-announced when it changes and silent when there is nothing to say.
+          -->
+          <button
+            #assistantTrigger="matMenuTrigger"
+            class="h-100 no-min-width px-2"
+            mat-button
+            matBadge="&NoBreak;"
+            matBadgeSize="small"
+            [attr.aria-label]="
+              hasFilters && hasPermissionToChangeFilters
+                ? assistantWithFiltersLabel
+                : assistantLabel
+            "
+            [matBadgeHidden]="!hasFilters || !hasPermissionToChangeFilters"
+            [matMenuTriggerFor]="assistantMenu"
+            [matMenuTriggerRestoreFocus]="false"
+            (menuOpened)="onOpenAssistant()"
+          >
+            <ion-icon
+              aria-hidden="true"
+              class="rotate-90"
+              name="options-outline"
+            />
+          </button>
+          <mat-menu
+            #assistantMenu="matMenu"
+            class="no-max-width"
+            xPosition="before"
+            [overlapTrigger]="true"
+            (closed)="assistantElement?.setIsOpen(false)"
+          >
+            <!--
+              Two closing paths that are not interchangeable, so each stays on
+              the element it belongs to: the panel reporting that it has gone
+              away, and the assistant asking to be dismissed. The selection of a
+              module is emitted ahead of that second one, so the request to
+              reveal a module is never observed after the dismissal it
+              accompanies.
+            -->
+            <gf-assistant
+              #assistant
+              [deviceType]="deviceType"
+              [hasPermissionToAccessAdminControl]="
+                hasPermissionToAccessAdminControl
+              "
+              [hasPermissionToChangeDateRange]="hasPermissionToChangeDateRange"
+              [hasPermissionToChangeFilters]="hasPermissionToChangeFilters"
+              [user]="user"
+              (closed)="closeAssistant()"
+              (dateRangeChanged)="onDateRangeChange($event)"
+              (filtersChanged)="onFiltersChanged($event)"
+              (moduleSelected)="onSelectModule($event)"
+            />
+          </mat-menu>
+        </li>
+      }
+      @if (hasPromotion) {
+        <li class="d-inline-flex list-inline-item">
+          <!--
+            The discount mark, shown to a viewer who has an offer waiting. The
+            plan page is hosted outside this application, so this is an ordinary
+            external target and opens in its own tab rather than taking the canvas
+            away with it.
+
+            The mark itself is decorative and hidden from assistive technology,
+            because it says nothing the control's own name does not already say;
+            the name is what an offer actually means rather than how it is drawn,
+            and it reuses the wording of the plan row in the menu below so that no
+            new source message is introduced for it.
+          -->
+          <a
+            aria-label="Upgrade Plan"
+            class="gf-promotion h-100 no-min-width px-2"
+            i18n-aria-label
+            i18n-title
+            mat-button
+            rel="noopener noreferrer"
+            target="_blank"
+            title="Upgrade Plan"
+            [href]="pricingUrl"
+          >
+            <span aria-hidden="true" class="gf-promotion-mark">%</span>
+          </a>
+        </li>
+      }
+      @if (hasImpersonationId) {
+        <!--
+          A persistent marker that the viewer is looking at somebody else's
+          portfolio, and the only thing on screen that says so while the identity
+          menu is closed.
+
+          It is its own list item rather than the contents of the identity
+          trigger, and both halves of that matter. Rendered inside the trigger it
+          would replace the trigger's glyph, leaving a blank button as the only
+          way to reach the identity menu - and the app's single sign-out path with
+          it. And a live region is not something to nest inside a control: its job
+          is to announce a state change, whereas the control's job is to be named
+          and operated, and merging the two makes the announcement part of the
+          button's name.
+
+          The wording is held on the class rather than declared here because a
+          bound attribute cannot be localized with `i18n-`, and the element needs
+          real text content for a reason that is not cosmetic: the pill is a flex
+          box with no intrinsic height, so with nothing but whitespace inside it
+          it has no block size at all and paints nothing despite being fully
+          styled and reported as visible.
+        -->
+        <li class="d-inline-flex list-inline-item">
+          <span
+            class="align-items-center d-flex gf-impersonation-indicator px-2"
+            role="status"
+          >
+            {{ impersonationStatusLabel }}
+          </span>
+        </li>
+      }
+      <li class="list-inline-item">
+        <!--
+          The identity menu, and the only route to signing out - so it must always
+          be both named and visibly present. The name states which identity state
+          the menu belongs to rather than what the menu contains, and it changes
+          with that state so a viewer who has borrowed another identity is told so
+          by the control itself and not only by the pill beside it.
+        -->
+        <button
+          class="no-min-width px-1"
+          mat-button
+          [attr.aria-label]="
+            hasImpersonationId ? impersonationStatusLabel : accountLabel
+          "
+          [attr.title]="
+            hasImpersonationId ? impersonationStatusLabel : accountLabel
+          "
+          [matMenuTriggerFor]="accountMenu"
+          (menuClosed)="onMenuClosed()"
+          (menuOpened)="onMenuOpened()"
+        >
+          <ion-icon
+            aria-hidden="true"
+            class="d-none d-sm-block"
+            name="person-circle-outline"
+            size="large"
+          />
+          <ion-icon
+            aria-hidden="true"
+            class="d-block d-sm-none"
+            size="large"
+            [name]="isMenuOpen ? 'close-outline' : 'menu-outline'"
+          />
+        </button>
+        <mat-menu #accountMenu="matMenu" xPosition="before">
+          @if (
+            hasPermissionForSubscription && user?.subscription?.type === 'Basic'
+          ) {
+            <!--
+              The plan page is hosted outside this application, so this row is an
+              ordinary external address and opens in its own tab rather than
+              taking the canvas away with it. The indicator beside the wording is
+              told not to link, so the row offers exactly one target instead of
+              two overlapping ones - and because the disabled indicator renders a
+              decorative span rather than a second anchor, the row contains no
+              nested interactive content at all. Both wordings are existing source
+              messages, which keeps their translations.
+
+              The percentage badge tells a viewer on the free plan who has an
+              offer waiting that they have one, rather than leaving them the
+              generic premium glyph that every free-plan viewer sees.
+            -->
+            <a
+              class="d-flex"
+              mat-menu-item
+              rel="noopener noreferrer"
+              target="_blank"
+              [href]="pricingUrl"
+              ><span class="align-items-center d-flex"
+                ><span>
+                  @if (user.subscription.offer.isRenewal) {
+                    <ng-container i18n>Renew Plan</ng-container>
+                  } @else {
+                    <ng-container i18n>Upgrade Plan</ng-container>
+                  }
+                </span>
+                @if (hasPromotion) {
+                  <span class="badge badge-warning ml-1">%</span>
+                }
+                <gf-premium-indicator
+                  class="d-inline-block ml-1"
+                  [enableLink]="false" /></span
+            ></a>
+            <hr class="m-0" />
+          }
+          @if (user?.access?.length > 0) {
+            <!--
+              One row per identity the viewer may adopt, the first being the
+              viewer themselves. Its glyph is inverted with respect to the rows
+              beneath it, which is correct rather than a slip: the viewer is the
+              current identity precisely when no other one is being borrowed.
+              Each row also publishes that state as a checked radio, so the
+              selection never rests on the shape of a glyph alone.
+            -->
+            <button
+              mat-menu-item
+              role="menuitemradio"
+              [attr.aria-checked]="!hasImpersonationId"
+              (click)="impersonateAccount(null)"
+            >
+              <span class="align-items-center d-flex">
+                <ion-icon
+                  aria-hidden="true"
+                  class="mr-2"
+                  [name]="
+                    hasImpersonationId
+                      ? 'radio-button-off-outline'
+                      : 'radio-button-on-outline'
+                  "
+                />
+                <span i18n>Me</span>
+              </span>
+            </button>
+            @for (accessItem of user?.access; track accessItem) {
+              <button
+                mat-menu-item
+                role="menuitemradio"
+                [attr.aria-checked]="accessItem.id === impersonationId"
+                (click)="impersonateAccount(accessItem.id)"
+              >
+                <span class="align-items-center d-flex">
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    [name]="
+                      accessItem.id === impersonationId
+                        ? 'radio-button-on-outline'
+                        : 'radio-button-off-outline'
+                    "
+                  />
+                  @if (accessItem.alias) {
+                    <span>{{ accessItem.alias }}</span>
+                  } @else {
+                    <span i18n>User</span>
+                  }
+                </span>
+              </button>
+            }
+            <hr class="m-0" />
+          }
+          <!--
+            The appearance choice, which the control bar is specified to carry and
+            which the deleted shell never had: the setting existed and was reachable
+            only from inside the account-settings screen, so switching the canvas
+            between light and dark meant navigating away from it. On one canvas there
+            is nowhere to navigate to, which is what makes this belong on the bar.
+
+            Three radio rows rather than a two-state switch, because the setting has
+            three values and the third is not a state of the other two: `Auto` is the
+            absence of a stored preference, under which the canvas follows the
+            operating system and keeps following it as that changes. A toggle would
+            have to either hide that value or misrepresent it as one of the others.
+
+            `menuitemradio` with `aria-checked`, exactly as the identity rows above
+            do, so the current choice is announced rather than left to the shape of a
+            glyph; and wrapped in a named `group`, which is the structure ARIA
+            prescribes for a set of radios inside a menu and is what gives the three
+            rows a heading a reader can hear. The wrapper does not disturb the menu's
+            own keyboard order: Material resolves its items by their parent menu, not
+            by their DOM depth.
+
+            It writes through the same `PUT /api/v1/user/setting` call the rest of
+            this bar uses and then re-reads the viewer, which is what re-applies the
+            theme - the shell already watches the viewer's `colorScheme` and paints
+            from it. Nothing here touches the document classes itself, so there is one
+            mechanism rather than two.
+
+            No divider of its own, and that is the fix rather than an omission. A
+            divider belongs to the group ABOVE it - each of the two optional groups
+            emits its own inside its own `@if`, and the sign-out row below emits one
+            too - so a third, unconditional rule here was a second separator wherever
+            a group had already drawn one, and a rule with nothing above it wherever
+            neither group was rendered. A viewer on the free plan with no access
+            grants opened this menu onto a horizontal line; a viewer with grants saw
+            two lines a pixel apart. Guarding this one rule fixes both, because the
+            groups that can precede it already carry theirs.
+          -->
+          <div aria-label="Appearance" i18n-aria-label role="group">
+            @for (option of colorSchemeOptions; track option.value) {
+              <button
+                mat-menu-item
+                role="menuitemradio"
+                [attr.aria-checked]="
+                  option.value === (user?.settings?.colorScheme ?? null)
+                "
+                (click)="onChangeColorScheme(option.value)"
+              >
+                <span class="align-items-center d-flex">
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    [name]="
+                      option.value === (user?.settings?.colorScheme ?? null)
+                        ? 'radio-button-on-outline'
+                        : 'radio-button-off-outline'
+                    "
+                  />
+                  <span>{{ option.label }}</span>
+                </span>
+              </button>
+            }
+          </div>
+          <hr class="m-0" />
+          <button i18n mat-menu-item (click)="onSignOut()">Log out</button>
+        </mat-menu>
+      </li>
+    </ul>
+  }
+</mat-toolbar>

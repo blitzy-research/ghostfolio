@@ -4,24 +4,51 @@
   <div class="align-items-center d-flex flex-column">
     <form class="w-100">
       @if (data.hasPermissionToUseAuthToken) {
-        <mat-form-field appearance="outline" class="without-hint w-100">
+        <!--
+          The hint slot is deliberately NOT suppressed here, unlike the sibling
+          fields that carry no message: this field is required and its refusal has to
+          be readable. `without-hint` hides the subscript wrapper, which is the very
+          element Material renders an error into, so keeping it would have hidden the
+          message rather than merely tightened the spacing.
+        -->
+        <mat-form-field appearance="outline" class="w-100">
           <mat-label i18n>Security Token</mat-label>
+          <!--
+            Given focus on open. Without it the dialog handed focus to the first
+            tabbable element it found, which is the close button in the header - so a
+            visitor arriving by keyboard or screen reader was placed on the control
+            that abandons the dialog rather than the field they came to fill in.
+          -->
           <input
+            cdkFocusInitial
             matInput
             [formControl]="accessTokenFormControl"
             [type]="isAccessTokenHidden ? 'password' : 'text'"
             (keydown.enter)="onLoginWithAccessToken(); $event.preventDefault()"
           />
           <button
+            aria-label="Show or hide the security token"
+            i18n-aria-label
             mat-button
             matSuffix
             type="button"
             (click)="isAccessTokenHidden = !isAccessTokenHidden"
           >
             <ion-icon
+              aria-hidden="true"
               [name]="isAccessTokenHidden ? 'eye-outline' : 'eye-off-outline'"
             />
           </button>
+          <!--
+            Material wires this to the field through `aria-describedby` and renders it
+            only once the control has been touched, so it is read out when it becomes
+            true rather than announced as a fault on arrival. It is reached by pressing
+            Enter or the sign-in control on an empty field - both of which used to do
+            nothing whatsoever and say nothing about why.
+          -->
+          @if (accessTokenFormControl.hasError('required')) {
+            <mat-error i18n>Please enter your security token.</mat-error>
+          }
         </mat-form-field>
       }
 
@@ -37,7 +64,9 @@
             class="px-4 rounded-pill"
             href="../api/v1/auth/google"
             mat-stroked-button
+            (click)="onStartExternalSignIn()"
             ><img
+              alt=""
               class="mr-2"
               src="../assets/icons/google.svg"
               style="height: 1rem"
@@ -52,6 +81,7 @@
             class="px-4 rounded-pill"
             href="../api/auth/oidc"
             mat-stroked-button
+            (click)="onStartExternalSignIn()"
             ><ng-container i18n>Sign in with OpenID Connect</ng-container></a
           >
         </div>

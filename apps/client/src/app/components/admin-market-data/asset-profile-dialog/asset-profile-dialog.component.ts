@@ -92,7 +92,7 @@ import ms from 'ms';
 import { EMPTY } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
-import { AssetProfileDialogParams } from './interfaces/interfaces';
+import type { AssetProfileDialogParams } from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -175,18 +175,24 @@ export class GfAssetProfileDialogComponent implements OnInit {
     url: ''
   });
 
-  protected readonly assetProfileIdentifierForm = this.formBuilder.group(
-    {
-      assetProfileIdentifier: new FormControl<
-        AssetProfileIdentifier | { dataSource: null; symbol: null }
-      >({ dataSource: null, symbol: null }, [Validators.required])
-    },
-    {
-      validators: (control) => {
+  protected readonly assetProfileIdentifierForm = this.formBuilder.group({
+    assetProfileIdentifier: new FormControl<
+      AssetProfileIdentifier | { dataSource: null; symbol: null }
+    >({ dataSource: null, symbol: null }, [
+      Validators.required,
+      // Checked on the CONTROL rather than on the group, which is what lets the refusal
+      // be seen. The rule is about one control's value against the profile this dialog
+      // was opened for - there is no second field involved - so a group validator was
+      // always the wrong home for it, and it had a cost: Angular Material renders a
+      // field's `mat-error` children from that field's own error state, so an error
+      // parked on the group left every field individually valid and the message
+      // unrenderable. Choosing the profile already in force simply greyed "Apply" out
+      // with the reason stated nowhere.
+      (control) => {
         return this.isNewSymbolValid(control);
       }
-    }
-  );
+    ])
+  });
 
   protected canEditAssetProfile = true;
 
@@ -784,7 +790,7 @@ export class GfAssetProfileDialogComponent implements OnInit {
 
   private isNewSymbolValid(control: AbstractControl): ValidationErrors | null {
     const currentAssetProfileIdentifier: AssetProfileIdentifier | undefined =
-      control.get('assetProfileIdentifier')?.value;
+      control.value;
 
     if (
       currentAssetProfileIdentifier?.dataSource === this.data?.dataSource &&

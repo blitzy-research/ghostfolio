@@ -1,5 +1,22 @@
+<!--
+  A module-scale container, not a page-scale one. `container-fluid` keeps the
+  horizontal gutter that cancels the negative margins of the rows below - without
+  it they bleed past their cell - while dropping the responsive max-width that
+  made this content read as a page nested inside a grid cell.
+
+  `justify-content-center` is deliberately ABSENT, and the stylesheet centres this
+  content with auto margins instead. Centring a flex column whose content is
+  taller than the box distributes the overflow to BOTH ends, and the half that
+  lands above the start edge is unreachable: it is not counted in `scrollHeight`
+  and a negative `scrollTop` is clamped to zero. This content is routinely taller
+  than the cell it is placed in, so centring would put the top of the chart canvas
+  - and with it every tooltip drawn near the top - permanently above that edge.
+  Auto margins centre exactly as well when there IS free space and collapse to zero
+  when there is not, so the overflow can only ever go downward, where it is
+  scrollable.
+-->
 <div
-  class="align-items-center container d-flex flex-column h-100 justify-content-center overview p-0 position-relative"
+  class="align-items-center container-fluid d-flex flex-column h-100 overview p-0 position-relative"
 >
   @if (
     !hasImpersonationId &&
@@ -8,57 +25,71 @@
   ) {
     <div class="justify-content-center row w-100">
       <div class="col introduction">
-        <h4 i18n>Welcome to Ghostfolio</h4>
+        <h4 class="h6" i18n>Welcome to Ghostfolio</h4>
         <p i18n>Ready to take control of your personal finances?</p>
         <ol class="font-weight-bold">
           <li
             class="mb-2"
             [ngClass]="{ 'text-muted': user?.accounts?.length > 1 }"
           >
-            <a class="d-block" [routerLink]="routerLinkAccounts"
-              ><span i18n>Setup your accounts</span><br />
+            <button
+              class="bg-transparent border-0 d-block font-weight-bold p-0 text-left text-reset"
+              type="button"
+              (click)="onRevealAccounts()"
+            >
+              <span i18n>Setup your accounts</span><br />
               <span class="font-weight-normal" i18n
                 >Get a comprehensive financial overview by adding your bank and
                 brokerage accounts.</span
-              ></a
-            >
+              >
+            </button>
           </li>
           <li class="mb-2">
-            <a class="d-block" [routerLink]="routerLinkPortfolioActivities">
+            <button
+              class="bg-transparent border-0 d-block font-weight-bold p-0 text-left text-reset"
+              type="button"
+              (click)="onRevealActivities()"
+            >
               <span i18n>Capture your activities</span><br />
               <span class="font-weight-normal" i18n
                 >Record your investment activities to keep your portfolio up to
                 date.</span
-              ></a
-            >
+              >
+            </button>
           </li>
           <li class="mb-2">
-            <a class="d-block" [routerLink]="routerLinkPortfolio">
+            <button
+              class="bg-transparent border-0 d-block font-weight-bold p-0 text-left text-reset"
+              type="button"
+              (click)="onRevealPortfolioAnalysis()"
+            >
               <span i18n>Monitor and analyze your portfolio</span><br />
               <span class="font-weight-normal" i18n
                 >Track your progress in real-time with comprehensive analysis
                 and insights.</span
               >
-            </a>
+            </button>
           </li>
         </ol>
         <div class="d-flex justify-content-center">
           @if (user?.accounts?.length === 1) {
-            <a
+            <button
               color="primary"
               mat-flat-button
-              [routerLink]="routerLinkAccounts"
+              type="button"
+              (click)="onRevealAccounts()"
             >
               <ng-container i18n>Setup accounts</ng-container>
-            </a>
+            </button>
           } @else if (user?.accounts?.length > 1) {
-            <a
+            <button
               color="primary"
               mat-flat-button
-              [routerLink]="routerLinkPortfolioActivities"
+              type="button"
+              (click)="onRevealActivities()"
             >
               <ng-container i18n>Add activity</ng-container>
-            </a>
+            </button>
           }
         </div>
       </div>

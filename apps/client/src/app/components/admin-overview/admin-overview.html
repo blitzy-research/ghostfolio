@@ -26,8 +26,21 @@
                 [value]="activitiesCount"
               />
               @if (activitiesCount && userCount) {
-                <div>
-                  {{ activitiesCount / userCount | number: '1.2-2' }}
+                <div class="align-items-center d-flex">
+                  <!--
+                    Formatted the same way as the count directly above it. This read
+                    `| number: '1.2-2'`, which formats against the locale the BUNDLE was
+                    built for, while its neighbour is a `gf-value` formatted against the
+                    locale the VIEWER chose - so two numbers one line apart could use
+                    different decimal separators for anyone whose locale differs from the
+                    build's.
+                  -->
+                  <gf-value
+                    class="mr-1"
+                    [locale]="user?.settings?.locale"
+                    [precision]="2"
+                    [value]="activitiesCount / userCount"
+                  />
                   <span i18n>per User</span>
                 </div>
               }
@@ -78,11 +91,13 @@
                   <div class="align-items-center d-flex">
                     <div class="text-truncate">{{ systemMessage | json }}</div>
                     <button
+                      aria-label="Delete the system message"
                       class="h-100 mx-1 no-min-width px-2"
+                      i18n-aria-label
                       mat-button
                       (click)="onDeleteSystemMessage()"
                     >
-                      <ion-icon name="trash-outline" />
+                      <ion-icon aria-hidden="true" name="trash-outline" />
                     </button>
                   </div>
                 }
@@ -93,7 +108,11 @@
                     mat-flat-button
                     (click)="onSetSystemMessage()"
                   >
-                    <ion-icon class="mr-1" name="information-circle-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-1"
+                      name="information-circle-outline"
+                    />
                     <span i18n>Set Message</span>
                   </button>
                 }
@@ -119,12 +138,17 @@
                       </td>
                       <td>
                         <button
+                          aria-label="Actions for this coupon"
                           class="mx-1 no-min-width px-2"
+                          i18n-aria-label
                           mat-button
                           [matMenuTriggerFor]="couponActionsMenu"
                           (click)="$event.stopPropagation()"
                         >
-                          <ion-icon name="ellipsis-horizontal" />
+                          <ion-icon
+                            aria-hidden="true"
+                            name="ellipsis-horizontal"
+                          />
                         </button>
                         <mat-menu
                           #couponActionsMenu="matMenu"
@@ -136,7 +160,11 @@
                             (click)="onDeleteCoupon(coupon.code)"
                           >
                             <span class="align-items-center d-flex">
-                              <ion-icon class="mr-2" name="trash-outline" />
+                              <ion-icon
+                                aria-hidden="true"
+                                class="mr-2"
+                                name="trash-outline"
+                              />
                               <span i18n>Delete</span>
                             </span>
                           </button>
@@ -200,12 +228,20 @@
                     mat-flat-button
                     (click)="onSyncDemoUserAccount()"
                   >
-                    <ion-icon class="mr-1" name="sync-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-1"
+                      name="sync-outline"
+                    />
                     <span i18n>Sync Demo User Account</span>
                   </button>
                 }
                 <button color="warn" mat-flat-button (click)="onFlushCache()">
-                  <ion-icon class="mr-1" name="close-circle-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-1"
+                    name="close-circle-outline"
+                  />
                   <span i18n>Flush Cache</span>
                 </button>
               </div>

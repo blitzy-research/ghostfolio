@@ -1,0 +1,160 @@
+<h1 mat-dialog-title>
+  <span i18n>Create Account</span>
+  @if (role === 'ADMIN') {
+    <span class="badge badge-light ml-2">{{ role }}</span>
+  }
+</h1>
+<div class="px-0" mat-dialog-content>
+  <mat-stepper
+    #stepper
+    animationDuration="0ms"
+    [linear]="true"
+    [orientation]="data.deviceType === 'mobile' ? 'vertical' : 'horizontal'"
+  >
+    <mat-step editable="false" [completed]="isDisclaimerChecked">
+      <ng-template i18n matStepLabel>Terms and Conditions</ng-template>
+      <div class="pt-2">
+        <ng-container i18n
+          >Please keep your security token safe. If you lose it, you will not be
+          able to recover your account.</ng-container
+        >
+      </div>
+      <mat-checkbox
+        class="mt-2"
+        color="primary"
+        (change)="onChangeDislaimerChecked()"
+      >
+        <ng-container i18n
+          >I understand that if I lose my security token, I cannot recover my
+          account</ng-container
+        >
+        @if (data.needsToAcceptTermsOfService) {
+          <ng-container>&nbsp;</ng-container>
+          <ng-container i18n
+            >and I agree to the
+            <a
+              class="font-weight-bold"
+              rel="noopener noreferrer"
+              target="_blank"
+              [href]="termsOfServiceUrl"
+              >Terms of Service</a
+            >.</ng-container
+          >
+        } @else {
+          <ng-container>.</ng-container>
+        }
+      </mat-checkbox>
+      <!--
+        Reported here rather than through a notification, because this is where the
+        control that failed is: the visitor has to be able to read what happened and
+        press it again without hunting for either.
+      -->
+      @if (hasCreationError) {
+        <div class="mt-3 registration-error" role="alert">
+          <!--
+            Two block elements rather than two inline ones. Angular strips the
+            whitespace between sibling elements, so inline spans render as
+            "went wrong.Please try again" with no gap - the same two-line shape the
+            canvas uses for the equivalent notice.
+          -->
+          <div i18n>Oops! Something went wrong.</div>
+          <div i18n>Please try again later.</div>
+        </div>
+      }
+
+      <div class="mt-3" mat-dialog-actions>
+        <div class="flex-grow-1">
+          <button i18n mat-button [mat-dialog-close]="undefined">Cancel</button>
+        </div>
+        <div>
+          <!--
+            "Create Account", because this is the control that creates it. It used
+            to read "Continue" while a later control read "Create Account" and
+            issued nothing, so a visitor who stopped at the next step believed they
+            had created nothing - and had in fact created an account holding a
+            security token they never saved.
+          -->
+          <button
+            color="primary"
+            mat-flat-button
+            [attr.aria-busy]="isCreatingAccount ? 'true' : null"
+            [disabled]="!isDisclaimerChecked || isCreatingAccount"
+            (click)="createAccount()"
+          >
+            <span i18n>Create Account</span>
+            <ion-icon class="ml-1" name="arrow-forward-outline" />
+          </button>
+        </div>
+      </div>
+    </mat-step>
+    <mat-step editable="false">
+      <ng-template i18n matStepLabel>Security Token</ng-template>
+      <div class="pt-2">
+        <ng-container i18n
+          >Here is your security token. It is only visible once, please store
+          and keep it in a safe place.</ng-container
+        >
+      </div>
+      <mat-form-field appearance="outline" class="pt-3 w-100 without-hint">
+        <mat-label i18n>Security Token</mat-label>
+        <textarea
+          #accessTokenField
+          cdkTextareaAutosize
+          matInput
+          readonly
+          type="text"
+          [(value)]="accessToken"
+        ></textarea>
+        <div class="float-right mt-1">
+          <button
+            color="secondary"
+            mat-flat-button
+            [cdkCopyToClipboard]="accessToken"
+            (cdkCopyToClipboardCopied)="onAccessTokenCopied($event)"
+            (click)="enableCreateAccountButton()"
+          >
+            <ion-icon aria-hidden="true" class="mr-1" name="copy-outline" />
+            <span i18n>Copy to clipboard</span>
+          </button>
+        </div>
+      </mat-form-field>
+      <!--
+        Says whether the copy actually happened. A live region rather than a
+        notification, because the token is on screen and must not be moved away
+        from, and polite rather than assertive because the visitor asked for this and
+        is not being interrupted. Empty until there is something to report, so it
+        announces nothing on arrival.
+      -->
+      <div aria-atomic="true" aria-live="polite" class="sr-only" role="status">
+        {{ accessTokenAnnouncement }}
+      </div>
+
+      <div align="end" class="mt-1" mat-dialog-actions>
+        <div>
+          <!--
+            "Continue", because that is all this control does: the account already
+            exists by the time this step is reached, and pressing this closes the
+            dialog and hands the session token to whoever opened it. Labelled
+            "Create Account" it claimed the creation that the previous step had
+            already performed, which is what made the step before it look
+            abandonable.
+          -->
+          <button
+            color="primary"
+            mat-flat-button
+            matStepperNext
+            [disabled]="isCreateAccountButtonDisabled"
+            [mat-dialog-close]="authToken"
+          >
+            <ng-container i18n>Continue</ng-container>
+          </button>
+        </div>
+      </div>
+    </mat-step>
+
+    <ng-template matStepperIcon="done">
+      <ion-icon name="checkmark-outline" />
+    </ng-template>
+  </mat-stepper>
+  <div></div>
+</div>

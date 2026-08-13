@@ -1,4 +1,4 @@
-import { XRayRulesSettings } from '@ghostfolio/common/interfaces';
+import type { XRayRulesSettings } from '@ghostfolio/common/interfaces';
 import type {
   ColorScheme,
   DateRange,

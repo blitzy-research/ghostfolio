@@ -1,0 +1,75 @@
+@use '../../../styles/variables.scss' as variables;
+
+@mixin select-arrow($color) {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' fill='#{$color}' height='6' width='10'><polygon points='0,0 10,0 5,6'/></svg>");
+}
+
+:host {
+  display: block;
+
+  // Body copy at the size every other module's body copy renders at.
+  //
+  // This leaf has no table, and that turns out to decide its type size: a Material table
+  // cell states 14px for itself, so every module built round one renders its text at 14px,
+  // while a leaf writing plain prose inherits Bootstrap's 16px page base instead. Measured
+  // across the canvas that produced two different body sizes depending on which module a
+  // reader was looking at - and here it also left the prose LARGER than the section
+  // heading introducing it, so the heading was the quieter of the two.
+  //
+  // Set on the host rather than on the individual prose blocks so anything added to this
+  // leaf later inherits it too. Material's own components are unaffected either way: each
+  // states its own type size through its component tokens rather than inheriting one.
+  font-size: 0.875rem;
+
+  // Cancels a Bootstrap gutter that escapes its container.
+  //
+  // `gf-fire-calculator` opens with `<div class="container p-0">` wrapping a
+  // `<div class="row">`. A Bootstrap row carries -15px horizontal margins that
+  // are only ever correct because the container it sits in supplies +15px of
+  // padding to absorb them; `p-0` removes exactly that padding, so the margins
+  // escape the container on both sides and the module region reports 15px of
+  // horizontal overflow. The left-hand half is the worse one - it lands in
+  // negative scroll space, which no gesture can reach.
+  //
+  // Zeroing the margins is the fix rather than restoring the container padding
+  // because the two are equivalent here and this one needs no `!important` to
+  // beat the `p-0` utility. The columns keep their own 15px padding either way,
+  // so it still acts as the internal gutter and painted content lands in the same
+  // place. Nothing moves out of view - only the invisible margin box overhangs -
+  // and there is exactly one row in that template, so no nested-grid math depends
+  // on these margins.
+  //
+  // Scoped to this component rather than fixed in `libs/ui`, because the
+  // calculator is shared and the overhang only matters once it is hosted in a
+  // fixed-width grid cell. `::ng-deep` is required because the container and row
+  // are written in the calculator's own template and never carry this component's
+  // content attribute; the `gf-fire-calculator` ancestor keeps the rule from
+  // reaching any other row on the canvas.
+  ::ng-deep gf-fire-calculator > .container.p-0 > .row {
+    margin-inline: 0;
+  }
+
+  .safe-withdrawal-rate-select {
+    @include select-arrow(variables.$dark-primary-text);
+
+    appearance: none;
+    background-color: transparent;
+    background-position: right 0 center;
+    background-repeat: no-repeat;
+    color: rgb(var(--dark-primary-text));
+    padding: 0 0.75rem 0 0.25rem;
+
+    &:focus {
+      box-shadow: none;
+      outline: 0;
+    }
+  }
+}
+
+:host-context(.theme-dark) {
+  .safe-withdrawal-rate-select {
+    @include select-arrow(variables.$light-primary-text);
+
+    color: rgb(var(--light-primary-text));
+  }
+}

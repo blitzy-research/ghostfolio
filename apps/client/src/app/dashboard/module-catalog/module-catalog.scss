@@ -1,0 +1,101 @@
+:host {
+  background: var(--mat-sys-surface-container, #ffffff);
+  border-end-start-radius: var(--mat-sys-corner-medium, 4px);
+  border-inline-start: 1px solid
+    var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
+  border-start-start-radius: var(--mat-sys-corner-medium, 4px);
+  color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+
+  .catalog-hint,
+  .no-results {
+    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+    cursor: default;
+    overflow-wrap: break-word;
+  }
+
+  .result-container {
+    // Absorbs the remaining height and scrolls on its own. `min-height` must be
+    // reset for a flex child to shrink below its content size.
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .search-container {
+    border-block-end: 1px solid
+      var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
+    flex: 0 0 auto;
+
+    // Retones the two things Material paints to mark this field focused, and it
+    // is a contrast fix rather than a preference.
+    //
+    // The theme sets both of these tokens to the brand primary - `#36cfcc`, a
+    // light teal - which is legible against the field's resting surface and
+    // stops being legible against the wash below: composited over the surface
+    // that wash resolves to roughly `#dff7f7`, and teal on that measures 1.83:1,
+    // against the 3:1 a focus indicator owes and the 4.5:1 a text label owes.
+    // Both the outline AND the floating label were affected, so the field
+    // announced its focus twice and neither announcement was readable.
+    //
+    // On-surface is the same ink every other focused control in this chrome
+    // draws its ring in, so the field now matches the catalog rows below it
+    // instead of contradicting them, and it clears both thresholds against the
+    // wash in either theme. The width is left at Material's own focused 2px,
+    // which is already the value the rest of the chrome uses.
+    //
+    // Declared on this region rather than on the field so the pairing stays with
+    // the background that made it necessary - the two cannot drift apart, and
+    // nothing outside this container is retoned.
+    --mat-form-field-outlined-focus-label-text-color: var(
+      --mat-sys-on-surface,
+      rgba(0, 0, 0, 0.87)
+    );
+    --mat-form-field-outlined-focus-outline-color: var(
+      --mat-sys-on-surface,
+      rgba(0, 0, 0, 0.87)
+    );
+
+    // Focus affordance on the catalog's own chrome: a brand-tinted wash marks
+    // the search region active while focus sits inside it. `:focus-within`
+    // rather than `:focus-visible` is correct because the styled element is the
+    // region, not the focused control, whose ring stays Material's concern.
+    &:focus-within {
+      background: var(--mat-sys-primary-container, rgba(54, 207, 204, 0.16));
+    }
+  }
+}
+
+:host-context(.theme-dark) {
+  background: var(--mat-sys-surface-container, #262626);
+  border-inline-start: 1px solid
+    var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
+  color: var(--mat-sys-on-surface, #ffffff);
+
+  .catalog-hint,
+  .no-results {
+    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+
+  .search-container {
+    border-block-end: 1px solid
+      var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
+
+    // Restated because the fallback is what paints while the `--mat-sys` layer is
+    // unpopulated, and because this is the pairing that differs: the wash is the
+    // same brand tint over a `#262626` surface, so the readable ink against it is
+    // white rather than near-black.
+    --mat-form-field-outlined-focus-label-text-color: var(
+      --mat-sys-on-surface,
+      #ffffff
+    );
+    --mat-form-field-outlined-focus-outline-color: var(
+      --mat-sys-on-surface,
+      #ffffff
+    );
+  }
+}

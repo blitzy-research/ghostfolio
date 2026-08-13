@@ -1,5 +1,5 @@
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { GfSymbolPipe } from '@ghostfolio/common/pipes';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 
 import { FocusableOption } from '@angular/cdk/a11y';
 import {
@@ -14,12 +14,12 @@ import {
   inject,
   output
 } from '@angular/core';
-import { Params, RouterModule } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterModule } from '@angular/router';
 
 import { SearchMode } from '../enums/search-mode';
 import {
   AssetSearchResultItem,
-  SearchResultItem
+  type SearchResultItem
 } from '../interfaces/interfaces';
 
 @Component({
@@ -39,12 +39,37 @@ export class GfAssistantListItemComponent
   @ViewChild('link') public linkElement: ElementRef<HTMLAnchorElement>;
 
   public hasFocus = false;
+
+  /**
+   * Whether the row applies its query parameters through the router link the
+   * template binds.
+   *
+   * False for an asset profile, which applies them from {@link onClick} instead
+   * so that they land after the module that reads them has been asked for, and
+   * false for a quick link, which has no parameters to apply at all. Expressed
+   * as a flag rather than as a mode comparison in the template so that the
+   * template carries no mode literals and the rule lives in one place.
+   */
+  public hasRouterLink = false;
+
   public queryParams: Params;
   public routerLink: string[];
 
   protected readonly clicked = output<void>();
 
+  /**
+   * Names the dashboard module the activated result stands for. Emitted for the
+   * result kinds that carry a module discriminator, so the consumer can surface
+   * that module without this library knowing how modules are hosted. This
+   * output is the only channel through which an app-directed intent leaves the
+   * component; the shared module vocabulary keeps it framework- and
+   * application-agnostic.
+   */
+  protected readonly moduleSelected = output<DashboardModuleType>();
+
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   @HostBinding('class.has-focus')
   public get getHasFocus() {
@@ -52,33 +77,71 @@ export class GfAssistantListItemComponent
   }
 
   public ngOnChanges() {
+    this.hasRouterLink = false;
+
     if (this.item?.mode === SearchMode.ACCOUNT) {
       this.queryParams = {
         accountDetailDialog: true,
-        accountId: this.item.id
+        accountId: this.item.id,
+        // Nulled because these parameters are merged rather than replacing the
+        // whole map, and the module that answers this request tests its create and
+        // edit flags against the same discriminator. A stale one left on the URL by
+        // an earlier interaction would open that module's create form instead of
+        // this account's detail dialog.
+        createDialog: null,
+        editDialog: null,
+        // More than one module knows how to open this dialog, so the result
+        // names the one it stands for. The discriminator travels on the result
+        // itself, which keeps this library free of any knowledge of how the
+        // application composes its modules while still leaving exactly one of
+        // them to react.
+        dialogModule: this.item.moduleType
       };
 
-      this.routerLink = internalRoutes.accounts.routerLink;
+      // The dialog is addressed by query parameter rather than by screen, so the
+      // empty command array keeps the activation on the current URL instead of
+      // navigating anywhere.
+      this.routerLink = [];
+      this.hasRouterLink = true;
     } else if (this.item?.mode === SearchMode.ASSET_PROFILE) {
       this.queryParams = {
         assetProfileDialog: true,
+        // `dataSource` and `symbol` are shared identifiers: three flags read that
+        // same pair, and the other two are read by the application shell and by the
+        // benchmark table. Because these parameters are merged rather than
+        // replacing the whole map, leaving either up would re-point *their* dialog
+        // at this asset rather than merely leaving it alone.
+        benchmarkDetailDialog: null,
         dataSource: this.item.dataSource,
+        holdingDetailDialog: null,
         symbol: this.item.symbol
       };
 
-      this.routerLink =
-        internalRoutes.adminControl.subRoutes.marketData.routerLink ?? [];
+      // Same route-free dialog form as the account branch above, but applied by
+      // `onClick` rather than by a router link, because these parameters have
+      // to land after the module that reads them has been asked for.
     } else if (this.item?.mode === SearchMode.HOLDING) {
       this.queryParams = {
+        // Same shared-identifier obligation as the asset profile branch above: the
+        // pair this takes over is read by two other flags, so both are nulled.
+        assetProfileDialog: null,
+        benchmarkDetailDialog: null,
         dataSource: this.item.dataSource,
         holdingDetailDialog: true,
         symbol: this.item.symbol
       };
 
+      // Kept on the router link: the holding detail dialog is opened by the
+      // application shell, which is mounted for the whole session, so these
+      // parameters always have a reader and need no module surfaced first.
       this.routerLink = [];
+      this.hasRouterLink = true;
     } else if (this.item?.mode === SearchMode.QUICK_LINK) {
+      // A quick link is the one genuinely navigational mode, and the URL no
+      // longer selects a screen. It therefore derives no router link at all:
+      // revealing the module the item names is the consumer's responsibility
+      // and travels through the `moduleSelected` output instead.
       this.queryParams = {};
-      this.routerLink = this.item.routerLink;
     }
   }
 
@@ -98,6 +161,32 @@ export class GfAssistantListItemComponent
   }
 
   public onClick() {
+    // Every result kind that names a module asks for it here. Holding results
+    // are the one kind that names none, because the dialog they open belongs to
+    // the shell rather than to a module; the property check narrows the union
+    // and lets them fall through. The intent is emitted before the click so that
+    // a consumer which closes the assistant on click can never observe a close
+    // ahead of the selection it belongs to.
+    if (this.item && 'moduleType' in this.item) {
+      this.moduleSelected.emit(this.item.moduleType);
+    }
+
+    // Applied here, and only after the intent above, because the asset profile
+    // dialog is opened by the market data administration module: asking for the
+    // module first means the parameters arrive at a canvas that already hosts
+    // their reader, instead of at one where nothing is listening yet. Every
+    // other kind either has a shell-owned reader or no parameters at all, and
+    // keeps applying them through the template's router link.
+    if (this.item?.mode === SearchMode.ASSET_PROFILE) {
+      // What this request takes over it nulls explicitly instead; see
+      // `ngOnChanges`.
+      void this.router.navigate([], {
+        queryParams: this.queryParams,
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
+      });
+    }
+
     this.clicked.emit();
   }
 

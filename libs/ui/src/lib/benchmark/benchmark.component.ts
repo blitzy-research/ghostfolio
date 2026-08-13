@@ -1,3 +1,4 @@
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { ConfirmationDialogType } from '@ghostfolio/common/enums';
 import {
   getLocale,
@@ -17,6 +18,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
+  OnInit,
   computed,
   effect,
   inject,
@@ -62,9 +64,25 @@ import { BenchmarkDetailDialogParams } from './benchmark-detail-dialog/interface
   styleUrls: ['./benchmark.component.scss'],
   templateUrl: './benchmark.component.html'
 })
-export class GfBenchmarkComponent {
+export class GfBenchmarkComponent implements OnInit {
   public readonly benchmarks = input.required<Benchmark[]>();
   public readonly deviceType = input.required<string>();
+
+  /**
+   * The module this instance stands for, as the discriminator its dialog request
+   * is addressed with.
+   *
+   * Required rather than optional, and that is deliberate. Three modules mount
+   * this component - markets, premium markets and the watchlist - and on the
+   * single-canvas shell all three can be on screen at once, all three observe the
+   * same query parameters, and `benchmarkDetailDialog` said nothing about which of
+   * them a request was for. One click therefore opened the dialog up to three
+   * times over. An optional input would have left that outcome reachable simply by
+   * forgetting to pass it, in a template that would still compile; requiring it
+   * makes a new host declare its identity or fail to build.
+   */
+  public readonly dialogModule = input.required<DashboardModuleType>();
+
   public readonly hasPermissionToDeleteItem = input<boolean>();
   public readonly locale = input(getLocale());
   public readonly showSymbol = input(true);
@@ -98,6 +116,12 @@ export class GfBenchmarkComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
+  /**
+   * The benchmark whose detail dialog this instance has already been asked for, or
+   * `null` for none.
+   */
+  private servedDialogAddress: string | null = null;
+
   public constructor() {
     effect(() => {
       const benchmarks = this.benchmarks();
@@ -112,22 +136,100 @@ export class GfBenchmarkComponent {
       }
     });
 
+    addIcons({ ellipsisHorizontal, trashOutline });
+  }
+
+  /**
+   * Observes the shared query stream, and does so from HERE rather than from the
+   * constructor.
+   *
+   * The distinction is load-bearing rather than stylistic. `route.queryParams`
+   * delivers its current value synchronously the moment it is subscribed to, and
+   * the guard below reads {@link dialogModule}, which is a REQUIRED signal input.
+   * Subscribed in the constructor, that read happens before Angular has run its
+   * first input-binding pass, so a request already sitting on the URL threw
+   * `NG0950` once per mounted instance instead of opening anything - and because
+   * the throw happened while the guard was being computed, {@link
+   * servedDialogAddress} was never assigned, which left the request on the URL
+   * still looking unserved. Every producer on this canvas merges, so the next
+   * ordinary interaction re-delivered those parameters alongside its own and
+   * opened this dialog over the one the viewer had actually asked for.
+   *
+   * That is the shape of a link arriving cold: on the single-canvas shell a module
+   * is materialised lazily *in response to* parameters that are already there, so
+   * the first emission carries a real request rather than an empty object. Angular
+   * sets inputs before `ngOnInit`, which is what makes the discriminator readable
+   * at the first emission, and the stream's synchronous delivery is what makes the
+   * request served on that same first pass rather than a frame later.
+   */
+  public ngOnInit() {
     this.route.queryParams
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((params) => {
-        if (
+        const isRequested =
           params['benchmarkDetailDialog'] &&
           params['dataSource'] &&
-          params['symbol']
-        ) {
+          params['symbol'] &&
+          // The gate that makes exactly one of the co-mounted instances answer.
+          params['dialogModule'] === this.dialogModule();
+
+        // Keyed on the request the URL is making rather than on the dialog's own
+        // lifecycle, so that a request already served is not served again - every
+        // producer on the canvas merges, so these parameters are re-observed
+        // whenever any other module writes to the URL - and a request withdrawn is
+        // forgotten, which is what lets the same benchmark be opened a second time.
+        const address: string | null = isRequested
+          ? `${params['dataSource']}:${params['symbol']}`
+          : null;
+
+        if (this.servedDialogAddress === address) {
+          return;
+        }
+
+        this.servedDialogAddress = address;
+
+        if (isRequested) {
           this.openBenchmarkDetailDialog({
             dataSource: params['dataSource'],
             symbol: params['symbol']
           });
         }
       });
+  }
 
-    addIcons({ ellipsisHorizontal, trashOutline });
+  /**
+   * The accessible name of a row's actions trigger, naming that row's own subject.
+   *
+   * Composed here rather than written as a fixed label in the template, for two
+   * reasons that a single string cannot satisfy at once.
+   *
+   * The first is that a fixed label has to name a KIND, and this component has no
+   * single kind to name: three modules mount it, and in the watchlist the rows are
+   * watchlist items rather than benchmarks - so `Actions for this benchmark` was
+   * simply describing the wrong thing on one of the three. Naming the row's own
+   * subject sidesteps the question: the row is what the menu acts on, whatever the
+   * module hosting it is called.
+   *
+   * The second is that a fixed label is the SAME on every row. This trigger opens
+   * a menu whose only item deletes, and a reader moving through a table of them
+   * would hear one identical name per row with nothing to say which holding they
+   * were about to remove. On the single canvas all three hosting modules can be on
+   * screen at once, so the duplication was across tables as well as within one.
+   *
+   * The name is preferred over the symbol because the name is what the row shows
+   * first; the symbol is the fallback for a profile carrying no name, and is also
+   * shown beneath the name whenever `showSymbol` is set, so either way the spoken
+   * name is text the viewer can see.
+   */
+  protected getItemActionsLabel(aBenchmark: Benchmark) {
+    // Length-tested rather than coalesced: a profile can carry an EMPTY name as
+    // well as none at all, and `??` would take the empty one and leave the trigger
+    // named after nothing.
+    const subject = aBenchmark?.name?.length
+      ? aBenchmark.name
+      : aBenchmark?.symbol;
+
+    return $localize`Actions for ${subject}:itemName:`;
   }
 
   protected onDeleteItem({ dataSource, symbol }: AssetProfileIdentifier) {
@@ -144,8 +246,22 @@ export class GfBenchmarkComponent {
     dataSource,
     symbol
   }: AssetProfileIdentifier) {
-    this.router.navigate([], {
-      queryParams: { dataSource, symbol, benchmarkDetailDialog: true }
+    // Merging in turn obliges this producer to null what it is taking over.
+    // `dataSource` and `symbol` are shared identifiers: three flags read that same
+    // pair, and the other two are read by the application shell and by the market
+    // data administration module. Leaving either of them up would re-point *their*
+    // dialog at this benchmark rather than merely leaving it alone.
+    void this.router.navigate([], {
+      queryParams: {
+        dataSource,
+        symbol,
+        assetProfileDialog: null,
+        benchmarkDetailDialog: true,
+        dialogModule: this.dialogModule(),
+        holdingDetailDialog: null
+      },
+      queryParamsHandling: 'merge',
+      relativeTo: this.route
     });
   }
 
@@ -172,7 +288,21 @@ export class GfBenchmarkComponent {
       .afterClosed()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
-        this.router.navigate(['.'], { relativeTo: this.route });
+        // Removes the parameters this dialog travelled on, and only those. The
+        // `navigate(['.'])` this replaced named a route segment instead, which
+        // dropped every query parameter on the canvas: closing this dialog also
+        // closed a sibling module's and discarded the shared-portfolio access
+        // identifier along with it.
+        void this.router.navigate([], {
+          queryParams: {
+            benchmarkDetailDialog: null,
+            dataSource: null,
+            dialogModule: null,
+            symbol: null
+          },
+          queryParamsHandling: 'merge',
+          relativeTo: this.route
+        });
       });
   }
 }

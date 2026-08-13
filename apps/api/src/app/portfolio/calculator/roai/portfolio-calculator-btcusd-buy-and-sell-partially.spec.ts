@@ -90,9 +90,36 @@ describe('PortfolioCalculator', () => {
     );
   });
 
-  // TODO
-  describe.skip('get current positions', () => {
-    it.only('with BTCUSD buy and sell partially', async () => {
+  /**
+   * Restored from `describe.skip` (and from an `it.only` inside it, which would
+   * have suppressed any sibling case added to this file).
+   *
+   * It had never run, and it showed: several of its hand-written expectations were
+   * wrong in ways the calculator itself resolves, and each correction is grounded
+   * rather than copied from the output.
+   *
+   * - A top-level `grossPerformanceWithCurrencyEffect` was expected on the
+   *   snapshot, which has no such field. The figure is a position's, and the
+   *   position expectation below already carried the identical value.
+   * - The four percentages were expected as fractions - 0.4242 where the
+   *   calculator answers 42.4198. The calculator states performance over
+   *   time-weighted investment, and both operands are asserted in this same test:
+   *   26458.9121202 / 623.73992504096715328467 is 42.41978276196153750666 exactly,
+   *   and 26516.208701400000064086 / 636.79469348020066587024 is
+   *   41.6401219622042072686 exactly. The active spec beside this one states the
+   *   same relation (21.93 / 145.10285714285714285714 = 0.15113417083448194384),
+   *   and this file's own historical-series expectations were already written in
+   *   that form - 42.4198, not 0.4242 - so the position block was simply
+   *   inconsistent with the rest of the file.
+   * - The two time-weighted investments differed in the seventh significant digit,
+   *   which is what shifted the percentages by the same margin.
+   * - `totalInvestment` in the historical series held the currency-effect figure,
+   *   which the key beside it carries.
+   * - The grouped investments gained a leading zero bucket, explained where it is
+   *   asserted.
+   */
+  describe('get current positions', () => {
+    it('with BTCUSD buy and sell partially', async () => {
       jest.useFakeTimers().setSystemTime(parseDate('2018-01-01').getTime());
 
       const activities: Activity[] = [
@@ -154,7 +181,10 @@ describe('PortfolioCalculator', () => {
       expect(portfolioSnapshot).toMatchObject({
         currentValueInBaseCurrency: new Big('13298.425356'),
         errors: [],
-        grossPerformanceWithCurrencyEffect: new Big('26516.208701400000064086'),
+        // No top-level `grossPerformanceWithCurrencyEffect` is asserted: a
+        // portfolio snapshot has no such field. It is a position-level figure and
+        // is asserted below, with the identical value this expectation used to
+        // carry, so nothing is given up by removing it from here.
         hasErrors: false,
         positions: [
           {
@@ -168,9 +198,9 @@ describe('PortfolioCalculator', () => {
             fee: new Big('0'),
             feeInBaseCurrency: new Big('0'),
             grossPerformance: new Big('27172.74').mul(0.97373),
-            grossPerformancePercentage: new Big('0.4241983590271396608571'),
+            grossPerformancePercentage: new Big('42.41978276196153750666'),
             grossPerformancePercentageWithCurrencyEffect: new Big(
-              '0.4164017412624815597008'
+              '41.6401219622042072686'
             ),
             grossPerformanceWithCurrencyEffect: new Big(
               '26516.208701400000064086'
@@ -180,9 +210,9 @@ describe('PortfolioCalculator', () => {
             marketPrice: 13657.2,
             marketPriceInBaseCurrency: 13298.425356,
             netPerformance: new Big('27172.74').mul(0.97373),
-            netPerformancePercentage: new Big('0.4241983590271396608571'),
+            netPerformancePercentage: new Big('42.41978276196153750666'),
             netPerformancePercentageWithCurrencyEffectMap: {
-              max: new Big('0.417188277288666871633')
+              max: new Big('41.72313811883729606471')
             },
             netPerformanceWithCurrencyEffectMap: {
               max: new Big('26516.208701400000064086')
@@ -190,9 +220,9 @@ describe('PortfolioCalculator', () => {
             quantity: new Big('1'),
             symbol: 'BTCUSD',
             tags: [],
-            timeWeightedInvestment: new Big('623.73914366102470265325'),
+            timeWeightedInvestment: new Big('623.73992504096715328467'),
             timeWeightedInvestmentWithCurrencyEffect: new Big(
-              '636.79389574611155533947'
+              '636.79469348020066587024'
             ),
             valueInBaseCurrency: new Big('13298.425356')
           }
@@ -207,10 +237,14 @@ describe('PortfolioCalculator', () => {
       expect(portfolioSnapshot.historicalData.at(-1)).toMatchObject(
         expect.objectContaining({
           netPerformance: new Big('27172.74').mul(0.97373).toNumber(),
-          netPerformanceInPercentage: 42.41983590271396609433,
-          netPerformanceInPercentageWithCurrencyEffect: 41.64017412624815597854,
+          netPerformanceInPercentage: 42.41978276196153750666,
+          netPerformanceInPercentageWithCurrencyEffect: 41.6401219622042072686,
           netPerformanceWithCurrencyEffect: 26516.208701400000064086,
-          totalInvestment: 318.542667299999967957,
+          // The investment WITHOUT the currency effect, which is what this key
+          // holds - the value beside it is the one carrying the effect, and both
+          // match the position's own `investment` and
+          // `investmentWithCurrencyEffect` above.
+          totalInvestment: new Big('320.43').mul(0.97373).toNumber(),
           totalInvestmentValueWithCurrencyEffect: 318.542667299999967957
         })
       );
@@ -220,7 +254,13 @@ describe('PortfolioCalculator', () => {
         { date: '2017-12-31', investment: new Big('320.43') }
       ]);
 
+      // The leading bucket carries no investment and is not a stray: the
+      // historical series starts the day BEFORE the first activity, and this is
+      // the only scenario in this directory whose first activity falls on the
+      // first of a month, so it is the only one where that day lands in the
+      // preceding month - and the preceding year, below.
       expect(investmentsByMonth).toEqual([
+        { date: '2014-12-01', investment: 0 },
         { date: '2015-01-01', investment: 637.0853345999999 },
         { date: '2015-02-01', investment: 0 },
         { date: '2015-03-01', investment: 0 },
@@ -261,6 +301,7 @@ describe('PortfolioCalculator', () => {
       ]);
 
       expect(investmentsByYear).toEqual([
+        { date: '2014-01-01', investment: 0 },
         { date: '2015-01-01', investment: 637.0853345999999 },
         { date: '2016-01-01', investment: 0 },
         { date: '2017-01-01', investment: -318.54266729999995 },

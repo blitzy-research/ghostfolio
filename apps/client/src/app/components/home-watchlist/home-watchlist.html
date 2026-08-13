@@ -9,27 +9,62 @@
   </h1>
   <div class="row">
     <div class="col-xs-12 col-md-10 offset-md-1">
-      <gf-benchmark
-        [benchmarks]="watchlist"
-        [deviceType]="deviceType()"
-        [hasPermissionToDeleteItem]="hasPermissionToDeleteWatchlistItem"
-        [locale]="user?.settings?.locale || undefined"
-        [user]="user"
-        (itemDeleted)="onWatchlistItemDeleted($event)"
-      />
+      <!--
+        The finite state a failed read now ends in. It REPLACES the table rather
+        than sitting above it, because the table draws skeleton rows whenever it has
+        no list - so leaving it mounted beside a message is what made the module look
+        like it was still loading.
+      -->
+      @if (hasError) {
+        <div
+          class="align-items-center d-flex flex-column py-4 text-center"
+          role="alert"
+        >
+          <div class="mb-3" i18n>Your watchlist could not be loaded.</div>
+          <button
+            color="primary"
+            i18n
+            mat-flat-button
+            type="button"
+            (click)="onRetry()"
+          >
+            Try again
+          </button>
+        </div>
+      } @else {
+        <gf-benchmark
+          [benchmarks]="watchlist"
+          [deviceType]="deviceType()"
+          [dialogModule]="benchmarkDialogModule"
+          [hasPermissionToDeleteItem]="hasPermissionToDeleteWatchlistItem"
+          [locale]="user?.settings?.locale || undefined"
+          [user]="user"
+          (itemDeleted)="onWatchlistItemDeleted($event)"
+        />
+      }
     </div>
   </div>
 </div>
 @if (!hasImpersonationId && hasPermissionToCreateWatchlistItem) {
   <div class="fab-container">
+    <!--
+      An icon-only control, so its accessible name has to come from an attribute.
+      The label is the title of the dialog this control opens, which is an already
+      translated source message - the name a screen reader announces therefore
+      matches the dialog that appears. The glyph is decorative and hidden so it
+      cannot be announced a second time.
+    -->
     <a
+      aria-label="Add asset to watchlist"
       class="align-items-center d-flex justify-content-center"
       color="primary"
+      i18n-aria-label
       mat-fab
-      [queryParams]="{ createWatchlistItemDialog: true }"
+      queryParamsHandling="merge"
+      [queryParams]="createDialogQueryParams"
       [routerLink]="[]"
     >
-      <ion-icon name="add-outline" size="large" />
+      <ion-icon aria-hidden="true" name="add-outline" size="large" />
     </a>
   </div>
 }

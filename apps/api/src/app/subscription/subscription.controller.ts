@@ -6,6 +6,10 @@ import {
   PROPERTY_COUPONS
 } from '@ghostfolio/common/config';
 import {
+  CreateStripeCheckoutSessionDto,
+  RedeemCouponDto
+} from '@ghostfolio/common/dtos';
+import {
   Coupon,
   CreateStripeCheckoutSessionResponse
 } from '@ghostfolio/common/interfaces';
@@ -31,6 +35,18 @@ import { StatusCodes, getReasonPhrase } from 'http-status-codes';
 
 import { SubscriptionService } from './subscription.service';
 
+/**
+ * The stable event identifier a failed checkout-session creation is reported
+ * under.
+ *
+ * Fixed, because a log line is read by everyone who can read the log, is captured
+ * verbatim by log shipping, and outlives the attempt that produced it. The
+ * identifier is what makes the event searchable; the provider's own error text is
+ * what would make it a disclosure.
+ */
+const STRIPE_CHECKOUT_SESSION_FAILED_EVENT =
+  'GF-STRIPE-CHECKOUT-SESSION-FAILED';
+
 @Controller('subscription')
 export class SubscriptionController {
   public constructor(
@@ -43,7 +59,7 @@ export class SubscriptionController {
   @Post('redeem-coupon')
   @HttpCode(StatusCodes.OK)
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
-  public async redeemCoupon(@Body() { couponCode }: { couponCode: string }) {
+  public async redeemCoupon(@Body() { couponCode }: RedeemCouponDto) {
     if (!this.request.user) {
       throw new HttpException(
         getReasonPhrase(StatusCodes.FORBIDDEN),
@@ -71,7 +87,6 @@ export class SubscriptionController {
       userId: this.request.user.id
     });
 
-    // Destroy coupon
     coupons = coupons.filter((currentCoupon) => {
       return currentCoupon.code !== couponCode;
     });
@@ -100,32 +115,79 @@ export class SubscriptionController {
       request.query.checkoutSessionId as string
     );
 
-    Logger.log(
-      `Subscription for user '${userId}' has been created via Stripe`,
-      'SubscriptionController'
-    );
+    if (userId) {
+      // Deliberately identity-free. What an operator needs from this line is that
+      // a checkout session was turned into a subscription, which is what makes the
+      // warning below meaningful by contrast; naming the account would put a
+      // subscriber identifier into a line that is read by everyone who can read the
+      // log, is captured verbatim by log shipping and outlives the payment it
+      // describes. The account is already reachable from the subscription record
+      // itself, where it is protected.
+      Logger.log(
+        'A Stripe checkout session has been turned into a subscription',
+        'SubscriptionController'
+      );
+    } else {
+      // The service reports a checkout session it could not turn into a
+      // subscription by resolving without a user. Stating the success
+      // unconditionally would tell an operator reading the log that an
+      // entitlement exists when none was granted - and would interpolate a
+      // literal `undefined` where the account should be - which is exactly the
+      // wrong conclusion to reach while investigating a billing complaint. The
+      // failure is recorded instead, without the checkout session identifier:
+      // the service has already logged the underlying provider error, and the
+      // identifier belongs to a payment session rather than in an operations log.
+      Logger.warn(
+        'A Stripe checkout session could not be turned into a subscription',
+        'SubscriptionController'
+      );
+    }
 
+    // Redirected either way, deliberately. Whoever has just paid is returning
+    // from the payment provider in a browser, so leaving them on an API response
+    // because provisioning failed would strand them; the log above is what
+    // distinguishes the two outcomes.
     response.redirect(
-      `${this.configurationService.get(
-        'ROOT_URL'
-      )}/${DEFAULT_LANGUAGE_CODE}/account/membership`
+      `${this.configurationService.get('ROOT_URL')}/${DEFAULT_LANGUAGE_CODE}/`
     );
   }
 
   @Post('stripe/checkout-session')
   @UseGuards(AuthGuard('jwt'), HasPermissionGuard)
-  public createStripeCheckoutSession(
-    @Body() { couponId, priceId }: { couponId?: string; priceId: string }
+  public async createStripeCheckoutSession(
+    @Body() { couponId, priceId }: CreateStripeCheckoutSessionDto
   ): Promise<CreateStripeCheckoutSessionResponse> {
     try {
-      return this.subscriptionService.createStripeCheckoutSession({
+      // Awaited, not returned. The collaborator is asynchronous and reaches the
+      // payment provider only after awaiting a property lookup, so it cannot fail
+      // synchronously: it hands back a promise and rejects it later. Returning
+      // that promise would settle it after this frame is gone, which leaves the
+      // `catch` below unreachable on the one path that actually occurs - and an
+      // uncaught rejection is answered by Nest's default handler, which logs the
+      // provider's error object verbatim and reports a 500 instead of the bad
+      // request this endpoint means. The `await` is what keeps the failure inside
+      // this method.
+      return await this.subscriptionService.createStripeCheckoutSession({
         couponId,
         priceId,
         user: this.request.user
       });
     } catch (error) {
-      Logger.error(error, 'SubscriptionController');
+      // A fixed event identifier, not the caught object. The payment provider's
+      // error carries its own request and account identifiers, echoes the price
+      // and coupon the caller submitted, and maps out this application through
+      // its stack - none of which helps an operator decide what to do, and all of
+      // which lands verbatim in a log that is read by everyone who can read it and
+      // outlives the checkout attempt it describes.
+      Logger.error(
+        STRIPE_CHECKOUT_SESSION_FAILED_EVENT,
+        'SubscriptionController'
+      );
 
+      // Raised rather than rethrown, and deliberately without a `cause`: an
+      // `HttpException` is an intrinsic exception, so Nest maps it to the status
+      // below without logging it, whereas attaching the provider's error would
+      // put everything the log line above avoids back into the same log.
       throw new HttpException(
         getReasonPhrase(StatusCodes.BAD_REQUEST),
         StatusCodes.BAD_REQUEST

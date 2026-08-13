@@ -21,6 +21,11 @@
           type="text"
           (keydown.enter)="$event.stopPropagation()"
         />
+        @if (accessForm.get('alias')?.hasError('validationError')) {
+          <mat-error>{{
+            accessForm.get('alias').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     <div>
@@ -30,6 +35,9 @@
           <mat-option i18n value="PRIVATE">Private</mat-option>
           <mat-option i18n value="PUBLIC">Public</mat-option>
         </mat-select>
+        @if (accessForm.get('type')?.hasError('required')) {
+          <mat-error i18n>Please choose a type.</mat-error>
+        }
       </mat-form-field>
     </div>
 
@@ -42,6 +50,15 @@
             <mat-option i18n value="READ">View</mat-option>
           }
         </mat-select>
+        @if (accessForm.get('permissions')?.hasError('required')) {
+          <mat-error i18n>Please choose a permission.</mat-error>
+        } @else if (
+          accessForm.get('permissions')?.hasError('validationError')
+        ) {
+          <mat-error>{{
+            accessForm.get('permissions').getError('validationError')
+          }}</mat-error>
+        }
       </mat-form-field>
     </div>
     @if (accessForm.get('type')?.value === 'PRIVATE') {
@@ -56,6 +73,26 @@
             type="text"
             (keydown.enter)="$event.stopPropagation()"
           />
+          <!--
+            This field is required only while the type is Private - the validator is
+            added and removed as the type changes - so the rule is conditional and was
+            stated nowhere. Save simply stayed disabled. The hint explains the shape the
+            value has to take, because a user identifier is not something a viewer can
+            guess is malformed, and the DTO's own message is what reports a value the
+            server rejected.
+          -->
+          @if (accessForm.get('granteeUserId')?.hasError('required')) {
+            <mat-error i18n
+              >Please enter the Ghostfolio user ID to grant access to. Private
+              access is granted to one user.</mat-error
+            >
+          } @else if (
+            accessForm.get('granteeUserId')?.hasError('validationError')
+          ) {
+            <mat-error>{{
+              accessForm.get('granteeUserId').getError('validationError')
+            }}</mat-error>
+          }
         </mat-form-field>
       </div>
     }
@@ -72,10 +109,12 @@
       color="primary"
       mat-flat-button
       type="submit"
+      [attr.aria-busy]="isSubmitting ? 'true' : null"
       [disabled]="
-        mode === 'create'
+        isSubmitting ||
+        (mode === 'create'
           ? !(accessForm.dirty && accessForm.valid)
-          : !accessForm.valid
+          : !accessForm.valid)
       "
     >
       <ng-container i18n>Save</ng-container>

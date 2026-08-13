@@ -58,7 +58,11 @@ export class TagsController {
       }
     }
 
-    return this.tagService.createTag(data);
+    try {
+      return await this.tagService.createTag(data);
+    } catch (error) {
+      throw this.translateTagWriteError(error);
+    }
   }
 
   @Delete(':id')
@@ -101,13 +105,45 @@ export class TagsController {
       );
     }
 
-    return this.tagService.updateTag({
-      data: {
-        ...data
-      },
-      where: {
-        id
-      }
-    });
+    try {
+      return await this.tagService.updateTag({
+        data: {
+          ...data
+        },
+        where: {
+          id
+        }
+      });
+    } catch (error) {
+      throw this.translateTagWriteError(error);
+    }
+  }
+
+  /**
+   * Turns a rejected tag write into the answer its cause deserves.
+   *
+   * A tag is unique per owner by database constraint, so a repeated name is refused at
+   * the storage layer with Prisma's `P2002`. Unmapped, that surfaced as a 500 - which
+   * says the server broke when in fact the request was answerable and simply not
+   * allowed, and left the interface with nothing better to offer than a generic apology
+   * for a condition its viewer could have corrected in a second.
+   *
+   * `409` rather than `400`, because the request is well formed: it conflicts with what
+   * already exists, and only the current contents of the store make it wrong. Anything
+   * that is not a uniqueness conflict is re-raised untouched, so a genuine fault is
+   * still a fault.
+   *
+   * @param aError the value thrown by the storage layer.
+   * @returns the exception to raise in its place.
+   */
+  private translateTagWriteError(aError: unknown) {
+    if ((aError as { code?: string })?.code === 'P2002') {
+      return new HttpException(
+        getReasonPhrase(StatusCodes.CONFLICT),
+        StatusCodes.CONFLICT
+      );
+    }
+
+    return aError;
   }
 }

@@ -1,5 +1,6 @@
 import { ActivitiesModule } from '@ghostfolio/api/app/activities/activities.module';
 import { SubscriptionModule } from '@ghostfolio/api/app/subscription/subscription.module';
+import { PerformanceLoggingModule } from '@ghostfolio/api/interceptors/performance-logging/performance-logging.module';
 import { RedactValuesInResponseModule } from '@ghostfolio/api/interceptors/redact-values-in-response/redact-values-in-response.module';
 import { ConfigurationModule } from '@ghostfolio/api/services/configuration/configuration.module';
 import { I18nModule } from '@ghostfolio/api/services/i18n/i18n.module';
@@ -11,11 +12,26 @@ import { TagModule } from '@ghostfolio/api/services/tag/tag.module';
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 
+import { UserDashboardLayoutController } from './user-dashboard-layout.controller';
+import { UserDashboardLayoutService } from './user-dashboard-layout.service';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 
 @Module({
-  controllers: [UserController],
+  // Order matters, and it is not cosmetic: `UserController` declares
+  // `@Delete(':id')` for deleting a user, which is annotated with the `deleteUser`
+  // permission. Nest registers controllers in the order given and the router
+  // matches the first declaration that fits, so with `UserController` first,
+  // `DELETE /api/v1/user/layout` was captured by that parameterised route with
+  // `id: 'layout'` - and answered 403 to every viewer without administrative
+  // rights, making the layout discard unreachable for exactly the accounts it
+  // exists to recover. The two read/write layout routes never collided, because
+  // `UserController` declares no parameterised `GET` or `PATCH`.
+  //
+  // The specific route is therefore declared ahead of the parameterised one. The
+  // alternative - renaming the layout path - would change a public endpoint to work
+  // around a local ordering detail.
+  controllers: [UserDashboardLayoutController, UserController],
   exports: [UserService],
   imports: [
     ActivitiesModule,
@@ -26,12 +42,17 @@ import { UserService } from './user.service';
       secret: process.env.JWT_SECRET_KEY,
       signOptions: { expiresIn: '30 days' }
     }),
+    // Supplies the `PerformanceLoggingInterceptor` the layout read is decorated
+    // with, and therefore the `PerformanceLoggingService` it reports through.
+    // Without it the enhancer cannot be resolved from this module's context and
+    // the endpoint fails at request time rather than at boot.
+    PerformanceLoggingModule,
     PrismaModule,
     PropertyModule,
     RedactValuesInResponseModule,
     SubscriptionModule,
     TagModule
   ],
-  providers: [UserService]
+  providers: [UserDashboardLayoutService, UserService]
 })
 export class UserModule {}

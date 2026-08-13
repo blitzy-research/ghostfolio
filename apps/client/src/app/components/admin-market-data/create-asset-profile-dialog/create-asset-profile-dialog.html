@@ -63,7 +63,10 @@
       color="primary"
       mat-flat-button
       type="submit"
-      [disabled]="createAssetProfileForm.hasError('atLeastOneValid')"
+      [attr.aria-busy]="isSubmitting ? 'true' : null"
+      [disabled]="
+        createAssetProfileForm.hasError('atLeastOneValid') || isSubmitting
+      "
     >
       <ng-container i18n>Save</ng-container>
     </button>

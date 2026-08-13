@@ -10,7 +10,7 @@ import {
   getTextColor
 } from '@ghostfolio/common/helper';
 import { LineChartItem } from '@ghostfolio/common/interfaces';
-import { ColorScheme } from '@ghostfolio/common/types';
+import type { ColorScheme } from '@ghostfolio/common/types';
 
 import { CommonModule } from '@angular/common';
 import {
@@ -27,16 +27,13 @@ import {
 import {
   type AnimationsSpec,
   Chart,
-  Filler,
   LinearScale,
   LineController,
   LineElement,
   PointElement,
   TimeScale,
-  Tooltip,
   type TooltipOptions
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 
 import { registerChartConfiguration } from '../chart';
@@ -78,14 +75,19 @@ export class GfLineChartComponent
   private readonly ANIMATION_DURATION = 1200;
 
   public constructor(private changeDetectorRef: ChangeDetectorRef) {
+    // Controllers, elements and scales only - they hold no per-chart state, so
+    // registering them here keeps this component's bundle to the chart type it
+    // actually draws. Plugins (including `Filler` and `Tooltip`) and the date
+    // adapter belong to the shared chart registry, which installs them at
+    // module-evaluation time; registering a plugin from here leaves this very
+    // chart blank when another chunk registers one after it has already been
+    // constructed. See `registerChartConfiguration`.
     Chart.register(
-      Filler,
       LineController,
       LineElement,
       PointElement,
       LinearScale,
-      TimeScale,
-      Tooltip
+      TimeScale
     );
 
     registerChartConfiguration();

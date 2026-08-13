@@ -1,4 +1,4 @@
-import { DateRange, MarketState } from '@ghostfolio/common/types';
+import type { DateRange, MarketState } from '@ghostfolio/common/types';
 
 import {
   CUSTOM_ELEMENTS_SCHEMA,

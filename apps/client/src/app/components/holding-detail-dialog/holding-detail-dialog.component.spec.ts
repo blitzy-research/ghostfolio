@@ -1,0 +1,500 @@
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
+import { UserService } from '@ghostfolio/client/services/user/user.service';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
+import { Activity } from '@ghostfolio/common/interfaces';
+import { GfActivitiesTableComponent } from '@ghostfolio/ui/activities-table';
+import { NotificationService } from '@ghostfolio/ui/notifications';
+import { DataService } from '@ghostfolio/ui/services';
+import { GfTagsSelectorComponent } from '@ghostfolio/ui/tags-selector';
+
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ReactiveFormsModule } from '@angular/forms';
+import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { Router } from '@angular/router';
+import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
+
+import { GfHoldingDetailDialogComponent } from './holding-detail-dialog.component';
+
+/**
+ * The four cross-module departures this dialog makes, and the fact that they are
+ * not all the same shape.
+ *
+ * Three of them - cloning an activity, editing one, and opening the asset profile
+ * - pair a reveal-module intent with a merged query-parameter write, because each
+ * carries a payload the destination module has to act on. The fourth, closing a
+ * holding, is deliberately different: the navigation it replaced carried nothing,
+ * so revealing the activities module *is* the entire intent and no parameter is
+ * produced. Adding one would put a key on the URL that no handler reads; omitting
+ * one from the other three would surface a module with nothing to open.
+ *
+ * Closing a holding also has a sequencing requirement the others do not: it posts
+ * an activity first and must only reveal the module once that write has succeeded.
+ * Revealing eagerly would surface an activities module that does not yet contain
+ * the activity the user just created, which reads as a lost write.
+ *
+ * Two of the four destinations are also permission-gated in the template. That
+ * gating is the only client-side admin check standing between this dialog and an
+ * administration module, so it is asserted here rather than assumed - the exposure
+ * it prevents is a UI one, since the API enforces the permission independently
+ * either way.
+ */
+describe('GfHoldingDetailDialogComponent', () => {
+  const holding = { dataSource: 'YAHOO', symbol: 'AAPL' };
+
+  let fetchHoldingDetail: jest.Mock;
+  let dialogRefMock: { close: jest.Mock };
+  let fixture: ComponentFixture<GfHoldingDetailDialogComponent>;
+  let postActivity: () => Observable<unknown>;
+
+  /** Ordering between the write, the intent, the URL write and the close. */
+  let callOrder: string[];
+
+  let navigations: {
+    commands: unknown[];
+    extras: {
+      queryParams?: Record<string, unknown>;
+      queryParamsHandling?: string;
+    };
+  }[];
+
+  let revealedModules: DashboardModuleType[];
+
+  const activity = { id: 'activity-1' } as Activity;
+
+  const createComponent = async ({
+    hasPermissionToAccessAdminControl = true,
+    hasPermissionToCreateActivity = true,
+    holdingDetailResponses,
+    postActivityResponse = of({})
+  }: {
+    hasPermissionToAccessAdminControl?: boolean;
+    hasPermissionToCreateActivity?: boolean;
+    holdingDetailResponses?: Observable<unknown>[];
+    postActivityResponse?: Observable<unknown>;
+  } = {}) => {
+    callOrder = [];
+    navigations = [];
+    revealedModules = [];
+
+    const dashboardIntentService = new DashboardIntentService();
+
+    dashboardIntentService.revealModule$.subscribe((moduleType) => {
+      callOrder.push('reveal');
+      revealedModules.push(moduleType);
+    });
+
+    dialogRefMock = {
+      close: jest.fn(() => {
+        callOrder.push('close');
+      })
+    };
+
+    postActivity = () => {
+      callOrder.push('postActivity');
+
+      return postActivityResponse;
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [GfHoldingDetailDialogComponent],
+      providers: [
+        { provide: DashboardIntentService, useValue: dashboardIntentService },
+        {
+          provide: DataService,
+          useValue: {
+            fetchAccounts: jest.fn(() =>
+              of({ accounts: [{ id: 'account-1' }] })
+            ),
+            fetchActivities: jest.fn(() => of({ activities: [] })),
+            // Answered from a QUEUE when a test supplies one, so a retry can be
+            // given a different outcome from the first attempt.
+            fetchHoldingDetail: (fetchHoldingDetail = jest.fn(() => {
+              if (holdingDetailResponses?.length) {
+                return holdingDetailResponses.shift();
+              }
+
+              return of({
+                activitiesCount: 1,
+                averagePrice: 100,
+                dataProviderInfo: {},
+                dateOfFirstActivity: '2024-01-01',
+                dividendInBaseCurrency: 0,
+                dividendYieldPercentWithCurrencyEffect: 0,
+                feeInBaseCurrency: 0,
+                historicalData: [],
+                investmentInBaseCurrencyWithCurrencyEffect: 100,
+                marketPrice: 120,
+                marketPriceMax: 130,
+                marketPriceMin: 90,
+                netPerformance: 20,
+                netPerformancePercent: 0.2,
+                netPerformancePercentWithCurrencyEffect: 0.2,
+                netPerformanceWithCurrencyEffect: 20,
+                // A non-zero quantity is what makes the close-holding action
+                // available in the template.
+                quantity: 1,
+                SymbolProfile: {
+                  currency: 'USD',
+                  dataSource: holding.dataSource,
+                  symbol: holding.symbol
+                },
+                tags: []
+              });
+            })),
+            fetchMarketDataBySymbol: jest.fn(() => of({ marketData: [] })),
+            postActivity: () => postActivity()
+          }
+        },
+        {
+          provide: MAT_DIALOG_DATA,
+          useValue: {
+            baseCurrency: 'CHF',
+            colorScheme: 'LIGHT',
+            dataSource: holding.dataSource,
+            deviceType: 'desktop',
+            hasImpersonationId: false,
+            hasPermissionToAccessAdminControl,
+            hasPermissionToCreateActivity,
+            hasPermissionToReportDataGlitch: false,
+            hasPermissionToUpdateActivity: true,
+            locale: 'en-GB',
+            symbol: holding.symbol
+          }
+        },
+        { provide: MatDialogRef, useValue: dialogRefMock },
+        // Reached by the real activities table, and by nothing this suite drives.
+        { provide: NotificationService, useValue: {} },
+        {
+          provide: Router,
+          useValue: {
+            navigate: jest.fn(
+              (
+                commands: unknown[],
+                extras: {
+                  queryParams?: Record<string, unknown>;
+                  queryParamsHandling?: string;
+                } = {}
+              ) => {
+                callOrder.push('navigate');
+                navigations.push({ commands, extras });
+
+                return Promise.resolve(true);
+              }
+            )
+          }
+        },
+        {
+          provide: UserService,
+          useValue: {
+            stateChanged: new BehaviorSubject({
+              user: {
+                id: 'user-1',
+                permissions: [],
+                settings: { locale: 'en-GB' }
+              }
+            })
+          }
+        }
+      ]
+    })
+      // Kept deliberately, and only these three. The activities table because its
+      // outputs are driven below. `ReactiveFormsModule` because the tag form's
+      // `[formGroup]` is a binding on a plain `<form>`, which
+      // `CUSTOM_ELEMENTS_SCHEMA` does not excuse for a standard element - stripping
+      // it reports NG0303 on every render. And the tags selector because it is the
+      // control value accessor that `formControlName` inside that form resolves to,
+      // so admitting the form module without it trades NG0303 for NG01203.
+      //
+      // Everything else is stripped: the charts want a real canvas and contribute
+      // nothing to an intent, and their elements carry a dash, so they are
+      // tolerated unrecognised.
+      .overrideComponent(GfHoldingDetailDialogComponent, {
+        set: {
+          imports: [
+            GfActivitiesTableComponent,
+            GfTagsSelectorComponent,
+            ReactiveFormsModule
+          ]
+        }
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(GfHoldingDetailDialogComponent);
+
+    fixture.detectChanges();
+
+    return fixture.componentInstance;
+  };
+
+  /** Emits one of the activities table's outputs, proving it is bound. */
+  const emitFromActivitiesTable = (output: string) => {
+    const table = fixture.debugElement.query(
+      (node) => node.componentInstance instanceof GfActivitiesTableComponent
+    );
+
+    expect(table).not.toBeNull();
+
+    (
+      table.componentInstance as unknown as Record<
+        string,
+        { emit: (value: Activity) => void }
+      >
+    )[output].emit(activity);
+  };
+
+  /** A rendered action button whose label matches, or `undefined`. */
+  const actionButton = (label: string) => {
+    const buttons: HTMLButtonElement[] = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.button-container button'
+      )
+    );
+
+    return buttons.find((button) => button.textContent.trim().includes(label));
+  };
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe.each([
+    { dialogFlag: 'createDialog', output: 'activityToClone' },
+    { dialogFlag: 'editDialog', output: 'activityToUpdate' }
+  ])('handing $output to the activities module', ({ dialogFlag, output }) => {
+    it('reveals the activities module', async () => {
+      await createComponent();
+
+      emitFromActivitiesTable(output);
+
+      expect(revealedModules).toEqual([DashboardModuleType.ACTIVITIES]);
+    });
+
+    it('merges the payload onto the current route', async () => {
+      await createComponent();
+
+      emitFromActivitiesTable(output);
+
+      expect(navigations).toEqual([
+        {
+          commands: [],
+          extras: {
+            queryParams: {
+              activityId: activity.id,
+              // This dialog's own hand-off keys go in the same navigation, which
+              // merging makes necessary: left standing, the holdings module reads
+              // them again on the next parameter change and reopens this dialog
+              // over the activities dialog being asked for.
+              dataSource: null,
+              // `createDialog` and `editDialog` are shared with other modules, and
+              // every consumer refuses a request that names none - so without the
+              // discriminator the revealed module would open nothing at all.
+              dialogModule: DashboardModuleType.ACTIVITIES,
+              holdingDetailDialog: null,
+              symbol: null,
+              [dialogFlag]: true
+            },
+            queryParamsHandling: 'merge'
+          }
+        }
+      ]);
+    });
+
+    it('reveals and writes before closing', async () => {
+      await createComponent();
+
+      emitFromActivitiesTable(output);
+
+      expect(callOrder).toEqual(['reveal', 'navigate', 'close']);
+    });
+  });
+
+  describe('opening the asset profile', () => {
+    it('reveals the market data module and carries the identifier', async () => {
+      await createComponent();
+
+      actionButton('Asset Profile').click();
+
+      expect(revealedModules).toEqual([DashboardModuleType.ADMIN_MARKET_DATA]);
+      expect(navigations).toEqual([
+        {
+          commands: [],
+          extras: {
+            queryParams: {
+              assetProfileDialog: true,
+              // Dropped because it is the third flag reading the identifier pair
+              // below. A stale one would make the benchmark table open its own
+              // dialog for this asset as a side effect of the hand-off.
+              benchmarkDetailDialog: null,
+              // Kept rather than cleared, unlike the activities hand-off above:
+              // these two identify the asset profile being asked for, not this
+              // dialog. Only the flags that would reopen a dialog for the same
+              // pair are dropped.
+              dataSource: holding.dataSource,
+              dialogModule: DashboardModuleType.ADMIN_MARKET_DATA,
+              holdingDetailDialog: null,
+              symbol: holding.symbol
+            },
+            queryParamsHandling: 'merge'
+          }
+        }
+      ]);
+    });
+
+    it('is withheld from a viewer without the admin permission', async () => {
+      await createComponent({ hasPermissionToAccessAdminControl: false });
+
+      // This template gate is the client-side admin check for this action.
+      expect(actionButton('Asset Profile')).toBeUndefined();
+    });
+  });
+
+  describe('closing a holding', () => {
+    it('reveals the activities module without any query parameter', async () => {
+      await createComponent();
+
+      actionButton('Close').click();
+
+      // The navigation this replaced carried nothing, so the intent is the whole
+      // message and a parameter here would be one no handler reads.
+      expect(revealedModules).toEqual([DashboardModuleType.ACTIVITIES]);
+      expect(navigations).toEqual([]);
+    });
+
+    it('records the activity before revealing the module', async () => {
+      await createComponent();
+
+      actionButton('Close').click();
+
+      // Revealing first would surface a module that does not yet contain the
+      // activity just created, which reads to the user as a lost write.
+      expect(callOrder).toEqual(['postActivity', 'reveal', 'close']);
+    });
+
+    it('is withheld from a viewer who cannot create activities', async () => {
+      await createComponent({ hasPermissionToCreateActivity: false });
+
+      expect(actionButton('Close')).toBeUndefined();
+    });
+  });
+
+  describe('a holding whose details cannot be read', () => {
+    /** The finite state the dialog now ends in, located by its live role. */
+    const notice = (): HTMLElement | null => {
+      return (fixture.nativeElement as HTMLElement).querySelector(
+        '[role="alert"]'
+      );
+    };
+
+    const noticeButtons = () => {
+      return Array.from(
+        notice()?.querySelectorAll<HTMLButtonElement>('button') ?? []
+      ).map((button) => button.textContent.trim());
+    };
+
+    /**
+     * A holding with no asset profile - a cash balance is the everyday case - has
+     * no details to return, and the server says so with 404. The dialog used to
+     * treat that as nothing at all: no failure handler ran, every field stayed
+     * undefined, and because the body renders those fields unconditionally the
+     * viewer was left on an empty chart under a nameless header for as long as the
+     * dialog stayed open.
+     */
+    it('says there is nothing to show rather than waiting for ever', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 404 }))]
+      });
+
+      expect(component.isLoading).toBe(false);
+      expect(component.hasNoDetails).toBe(true);
+      expect(component.hasError).toBe(false);
+
+      expect(notice()).toBeTruthy();
+      expect(notice().textContent).toContain(
+        'There are no details to show for this holding.'
+      );
+      expect(notice().textContent).toContain(
+        'A cash balance has no market price or history of its own.'
+      );
+    });
+
+    /**
+     * No retry on this branch, deliberately. The holding has no details to return,
+     * so asking again fails identically every time and the control would only
+     * invite the viewer to keep pressing it.
+     */
+    it('offers only a way out when there is nothing to retry', async () => {
+      await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 404 }))]
+      });
+
+      expect(noticeButtons()).toEqual(['Close']);
+    });
+
+    it('reports a genuine fault as one, and offers to try again', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 500 }))]
+      });
+
+      expect(component.isLoading).toBe(false);
+      expect(component.hasError).toBe(true);
+      expect(component.hasNoDetails).toBe(false);
+
+      expect(notice().textContent).toContain(
+        'This holding could not be loaded.'
+      );
+      expect(noticeButtons()).toEqual(['Try again', 'Close']);
+    });
+
+    it('finishes loading even for a rejection that never reached the network', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => new Error('offline'))]
+      });
+
+      // No status at all on this rejection, which is why the handler reads it
+      // defensively rather than asserting an HTTP error shape.
+      expect(component.isLoading).toBe(false);
+      expect(component.hasError).toBe(true);
+    });
+
+    it('recovers the holding when the retry succeeds', async () => {
+      const component = await createComponent({
+        holdingDetailResponses: [throwError(() => ({ status: 500 }))]
+      });
+
+      expect(component.hasError).toBe(true);
+      expect(fetchHoldingDetail).toHaveBeenCalledTimes(1);
+
+      component.onRetryHoldingDetail();
+
+      fixture.detectChanges();
+
+      // The second answer is the default success payload, so the dialog is fully
+      // rebuilt from it - which is the point of the read being re-callable rather
+      // than inline.
+      expect(fetchHoldingDetail).toHaveBeenCalledTimes(2);
+      expect(component.hasError).toBe(false);
+      expect(component.isLoading).toBe(false);
+      expect(component.SymbolProfile).toBeDefined();
+      expect(notice()).toBeNull();
+    });
+
+    it('is not shown at all when the holding loads', async () => {
+      const component = await createComponent();
+
+      expect(component.isLoading).toBe(false);
+      expect(component.hasError).toBe(false);
+      expect(component.hasNoDetails).toBe(false);
+      expect(notice()).toBeNull();
+    });
+  });
+
+  describe('before the viewer acts', () => {
+    it('publishes no intent and requests no navigation', async () => {
+      await createComponent();
+
+      expect(revealedModules).toEqual([]);
+      expect(navigations).toEqual([]);
+      expect(dialogRefMock.close).not.toHaveBeenCalled();
+    });
+  });
+});

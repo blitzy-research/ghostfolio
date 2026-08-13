@@ -1,4 +1,10 @@
-<div class="container">
+<!--
+  A module-scale container, not a page-scale one. `container-fluid` keeps the
+  horizontal gutter that cancels the negative margins of the rows below - without
+  it they bleed past their cell - while dropping the responsive max-width that
+  made this content read as a page nested inside a grid cell.
+-->
+<div class="container-fluid">
   <div class="row">
     <div class="col">
       <div class="overflow-x-auto">
@@ -8,6 +14,7 @@
               *matHeaderCellDef
               class="mat-mdc-header-cell px-1 py-2"
               mat-header-cell
+              scope="col"
             >
               <ng-container i18n>User</ng-container>
             </th>
@@ -56,6 +63,7 @@
                 *matHeaderCellDef
                 class="mat-mdc-header-cell px-1 py-2"
                 mat-header-cell
+                scope="col"
               >
                 <ng-container i18n>Country</ng-container>
               </th>
@@ -76,6 +84,7 @@
               *matHeaderCellDef
               class="mat-mdc-header-cell px-1 py-2"
               mat-header-cell
+              scope="col"
             >
               <ng-container i18n>Registration</ng-container>
             </th>
@@ -93,6 +102,7 @@
               *matHeaderCellDef
               class="mat-mdc-header-cell px-1 py-2 text-right"
               mat-header-cell
+              scope="col"
             >
               <ng-container i18n>Accounts</ng-container>
             </th>
@@ -114,6 +124,7 @@
               *matHeaderCellDef
               class="mat-mdc-header-cell px-1 py-2 text-right"
               mat-header-cell
+              scope="col"
             >
               <ng-container i18n>Activities</ng-container>
             </th>
@@ -136,6 +147,7 @@
                 *matHeaderCellDef
                 class="mat-mdc-header-cell px-1 py-2 text-right"
                 mat-header-cell
+                scope="col"
               >
                 <ng-container i18n>Engagement per Day</ng-container>
               </th>
@@ -157,6 +169,7 @@
                 *matHeaderCellDef
                 class="mat-mdc-header-cell px-1 py-2 text-right"
                 mat-header-cell
+                scope="col"
               >
                 <ng-container i18n>API Requests Today</ng-container>
               </th>
@@ -182,6 +195,7 @@
                 class="mat-mdc-header-cell px-1 py-2"
                 i18n
                 mat-header-cell
+                scope="col"
               >
                 Last Request
               </th>
@@ -200,36 +214,49 @@
               *matHeaderCellDef
               class="mat-mdc-header-cell px-1 py-2"
               mat-header-cell
-            ></th>
+              scope="col"
+            >
+              <span class="sr-only" i18n>Actions</span>
+            </th>
             <td
               *matCellDef="let element"
               class="mat-mdc-cell px-1 py-2"
               mat-cell
             >
               <button
+                aria-label="Actions for this user"
                 class="mx-1 no-min-width px-2"
+                i18n-aria-label
                 mat-button
                 [matMenuTriggerFor]="userMenu"
                 (click)="$event.stopPropagation()"
               >
-                <ion-icon name="ellipsis-horizontal" />
+                <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
               </button>
               <mat-menu #userMenu="matMenu" xPosition="before">
-                <a
+                <button
                   mat-menu-item
-                  [routerLink]="routerLinkAdminControlUsers.concat(element.id)"
+                  (click)="onOpenUserDetailDialog(element.id)"
                 >
                   <span class="align-items-center d-flex">
-                    <ion-icon class="mr-2" name="person-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-2"
+                      name="person-outline"
+                    />
                     <span
                       ><ng-container i18n>View Details</ng-container>...</span
                     >
                   </span>
-                </a>
+                </button>
                 @if (hasPermissionToImpersonateAllUsers) {
                   <button mat-menu-item (click)="onImpersonateUser(element.id)">
                     <span class="align-items-center d-flex">
-                      <ion-icon class="mr-2" name="contract-outline" />
+                      <ion-icon
+                        aria-hidden="true"
+                        class="mr-2"
+                        name="contract-outline"
+                      />
                       <span i18n>Impersonate User</span>
                     </span>
                   </button>
@@ -239,7 +266,11 @@
                   (click)="onGenerateAccessToken(element.id)"
                 >
                   <span class="align-items-center d-flex">
-                    <ion-icon class="mr-2" name="key-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-2"
+                      name="key-outline"
+                    />
                     <span i18n>Generate Security Token</span>
                   </span>
                 </button>
@@ -250,7 +281,11 @@
                   (click)="onDeleteUser(element.id)"
                 >
                   <span class="align-items-center d-flex">
-                    <ion-icon class="mr-2" name="trash-outline" />
+                    <ion-icon
+                      aria-hidden="true"
+                      class="mr-2"
+                      name="trash-outline"
+                    />
                     <span i18n>Delete User</span>
                   </span>
                 </button>
@@ -259,7 +294,7 @@
           </ng-container>
 
           <tr
-            *matHeaderRowDef="displayedColumns"
+            *matHeaderRowDef="displayedColumns; sticky: true"
             class="mat-mdc-header-row"
             mat-header-row
           ></tr>

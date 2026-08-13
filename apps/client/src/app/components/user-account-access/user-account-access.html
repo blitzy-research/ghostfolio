@@ -1,6 +1,6 @@
 @if (hasPermissionToUpdateOwnAccessToken) {
   <div class="container">
-    <h1 class="h3 mb-3 text-center" i18n>Security Token</h1>
+    <h3 class="h6 mb-3 text-center" i18n>Security Token</h3>
     <form
       class="w-100"
       [formGroup]="updateOwnAccessTokenForm"
@@ -19,12 +19,15 @@
             [type]="isAccessTokenHidden ? 'password' : 'text'"
           />
           <button
+            aria-label="Show or hide the security token"
+            i18n-aria-label
             mat-button
             matSuffix
             type="button"
             (click)="isAccessTokenHidden = !isAccessTokenHidden"
           >
             <ion-icon
+              aria-hidden="true"
               [name]="isAccessTokenHidden ? 'eye-outline' : 'eye-off-outline'"
             />
           </button>
@@ -50,15 +53,15 @@
 
 <div class="container">
   @if (accessesGet.length > 0) {
-    <h1 class="h3 mb-3 text-center" i18n>Received Access</h1>
+    <h3 class="h6 mb-3 text-center" i18n>Received Access</h3>
     <gf-access-table class="mb-5" [accesses]="accessesGet" [user]="user" />
   }
-  <h1 class="align-items-center d-flex h3 justify-content-center mb-3">
+  <h3 class="align-items-center d-flex h6 justify-content-center mb-3">
     <span i18n>Granted Access</span>
     @if (user?.subscription?.type === 'Basic') {
       <gf-premium-indicator class="ml-1" />
     }
-  </h1>
+  </h3>
   <gf-access-table
     [accesses]="accessesGive"
     [showActions]="hasPermissionToDeleteAccess"
@@ -68,14 +71,24 @@
   />
   @if (hasPermissionToCreateAccess) {
     <div class="fab-container">
+      <!--
+        An icon-only control, so its accessible name has to come from an attribute.
+        The label is the title of the dialog this control opens, which is an already
+        translated source message - the name a screen reader announces therefore
+        matches the dialog that appears. The glyph is decorative and hidden so it
+        cannot be announced a second time.
+      -->
       <a
+        aria-label="Grant access"
         class="align-items-center d-flex justify-content-center"
         color="primary"
+        i18n-aria-label
         mat-fab
-        [queryParams]="{ createDialog: true }"
+        queryParamsHandling="merge"
+        [queryParams]="{ createDialog: true, dialogModule }"
         [routerLink]="[]"
       >
-        <ion-icon name="add-outline" size="large" />
+        <ion-icon aria-hidden="true" name="add-outline" size="large" />
       </a>
     </div>
   }

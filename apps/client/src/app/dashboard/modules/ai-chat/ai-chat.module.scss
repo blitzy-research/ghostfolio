@@ -1,0 +1,182 @@
+:host {
+  display: block;
+
+  color: var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+  height: 100%;
+
+  // The global stylesheet resets `button:focus`, so keyboard focus needs an
+  // explicit indicator here; `cdk-keyboard-focused` is the CDK's own
+  // keyboard-only marker on the toggle buttons.
+  a:focus-visible,
+  button:focus-visible,
+  // The prompt box takes focus because it scrolls, so it needs an indicator like
+  // any other focusable thing. `-2px` rather than `2px`: the box has a border of
+  // its own and an outward ring would sit on top of the neighbouring margin.
+  .prompt-container:focus-visible {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: 2px;
+  }
+
+  .prompt-container:focus-visible {
+    outline-offset: -2px;
+  }
+
+  // The module body. It fills the cell when the prompt is short and grows past it
+  // when the prompt is long, and it deliberately does NOT scroll on its own.
+  //
+  // It used to, and so did the prompt box inside it - which put three nested scroll
+  // regions between the viewer and the text, since the module host already provides
+  // one. Only the outermost of the three carries a visible scrollbar and the
+  // overflow hint, so the inner two ended a sentence at the edge of the box with
+  // nothing to say that anything followed: no bar, no fade, no ellipsis. A reader
+  // had to guess that the box was scrollable and find it with a wheel.
+  //
+  // Letting the content overflow instead hands every axis of scrolling to the module
+  // host's single hinted scrollport, which is where the affordance lives.
+  //
+  // `min-block-size` rather than `block-size`, so the mode bar stays at the top of
+  // the cell and the footer at its bottom while the prompt is short, and both give
+  // way once it is long. The percentage resolves because the host height is definite.
+  .content-container {
+    background-color: var(--mat-sys-surface-container, #ffffff);
+    min-block-size: 100%;
+  }
+
+  .error-container {
+    border: 1px solid var(--mat-sys-outline, rgba(0, 0, 0, 0.38));
+    border-radius: var(--mat-sys-corner-medium, 4px);
+    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+  }
+
+  .hint-text {
+    color: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+  }
+
+  mat-button-toggle.cdk-keyboard-focused {
+    outline: 2px solid var(--mat-sys-on-surface, rgba(0, 0, 0, 0.87));
+    outline-offset: -2px;
+  }
+
+  // The wrapped-footer-label accommodation this module used to carry locally now
+  // lives in `styles/gridster.scss`, applied to every Material button variant inside
+  // any module body - the fixed container height is Material's, not this module's, so
+  // every narrow cell had the same problem.
+
+  // The generated prompt.
+  //
+  // `pre`, not `pre-wrap`. The fixed-width face is only half of what makes a markdown
+  // pipe table read as a table; the other half is that a row must occupy ONE line.
+  // These rows are 126 characters, about 1211px, and the widest this module gets is a
+  // 367px content box - so with wrapping every row broke into three or four visual
+  // rows and the pipe columns scattered by up to 250px even in a monospace face. The
+  // face was necessary and not sufficient. Measured: with wrapping, the first two
+  // pipe columns aligned to 0.00px and the remaining five did not align at all.
+  //
+  // So the document is laid out at its natural width and the box scrolls sideways.
+  // That is what a preformatted document is: the prose lines are about as long as the
+  // table rows here, so there was never a width at which both fitted, and choosing
+  // wrapping only traded a readable table for an unreadable one.
+  //
+  // `overflow-x: auto` is what carries it. The block axis is deliberately left to
+  // grow: because the box has no height of its own, its scroll height equals its
+  // content height, so the block axis never engages a second scrollbar and the
+  // vertical overflow still reaches the module host's single hinted scrollport. That
+  // is also why the horizontal bar is an affordance rather than the silent clip this
+  // replaced - a reader can see that there is more to the right.
+  //
+  // `overflow-wrap` is dropped with the wrapping: with nothing wrapping there is no
+  // break opportunity for it to take.
+  .prompt-container {
+    background-color: var(--mat-sys-surface-container-low, #fafafa);
+    border: 1px solid var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
+    border-radius: var(--mat-sys-corner-medium, 4px);
+    overflow-x: auto;
+    white-space: pre;
+
+    // Puts this scroller's bar on the same 8px form the canvas pane's horizontal
+    // bar already uses, so the two horizontal scrollers on this surface look alike.
+    //
+    // `scrollbar-color: auto` is the load-bearing line, and it is not tidying up.
+    // `scrollbar-color` INHERITS, and the module body sets a non-`auto` value - so
+    // this box inherits one, and Chromium honours the standard properties or the
+    // legacy pseudo-elements but never both: a non-`auto` standard value makes it
+    // ignore every `::-webkit-scrollbar` rule below. Measured in a local probe, all
+    // three cases side by side: no legacy rules gave a 15px gutter; legacy rules
+    // WITH the value inherited gave 15px, i.e. they were silently discarded; and
+    // releasing the inheritance first gave the 8px asked for. Without this line the
+    // rules below would have been dead CSS that reads as though it works.
+    //
+    // The thumb takes the same token as the canvas pane's, the edge marks' and the
+    // module scroll hints', so every "there is more this way" mark on the canvas is
+    // one ink. The track is declined rather than painted: the prompt surface is
+    // already behind it, so a track on the same token would resolve to nothing
+    // visible and read as a failure rather than as a choice.
+    scrollbar-color: auto;
+
+    &::-webkit-scrollbar {
+      height: 0.5rem;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--mat-sys-on-surface-variant, rgba(0, 0, 0, 0.54));
+      border-radius: var(--mat-sys-corner-full, 999px);
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+  }
+
+  .prompt-mode-container {
+    border-bottom: 1px solid var(--mat-sys-outline-variant, rgba(0, 0, 0, 0.12));
+    font: var(
+      --mat-sys-title-small,
+      500 0.875rem/1.25rem var(--font-family-sans-serif)
+    );
+  }
+}
+
+:host-context(.theme-dark) {
+  color: var(--mat-sys-on-surface, #ffffff);
+
+  a:focus-visible,
+  button:focus-visible,
+  .prompt-container:focus-visible {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+
+  .content-container {
+    background-color: var(--mat-sys-surface-container, #262626);
+  }
+
+  .error-container {
+    border-color: var(--mat-sys-outline, rgba(255, 255, 255, 0.5));
+    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+
+  .hint-text {
+    color: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+  }
+
+  mat-button-toggle.cdk-keyboard-focused {
+    outline-color: var(--mat-sys-on-surface, #ffffff);
+  }
+
+  .prompt-container {
+    background-color: var(--mat-sys-surface-container-low, #1f1f1f);
+    border-color: var(--mat-sys-outline-variant, rgba(255, 255, 255, 0.12));
+
+    // Restated because the fallback is what paints, and the light theme's
+    // near-black thumb would disappear into a dark prompt surface.
+    &::-webkit-scrollbar-thumb {
+      background: var(--mat-sys-on-surface-variant, rgba(255, 255, 255, 0.7));
+    }
+  }
+
+  .prompt-mode-container {
+    border-bottom-color: var(
+      --mat-sys-outline-variant,
+      rgba(255, 255, 255, 0.12)
+    );
+  }
+}

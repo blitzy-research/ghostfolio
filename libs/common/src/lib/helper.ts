@@ -384,6 +384,21 @@ export function isDerivedCurrency(aCurrency: string) {
   });
 }
 
+/**
+ * Whether a value names a data source this application knows.
+ *
+ * `DataSource` is a closed vocabulary, so membership is decidable and is
+ * answered exactly here rather than approximated by a pattern elsewhere. The
+ * check exists because a data source arrives from places the compiler cannot
+ * vouch for — a query parameter, a persisted document, an imported file — and
+ * then becomes a path segment of a request issued with the signed-in user's
+ * credentials. Narrowing the type is the point: a caller that guards on this
+ * predicate hands a `DataSource` onwards, not a string somebody supplied.
+ */
+export function isKnownDataSource(aValue: unknown): aValue is DataSource {
+  return Object.values<string>(DataSource).includes(aValue as string);
+}
+
 export function isRootCurrency(aCurrency: string) {
   if (aCurrency === 'USD') {
     return true;
@@ -392,6 +407,30 @@ export function isRootCurrency(aCurrency: string) {
   return DERIVED_CURRENCIES.find(({ rootCurrency }) => {
     return rootCurrency === aCurrency;
   });
+}
+
+/**
+ * Opens an external destination in a new window without handing it a way back.
+ *
+ * `noopener` severs the `window.opener` reference the opened page would
+ * otherwise hold on the page that opened it — a reference it can use to
+ * navigate that tab elsewhere, which is how an external destination turns into
+ * a convincing imitation of this application. `noreferrer` additionally
+ * withholds the opening URL from the destination.
+ *
+ * The returned reference is nulled rather than ignored: where `noopener` is
+ * honoured the call returns `null` already, and nulling what it hands back
+ * keeps the guarantee in place on an engine that ignores the feature and
+ * returns a live handle anyway.
+ *
+ * @param aUrl the external destination to open.
+ */
+export function openExternalWindow(aUrl: string) {
+  const externalWindow = window.open(aUrl, '_blank', 'noopener,noreferrer');
+
+  if (externalWindow) {
+    externalWindow.opener = null;
+  }
 }
 
 export function parseDate(date: string): Date | undefined {
@@ -439,6 +478,34 @@ export function parseSymbol({ dataSource, symbol }: AssetProfileIdentifier) {
 
 export function prettifySymbol(aSymbol: string): string {
   return aSymbol?.replace(ghostfolioScraperApiSymbolPrefix, '');
+}
+
+/**
+ * Reports a failure without disclosing what was being done, or for whom.
+ *
+ * The console is not a private place. Anything written to it is readable by
+ * every script on the page, is captured verbatim by error-reporting and session
+ * -replay tooling, and outlives the session in a saved log. A raw error object
+ * carries far more than the fact that something failed: an `HttpErrorResponse`
+ * exposes the request URL — and with it the share capability, asset identifier
+ * or search term that was in it — plus whatever the server put in the response
+ * body, while a thrown error carries a stack that maps the application out.
+ *
+ * So only two things are emitted: a fixed event identifier, which is what makes
+ * a report searchable and correlatable without describing anything, and the
+ * numeric HTTP status where the failure has one, which is what makes it
+ * actionable. The status is read defensively because callers hand over
+ * `unknown`, and only a number is ever passed through.
+ *
+ * @param aEventId a stable, data-free identifier for the failing operation.
+ * @param aError the caught value, read for its status and otherwise discarded.
+ */
+export function reportSanitizedError(aEventId: string, aError?: unknown) {
+  const status = (aError as { status?: unknown })?.status;
+
+  console.error(
+    typeof status === 'number' ? `${aEventId} (status ${status})` : aEventId
+  );
 }
 
 export function resetHours(aDate: Date) {

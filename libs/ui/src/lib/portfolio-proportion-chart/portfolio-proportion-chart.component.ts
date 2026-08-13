@@ -5,7 +5,7 @@ import {
   AssetProfileIdentifier,
   PortfolioPosition
 } from '@ghostfolio/common/interfaces';
-import { ColorScheme } from '@ghostfolio/common/types';
+import type { ColorScheme } from '@ghostfolio/common/types';
 
 import { CommonModule } from '@angular/common';
 import {
@@ -28,7 +28,6 @@ import {
   type ChartDataset,
   DoughnutController,
   LinearScale,
-  Tooltip,
   type TooltipOptions
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
@@ -37,6 +36,7 @@ import Color from 'color';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import OpenColor from 'open-color';
 
+import { registerChartConfiguration } from '../chart';
 import { translate } from '../i18n';
 
 const {
@@ -95,7 +95,16 @@ export class GfPortfolioProportionChartComponent
   } = {};
 
   public constructor() {
-    Chart.register(ArcElement, DoughnutController, LinearScale, Tooltip);
+    // Controllers, elements and scales only - they hold no per-chart state, so
+    // registering them here keeps this component's bundle to the chart type it
+    // actually draws. Plugins belong to the shared chart registry, which
+    // installs them at module-evaluation time so that no chart can be built
+    // before them; see `registerChartConfiguration`. The data-label plugin below
+    // is unaffected because it is passed per chart rather than registered
+    // globally.
+    Chart.register(ArcElement, DoughnutController, LinearScale);
+
+    registerChartConfiguration();
   }
 
   public ngAfterViewInit() {
@@ -450,7 +459,27 @@ export class GfPortfolioProportionChartComponent
           if (symbol === this.OTHER_KEY) {
             symbol = $localize`Other`;
           } else if (symbol === UNKNOWN_KEY) {
-            symbol = $localize`No data available`;
+            // Names the bucket for what it is, rather than denying that it exists.
+            //
+            // This chart draws the same 12% grey in two situations which mean
+            // opposite things. One is a chart with nothing to draw, which is filled
+            // with a single sentinel segment and reported below as "No data
+            // available" with no figure beside it. The other is a REAL slice, with a
+            // real value and a real share of the total, holding everything whose
+            // classification is missing - an ETF with no provider recorded, a
+            // holding with no country.
+            //
+            // Labelling the second one "No data available" made the tooltip
+            // contradict itself: it asserted that there was no data and then
+            // reported that the data amounted to 47.83% of the portfolio. Worse, it
+            // made the two states indistinguishable, so a viewer could not tell a
+            // chart that had failed to load from a portfolio that was entirely
+            // unclassified - and the second is a finding they would want to act on.
+            //
+            // "Unknown" says only what is true: the slice is real, the figure beside
+            // it is real, and what is missing is the classification. The empty case
+            // keeps "No data available" and now has it to itself.
+            symbol = $localize`Unknown`;
           }
 
           const name = translate(this.data[symbol]?.name);

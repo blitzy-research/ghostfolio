@@ -1,0 +1,135 @@
+<form
+  class="d-flex flex-column h-100"
+  [formGroup]="transferBalanceForm"
+  (keyup.enter)="transferBalanceForm.valid && onSubmit()"
+  (ngSubmit)="onSubmit()"
+>
+  <h1 i18n mat-dialog-title>Transfer Cash Balance</h1>
+  <div class="flex-grow-1 py-3" mat-dialog-content>
+    <div>
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label i18n>From</mat-label>
+        <mat-select formControlName="fromAccount">
+          @for (account of accounts; track account) {
+            <mat-option [value]="account.id">
+              <div class="d-flex">
+                @if (account.platform?.url) {
+                  <gf-entity-logo
+                    class="mr-1"
+                    [tooltip]="account.platform?.name"
+                    [url]="account.platform?.url"
+                  />
+                }
+                <span>{{ account.name }}</span>
+              </div>
+            </mat-option>
+          }
+        </mat-select>
+        @if (transferBalanceForm.get('fromAccount').hasError('required')) {
+          <mat-error i18n>Please choose an account to transfer from.</mat-error>
+        }
+      </mat-form-field>
+    </div>
+    <div>
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label i18n>To</mat-label>
+        <mat-select
+          formControlName="toAccount"
+          [errorStateMatcher]="accountErrorStateMatcher"
+        >
+          @for (account of accounts; track account) {
+            <mat-option [value]="account.id">
+              <div class="d-flex">
+                @if (account.platform?.url) {
+                  <gf-entity-logo
+                    class="mr-1"
+                    [tooltip]="account.platform?.name"
+                    [url]="account.platform?.url"
+                  />
+                }
+                <span>{{ account.name }}</span>
+              </div>
+            </mat-option>
+          }
+        </mat-select>
+        <!--
+          The cross-field rule is reported here, and this is the only place it can be
+          reported: `compareAccounts` is a validator on the FORM GROUP, so its error
+          sits on the group and no field is invalid because of it. Nothing rendered it,
+          so choosing the same account twice simply left Save disabled with no
+          explanation anywhere on screen - the "unexplained cross-field rule" in full.
+          The destination is the field a viewer changes to resolve it, which is why it
+          is stated against this one rather than against "From".
+
+          Writing the message is not enough to make it appear, which is what
+          `accountErrorStateMatcher` above is for: Material renders a field's `mat-error`
+          children only while that field is in an error state, and the default matcher
+          asks about the control alone - so a group-level error rendered nothing.
+        -->
+        @if (transferBalanceForm.get('toAccount').hasError('required')) {
+          <mat-error i18n>Please choose an account to transfer to.</mat-error>
+        } @else if (
+          transferBalanceForm.hasError('invalid') &&
+          transferBalanceForm.get('toAccount').value
+        ) {
+          <mat-error i18n
+            >Please choose two different accounts. A balance cannot be
+            transferred to the account it came from.</mat-error
+          >
+        }
+      </mat-form-field>
+    </div>
+    <div>
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label i18n>Value</mat-label>
+        <input
+          formControlName="balance"
+          matInput
+          type="number"
+          (keydown.enter)="$event.stopPropagation()"
+        />
+        <span class="ml-2" matTextSuffix>{{ currency }}</span>
+        <!--
+          Stated where it can be acted on. Only `required` used to be checked, so `0`
+          and `-50` reached a server that refuses both - and the refusal arrived after
+          this dialog had closed, taking the amount with it.
+        -->
+        @if (transferBalanceForm.get('balance').hasError('required')) {
+          <mat-error i18n>Please enter an amount.</mat-error>
+        } @else if (
+          transferBalanceForm.get('balance').hasError('notPositive')
+        ) {
+          <mat-error i18n>Please enter an amount greater than zero.</mat-error>
+        } @else if (
+          transferBalanceForm.get('balance').hasError('validationError')
+        ) {
+          <mat-error>{{
+            transferBalanceForm.get('balance').getError('validationError')
+          }}</mat-error>
+        }
+      </mat-form-field>
+    </div>
+
+    <!--
+      Reported here, beside the fields that produced it, rather than through a
+      notification: the two accounts and the amount are still on the screen and still
+      submittable. An alert rather than a status, because the viewer asked for a
+      transfer and did not get one.
+    -->
+    @if (errorMessage) {
+      <div class="transfer-balance-error" role="alert">{{ errorMessage }}</div>
+    }
+  </div>
+  <div class="justify-content-end" mat-dialog-actions>
+    <button i18n mat-button type="button" (click)="onCancel()">Cancel</button>
+    <button
+      color="primary"
+      mat-flat-button
+      type="submit"
+      [attr.aria-busy]="isTransferring ? 'true' : null"
+      [disabled]="!transferBalanceForm.valid || isTransferring"
+    >
+      <ng-container i18n>Transfer</ng-container>
+    </button>
+  </div>
+</form>

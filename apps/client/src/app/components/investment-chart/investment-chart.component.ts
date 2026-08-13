@@ -13,7 +13,7 @@ import {
 } from '@ghostfolio/common/helper';
 import { LineChartItem } from '@ghostfolio/common/interfaces';
 import { InvestmentItem } from '@ghostfolio/common/interfaces/investment-item.interface';
-import { ColorScheme, GroupBy } from '@ghostfolio/common/types';
+import type { ColorScheme, GroupBy } from '@ghostfolio/common/types';
 import { registerChartConfiguration } from '@ghostfolio/ui/chart';
 
 import { CommonModule } from '@angular/common';
@@ -37,13 +37,9 @@ import {
   PointElement,
   type ScriptableLineSegmentContext,
   TimeScale,
-  Tooltip,
   type TooltipOptions
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
-import annotationPlugin, {
-  type AnnotationOptions
-} from 'chartjs-plugin-annotation';
+import { type AnnotationOptions } from 'chartjs-plugin-annotation';
 import { isAfter } from 'date-fns';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 
@@ -73,16 +69,21 @@ export class GfInvestmentChartComponent implements OnChanges, OnDestroy {
   private values: LineChartItem[];
 
   public constructor() {
+    // Controllers, elements and scales only. Chart.js resolves these at
+    // construction time and holds no per-chart state for them, so registering
+    // them here keeps chart types this component does not draw out of its
+    // bundle. Every plugin - and the date adapter a time scale captures - is
+    // registered by the shared chart registry instead, at module-evaluation
+    // time, because those DO carry per-chart state and registering one after a
+    // chart already exists breaks that chart. See `registerChartConfiguration`.
     Chart.register(
-      annotationPlugin,
       BarController,
       BarElement,
       LinearScale,
       LineController,
       LineElement,
       PointElement,
-      TimeScale,
-      Tooltip
+      TimeScale
     );
 
     registerChartConfiguration();

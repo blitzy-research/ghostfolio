@@ -1,11 +1,59 @@
 :host {
   display: block;
 
+  // WCAG 1.4.3. Brand primary 500 is a light teal, so as link text on a light card
+  // it measured 1.92:1 against a required 4.5:1, and the hover state reached for
+  // primary 300 - lighter still, i.e. worse. The replacement is the darkened
+  // primary this app already uses for text-on-surface elsewhere, at 6.6:1, with
+  // hover expressed as an underline rather than a colour so the affordance cannot
+  // trade contrast away. The underline also follows this repository's own link
+  // convention.
+  //
+  // The dark mirror is not symmetry for its own sake: primary 500 was already
+  // perfectly legible on a dark card at 7.99:1, so applying the darkened value
+  // unconditionally would have FIXED the light theme by breaking the dark one down
+  // to 2.32:1. Each theme gets the value that is correct against its own surface.
   a {
-    color: rgba(var(--palette-primary-500), 1);
+    color: var(--mat-sys-primary, #006a68);
 
     &:hover {
-      color: rgba(var(--palette-primary-300), 1);
+      text-decoration: underline;
     }
+  }
+
+  // Stops the share address from dictating how wide this table has to be, WITHOUT
+  // hiding any of it.
+  //
+  // Two things have to be true at once here. The address is the payload of this
+  // table - a viewer copies it, mails it, checks that the identifier in it is the
+  // one they meant - so it has to be readable in full. And it is also a single
+  // unbreakable 70-character token, whose min-content contribution would
+  // otherwise set a table-width floor that no cell width can get under, which is
+  // what made this column the widest thing in the module.
+  //
+  // Clamping the box and eliding the overflow satisfies the second and breaks the
+  // first: it buys the width back by deleting the tail of the very string the
+  // table exists to show, and the tail is the part that differs between one share
+  // link and the next. Wrapping satisfies both. `overflow-wrap: anywhere` is the
+  // value that also reduces the intrinsic minimum - `break-word` wraps but leaves
+  // min-content at the full token, so it would move the text without moving the
+  // floor - and it takes the minimum down to one character, which is a lower floor
+  // than any clamp could give. The address then occupies two or three lines in a
+  // narrow module and one line in a wide one, and every character of it is
+  // present at both.
+  //
+  // `white-space` is declared rather than inherited because the enclosing cell is
+  // `text-nowrap`, whose `!important` would otherwise suppress the wrap; scoping
+  // the override to this element leaves the rest of the cell, including the icon
+  // row, on one line as intended.
+  .gf-access-detail-value {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}
+
+:host-context(.theme-dark) {
+  a {
+    color: var(--mat-sys-primary, #47dbd7);
   }
 }

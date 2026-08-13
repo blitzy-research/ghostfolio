@@ -1,8 +1,10 @@
 import { GfPortfolioPerformanceComponent } from '@ghostfolio/client/components/portfolio-performance/portfolio-performance.component';
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { LayoutService } from '@ghostfolio/client/core/layout.service';
 import { ImpersonationStorageService } from '@ghostfolio/client/services/impersonation-storage.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import {
   AssetProfileIdentifier,
   LineChartItem,
@@ -10,7 +12,6 @@ import {
   User
 } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { GfLineChartComponent } from '@ghostfolio/ui/line-chart';
 import { DataService } from '@ghostfolio/ui/services';
 
@@ -24,7 +25,6 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
-import { RouterModule } from '@angular/router';
 import { DeviceDetectorService } from 'ngx-device-detector';
 
 @Component({
@@ -32,8 +32,7 @@ import { DeviceDetectorService } from 'ngx-device-detector';
     CommonModule,
     GfLineChartComponent,
     GfPortfolioPerformanceComponent,
-    MatButtonModule,
-    RouterModule
+    MatButtonModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-home-overview',
@@ -53,10 +52,6 @@ export class GfHomeOverviewComponent implements OnInit {
   public performance: PortfolioPerformance;
   public performanceLabel = $localize`Performance`;
   public precision = 2;
-  public routerLinkAccounts = internalRoutes.accounts.routerLink;
-  public routerLinkPortfolio = internalRoutes.portfolio.routerLink;
-  public routerLinkPortfolioActivities =
-    internalRoutes.portfolio.subRoutes.activities.routerLink;
   public showDetails = false;
   public unit: string;
   public user: User;
@@ -64,6 +59,7 @@ export class GfHomeOverviewComponent implements OnInit {
   public constructor(
     private changeDetectorRef: ChangeDetectorRef,
     private dataService: DataService,
+    private dashboardIntentService: DashboardIntentService,
     private destroyRef: DestroyRef,
     private deviceService: DeviceDetectorService,
     private impersonationStorageService: ImpersonationStorageService,
@@ -109,6 +105,24 @@ export class GfHomeOverviewComponent implements OnInit {
       .subscribe(() => {
         this.update();
       });
+  }
+
+  public onRevealAccounts() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACCOUNTS);
+  }
+
+  public onRevealActivities() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
+  }
+
+  public onRevealPortfolioAnalysis() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.PORTFOLIO_ANALYSIS);
   }
 
   private update() {

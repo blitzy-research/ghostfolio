@@ -12,19 +12,48 @@
         />
       </div>
     } @else {
+      <!--
+        The outcome of the rule is encoded entirely in this badge - a glyph plus the
+        `okay`/`warn` container colour - and both of those are visual. With the glyph
+        marked decorative the badge announced nothing, so a reader met the rule's name
+        and its evaluation sentence with no indication of whether the rule had passed,
+        raised a warning, or was switched off altogether. The evaluation text does not
+        supply it either: it describes the measurement, not the verdict.
+
+        One localized name per branch, matching the three states the markup already
+        distinguishes, and `.sr-only` so the badge looks exactly as it did.
+      -->
+      <!--
+        Whether the rule is switched on is decided FIRST, before what it last
+        measured.
+
+        The order was the other way round, and a rule that had passed before being
+        switched off therefore kept its green container and its "Passed" name while
+        being listed as inactive - the same rule asserting two contradictory things
+        about itself in one view. A switched-off rule has no verdict to report: the
+        value it happens to still carry is the answer to a question nobody is asking
+        any more.
+      -->
       <div
         class="align-items-center d-flex icon-container mr-2 px-2"
         [ngClass]="{
-          okay: rule?.value === true,
-          warn: rule?.value === false
+          okay: rule?.isActive === true && rule?.value === true,
+          warn: rule?.isActive === true && rule?.value === false
         }"
       >
-        @if (rule?.value === true) {
-          <ion-icon name="checkmark-circle-outline" />
-        } @else if (rule?.isActive === true) {
-          <ion-icon name="warning-outline" />
+        @if (rule?.isActive !== true) {
+          <ion-icon
+            aria-hidden="true"
+            class="text-muted"
+            name="remove-circle-outline"
+          />
+          <span class="sr-only" i18n>Inactive</span>
+        } @else if (rule?.value === true) {
+          <ion-icon aria-hidden="true" name="checkmark-circle-outline" />
+          <span class="sr-only" i18n>Passed</span>
         } @else {
-          <ion-icon class="text-muted" name="remove-circle-outline" />
+          <ion-icon aria-hidden="true" name="warning-outline" />
+          <span class="sr-only" i18n>Warning</span>
         }
       </div>
     }
@@ -48,24 +77,30 @@
       </div>
     } @else {
       <div class="flex-grow-1">
-        <div class="h6 my-1">{{ rule?.name }}</div>
+        <div class="my-1 rule-name">{{ rule?.name }}</div>
         <div class="evaluation">{{ rule?.evaluation }}</div>
       </div>
       <div>
         @if (hasPermissionToUpdateUserSettings) {
           <button
+            aria-label="Actions for this rule"
             class="mx-1 no-min-width px-2"
+            i18n-aria-label
             mat-button
             [matMenuTriggerFor]="rulesMenu"
             (click)="$event.stopPropagation()"
           >
-            <ion-icon name="ellipsis-horizontal" />
+            <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
           </button>
           <mat-menu #rulesMenu="matMenu" xPosition="before">
             @if (rule?.isActive && rule?.configuration) {
               <button mat-menu-item (click)="onCustomizeRule(rule)">
                 <span class="align-items-center d-flex">
-                  <ion-icon class="mr-2" name="options-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    name="options-outline"
+                  />
                   <span><ng-container i18n>Customize</ng-container>...</span>
                 </span>
               </button>
@@ -74,12 +109,20 @@
             <button mat-menu-item (click)="onUpdateRule(rule)">
               @if (rule?.isActive) {
                 <span class="align-items-center d-flex">
-                  <ion-icon class="mr-2" name="remove-circle-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    name="remove-circle-outline"
+                  />
                   <span i18n>Deactivate</span>
                 </span>
               } @else {
                 <span class="align-items-center d-flex">
-                  <ion-icon class="mr-2" name="add-circle-outline" />
+                  <ion-icon
+                    aria-hidden="true"
+                    class="mr-2"
+                    name="add-circle-outline"
+                  />
                   <span i18n>Activate</span>
                 </span>
               }

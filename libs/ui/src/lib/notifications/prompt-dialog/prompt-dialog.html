@@ -1,5 +1,5 @@
 @if (title) {
-  <div mat-dialog-title [innerHTML]="title"></div>
+  <div class="gf-notification-text" mat-dialog-title>{{ title }}</div>
 }
 
 <div class="py-3" mat-dialog-content>
@@ -7,7 +7,22 @@
     @if (valueLabel) {
       <mat-label>{{ valueLabel }}</mat-label>
     }
-    <input matInput [formControl]="formControl" />
+    <!--
+      The label is optional and NO caller was passing one, so every prompt in the
+      application - the API key, the emergency fund, the coupon code - opened with an
+      input that had no accessible name whatsoever. The dialog title said what to type,
+      but a title is not a label: it is not associated with the field, so a screen reader
+      moving to the input announced an unnamed edit box.
+      Each caller now passes a `valueLabel`, and the `aria-label` below is the backstop
+      for any that does not. It is applied ONLY when there is no visible label, because
+      an `aria-label` alongside one would override the visible text and leave the name a
+      viewer hears different from the name they read.
+    -->
+    <input
+      matInput
+      [attr.aria-label]="valueLabel ? null : title"
+      [formControl]="formControl"
+    />
   </mat-form-field>
 </div>
 

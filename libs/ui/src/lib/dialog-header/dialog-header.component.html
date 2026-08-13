@@ -1,12 +1,30 @@
 <div class="d-flex" mat-dialog-title>
+  <!--
+    Given heading semantics through the role rather than by becoming a heading
+    element. The directive on the parent already names the dialog for assistive
+    technology, but naming is not the same as being IN the heading tree: a visitor
+    who navigates by headings found nothing in any dialog that uses this header.
+    Applied as a role because every one of those dialogs is sized and spaced around
+    this exact markup, and swapping in an `h2` would bring the browser's own heading
+    margins and type scale with it - a visual change across the whole dialog surface
+    in exchange for a semantic one.
+  -->
   <span
+    aria-level="2"
     class="flex-grow-1 text-truncate"
+    role="heading"
     [ngClass]="{ 'text-center': position === 'center' }"
     >{{ title }}</span
   >
   @if (deviceType !== 'mobile') {
-    <button class="no-min-width px-0" mat-button (click)="onClickCloseButton()">
-      <ion-icon name="close" size="large" />
+    <button
+      aria-label="Close the dialog"
+      class="no-min-width px-0"
+      i18n-aria-label
+      mat-button
+      (click)="onClickCloseButton()"
+    >
+      <ion-icon aria-hidden="true" name="close" size="large" />
     </button>
   }
 </div>

@@ -1,0 +1,184 @@
+<div class="content-container d-flex flex-column">
+  <div
+    class="align-items-center d-flex justify-content-between prompt-mode-container px-3 py-2"
+  >
+    <!-- Hidden from assistive technology because the identical string is the
+         toggle group's accessible name, so it is announced exactly once. -->
+    <span aria-hidden="true" i18n>Mode</span>
+    <!-- Disabled rather than removed while impersonating, so the control the
+         notice below refers to stays visible and the module does not reflow. -->
+    <mat-button-toggle-group
+      aria-label="Mode"
+      i18n-aria-label
+      [disabled]="hasImpersonationId"
+      [formControl]="promptModeFormControl"
+      [hideSingleSelectionIndicator]="true"
+    >
+      <mat-button-toggle value="analysis">
+        <ng-container i18n>Analysis</ng-container>
+      </mat-button-toggle>
+      <mat-button-toggle value="portfolio">
+        <ng-container i18n>Portfolio</ng-container>
+      </mat-button-toggle>
+    </mat-button-toggle-group>
+  </div>
+
+  <div class="hint-text pt-2 px-3">
+    @if (hasImpersonationId) {
+      <small i18n>Unavailable while viewing another portfolio.</small>
+    } @else {
+      <small i18n>Choose the data the prompt should cover.</small>
+    }
+  </div>
+
+  <!-- One live region that outlives every state swap, so a screen reader
+       announces the outcome of a mode change. `aria-busy` suppresses the
+       placeholder while the request is still in flight. -->
+  <!--
+    `overflow-hidden` was dropped from this wrapper along with the scroll regions
+    inside it. It was there to make the prompt box's own scrollbar engage, and while
+    it did that it also CLIPPED anything taller than the box outright - hidden
+    overflow is unreachable, so a prompt longer than the cell simply ended
+    mid-sentence with no bar, no fade and no ellipsis to say so. With the inner
+    scrollers retired it would have hidden the overflow instead of passing it on.
+  -->
+  <div
+    aria-live="polite"
+    class="d-flex flex-column flex-grow-1"
+    [attr.aria-busy]="isLoading"
+  >
+    @if (hasImpersonationId) {
+      <!-- The prompt is withheld rather than shown empty or stale: it would
+           describe the signed-in portfolio while every filter on screen names
+           another one. See `ngOnInit` for why it cannot simply be rebuilt for
+           the portfolio being viewed. -->
+      <div
+        class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
+      >
+        <ion-icon aria-hidden="true" class="mb-2" name="alert-circle-outline" />
+        <div i18n>
+          AI prompts are unavailable while viewing another portfolio.
+        </div>
+        <div i18n>Stop viewing it to generate a prompt for your own.</div>
+      </div>
+    } @else if (isLoading) {
+      <!-- Fill the eventual prompt area so loading completes without a layout
+           jump. -->
+      <ngx-skeleton-loader
+        animation="pulse"
+        class="flex-grow-1 m-3"
+        [theme]="{
+          height: '100%',
+          width: '100%'
+        }"
+      />
+    } @else if (hasError) {
+      <div
+        class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
+      >
+        <ion-icon aria-hidden="true" class="mb-2" name="alert-circle-outline" />
+        <div i18n>Oops! Something went wrong.</div>
+        <div i18n>Please try again later.</div>
+      </div>
+    } @else if (prompt) {
+      <!--
+        `pre`, not `div`, because this IS preformatted text.
+
+        The prompt is a markdown document and, in portfolio mode, is nothing but a
+        markdown pipe table - and a pipe table is aligned by padding cells with
+        spaces, so it only reads as a table in a face where every character is the
+        same width. Rendered in the app's proportional face the pipes landed at a
+        different offset on every row and the dash separator broke mid-token, so the
+        table looked corrupted rather than merely narrow.
+
+        Using the element the language provides for preformatted text gets that face
+        from the design system's own reboot layer, which sets the monospace stack on
+        `pre` - no font stack is hardcoded here, and the semantics are now honest
+        about what the box holds. Both margins and the padding are supplied by the
+        utility classes, which override reboot's own.
+
+        The face alone was not enough: a table row is 126 characters and no width this
+        module reaches can hold that, so the box keeps the document at its natural
+        width and scrolls sideways instead of wrapping. See the stylesheet.
+
+        It is focusable, named and given a role for one reason: it SCROLLS. A scroll
+        container that cannot take focus cannot be scrolled from the keyboard at all,
+        so the part of the table beyond the right edge was reachable with a pointer
+        and by no other means - the horizontal bar was an affordance offered only to
+        people who could use a mouse to take it up. Focusable, it responds to the
+        arrow keys, and the name says what the region holds so it is worth landing on.
+      -->
+      <pre
+        aria-label="Generated AI prompt"
+        class="flex-grow-1 m-3 p-3 prompt-container"
+        i18n-aria-label
+        role="region"
+        tabindex="0"
+        >{{ prompt }}</pre
+      >
+    } @else {
+      <div
+        class="align-items-center d-flex error-container flex-column flex-grow-1 justify-content-center m-3 p-3 text-center"
+      >
+        <ion-icon
+          aria-hidden="true"
+          class="mb-2"
+          name="document-text-outline"
+        />
+        <div i18n>No data available</div>
+      </div>
+    }
+  </div>
+
+  <div
+    class="align-items-center d-flex flex-wrap justify-content-between pb-3 px-3"
+  >
+    <div class="hint-text mr-2">
+      @if (hasImpersonationId) {
+        <small i18n>No prompt is generated for another portfolio.</small>
+      } @else {
+        <small i18n>Copy the prompt, then paste it into your AI tool.</small>
+      }
+    </div>
+    <div class="align-items-center d-flex">
+      <button
+        class="mr-1"
+        mat-stroked-button
+        [attr.aria-busy]="isLoading ? 'true' : null"
+        [disabled]="hasImpersonationId || isLoading || !prompt"
+        (click)="onCopyPromptToClipboard()"
+      >
+        <span class="align-items-center d-flex">
+          @if (isLoading) {
+            <mat-spinner
+              aria-hidden="true"
+              class="mr-2"
+              color="accent"
+              [diameter]="16"
+            />
+          } @else {
+            <ion-icon aria-hidden="true" class="mr-2" name="copy-outline" />
+          }
+          <ng-container i18n>Copy to clipboard</ng-container>
+        </span>
+      </button>
+      <!--
+        `rel` is required rather than advisory on a `target="_blank"` link:
+        without `noopener` the document at the other end keeps a handle on this
+        one through `window.opener` and can navigate the tab holding the viewer's
+        portfolio, and `noreferrer` additionally withholds the referrer.
+      -->
+      <a
+        href="https://duck.ai"
+        mat-button
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        <span class="align-items-center d-flex">
+          <ion-icon aria-hidden="true" class="mr-2" name="open-outline" />
+          <ng-container i18n>Open Duck.ai</ng-container>
+        </span>
+      </a>
+    </div>
+  </div>
+</div>

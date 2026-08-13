@@ -1,0 +1,175 @@
+<div class="p-3 search-container">
+  <mat-form-field appearance="outline" class="w-100 without-hint">
+    <!--
+      The label is the field's accessible name, so it carries the wording on its
+      own; a placeholder would only repeat it and be announced twice.
+    -->
+    <mat-label i18n>Search modules</mat-label>
+    <!--
+      `aria-describedby` points at the visible hint below the field, which lives in
+      a sibling element and would otherwise be announced to nobody: the field would
+      carry only its label, and the sentence explaining that a row can be dragged
+      as well as clicked would reach only people who can see it.
+
+      A static attribute rather than a binding, and pointing OUT of this form field
+      rather than being moved into a `mat-hint`. Material reads this attribute as
+      `MatInput.userAriaDescribedBy` and `MatFormField._syncDescribedByIds()` merges
+      it ahead of any hint or error ids it contributes, so nothing Material owns is
+      displaced and error announcements keep working. Converting the sentence into a
+      `mat-hint` would instead have moved it inside the field's subscript - below
+      the input, in the smaller hint type, and inside the reserved subscript row
+      this field explicitly suppresses with `without-hint` - which is a visual
+      change, and the hint deliberately sits ABOVE the list where the reader of an
+      auto-opened catalog will actually meet it.
+    -->
+    <!--
+      `spellcheck="false"` alongside the two corrections already disabled here, and
+      for the same reason: what is typed into this field is matched against a fixed
+      list of module names, several of which no dictionary holds - `Watchlist`,
+      `FIRE`, `X-ray` - so the browser drew a red underline under a term that had
+      just found what the viewer was looking for.
+    -->
+    <input
+      #search
+      aria-describedby="gfDashboardCatalogHint"
+      autocomplete="off"
+      autocorrect="off"
+      matInput
+      name="search"
+      spellcheck="false"
+      type="text"
+      [formControl]="searchFormControl"
+    />
+    <!--
+      Rendered only while there is something to clear, so the field is not carrying
+      a control that would do nothing. Clearing was previously reachable only by
+      selecting the text and deleting it, or by pressing Escape - which on a drawer
+      the library also closes, so the one keyboard shortcut for it took the whole
+      panel away.
+
+      It is named rather than left to be inferred from the glyph, and the name says
+      what it clears. `type="button"` keeps it from submitting anything, and
+      focus is returned to the field afterwards so clearing does not strand the
+      caret outside the control the viewer is typing in.
+    -->
+    @if (searchFormControl.value) {
+      <button
+        aria-label="Clear the module search"
+        i18n-aria-label
+        mat-icon-button
+        matSuffix
+        type="button"
+        (click)="onClearSearch()"
+      >
+        <ion-icon name="close-outline" />
+      </button>
+    }
+  </mat-form-field>
+</div>
+
+<!--
+  Above the list rather than below it: the catalog opens by itself for a user who
+  has no saved layout, and that is exactly the user who has not yet learned that
+  a row can be dragged as well as clicked. Stated as ordinary visible text so it
+  reaches everyone, not as a label only assistive technology would reach.
+-->
+<div class="catalog-hint px-3 py-2">
+  <!--
+    The id is what the search field's `aria-describedby` resolves to, so this
+    sentence is announced as the field's description as well as being read on
+    screen. It is on the text element rather than the wrapper so the description is
+    exactly the sentence and not whatever spacing utilities the wrapper carries.
+  -->
+  <small i18n id="gfDashboardCatalogHint"
+    >Click a module to add it, or drag it onto the canvas.</small
+  >
+</div>
+
+@if (modules?.length > 0) {
+  <!--
+    `tabindex="-1"` because a browser makes a scrolling box keyboard-focusable of
+    its own accord unless the author says otherwise, which put this container in
+    the tab order ahead of the rows as an unnamed control whose announced name was
+    the run-together labels of everything inside it. The rows are the stops here,
+    and exactly one of them is in the natural order at a time.
+  -->
+  <div
+    class="flex-grow-1 overflow-auto px-3 py-2 result-container"
+    role="list"
+    tabindex="-1"
+  >
+    <!--
+      Tracked by module type because that discriminator is unique across the
+      registry and stable across a filter change, which keeps each row's element
+      - and therefore the roving focus the parent moves between rows - intact
+      while the list narrows. Every interaction belongs to the row: adding is
+      forwarded through the component so the catalog re-emits it as its own
+      output, and the drag, the click and the list-item semantics are the row's
+      to declare, so repeating any of them here would add the module twice and
+      nest one list item inside another.
+    -->
+    @for (module of modules; track module.moduleType; let index = $index) {
+      <gf-module-catalog-item
+        [definition]="module"
+        [isPlaced]="isPlaced(module.moduleType)"
+        [isTabbable]="index === tabbableIndex"
+        [isUnavailable]="isUnavailable(module.moduleType)"
+        (dragEnded)="onModuleDragEnd()"
+        (dragStarted)="onModuleDragStart($event)"
+        (focused)="onModuleCatalogItemFocused(index)"
+        (moduleAdded)="onAddModule($event)"
+      />
+    }
+  </div>
+} @else if (searchFormControl.value) {
+  <!--
+    Reached only once a search term has narrowed the list to nothing, so a catalog
+    that is merely still empty never claims a failed search. Dropping the results
+    region rather than leaving it standing empty also keeps `role="list"` from
+    existing with no row to own it.
+
+    It carries NO `role="status"` of its own, which it used to. A live region is
+    announced when its CONTENTS change, and this element arrives already holding its
+    sentence: assistive technology has to have been watching the region before the
+    text landed in it, and nothing was watching an element that did not exist. The
+    announcing is done by the region at the foot of this file, which is mounted for
+    the whole life of the panel; this notice is now the visible half alone.
+
+    The notice sits inside `<ng-container i18n>` so that its message id stays
+    tied to the text alone: Angular hashes the surrounding whitespace along with
+    it, so the same words spread over three lines are a different message from
+    the same words held against their tags, and only the latter shares an id
+    with - and therefore the twelve translations of - the identical notice the
+    assistant already shows. Leaving the marker on the `div` would guarantee that
+    break, because `role="status"` pushes the opening tag past the 80-column print
+    width and the formatter then moves the text onto a line of its own.
+  -->
+  <div class="flex-grow-1 no-results px-3 py-2">
+    <ng-container i18n>No results found...</ng-container>
+  </div>
+}
+
+<!--
+  Mounted for as long as the panel is, and empty until there is something to say,
+  which is what makes it work: assistive technology observes a live region it can
+  already see, so the region has to outlive every message that passes through it.
+
+  It reports the SIZE of the result set rather than repeating the visible notice,
+  because a count is the one thing a reader cannot get from the list without walking
+  it - and because the interesting case is not the empty one. A term that narrows
+  fifteen modules to two changes the list silently: focus stays in the search field,
+  the rows below it are replaced, and nothing says so.
+
+  The term is named in the message as well as the count, and that is deliberate
+  rather than decorative: two successive searches can return the same number of
+  rows, and a live region says nothing when its text does not change. Including
+  what was searched for makes each answer differ from the last for the same reason
+  it makes the answer useful.
+
+  Silent while nothing has been typed. The full catalog is not a search result, and
+  an announcement on open would talk over the panel's own name at exactly the moment
+  a reader is being told where they are.
+-->
+<div aria-atomic="true" aria-live="polite" class="sr-only" role="status">
+  {{ searchAnnouncement }}
+</div>

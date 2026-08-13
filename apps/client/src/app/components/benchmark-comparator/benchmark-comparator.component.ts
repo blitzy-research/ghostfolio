@@ -1,8 +1,10 @@
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import {
   getTooltipOptions,
   getVerticalHoverLinePlugin
 } from '@ghostfolio/common/chart-helper';
 import { primaryColorRgb, secondaryColorRgb } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import {
   getBackgroundColor,
   getDateFormatString,
@@ -10,10 +12,9 @@ import {
   getTextColor,
   parseDate
 } from '@ghostfolio/common/helper';
-import { LineChartItem, User } from '@ghostfolio/common/interfaces';
+import { LineChartItem, type User } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
-import { ColorScheme } from '@ghostfolio/common/types';
+import type { ColorScheme } from '@ghostfolio/common/types';
 import { registerChartConfiguration } from '@ghostfolio/ui/chart';
 import { GfPremiumIndicatorComponent } from '@ghostfolio/ui/premium-indicator';
 
@@ -31,7 +32,6 @@ import {
 } from '@angular/core';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { MatSelectModule } from '@angular/material/select';
-import { RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { SymbolProfile } from '@prisma/client';
 import {
@@ -42,11 +42,8 @@ import {
   LineElement,
   PointElement,
   TimeScale,
-  Tooltip,
   type TooltipOptions
 } from 'chart.js';
-import 'chartjs-adapter-date-fns';
-import annotationPlugin from 'chartjs-plugin-annotation';
 import { addIcons } from 'ionicons';
 import { arrowForwardOutline } from 'ionicons/icons';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
@@ -60,8 +57,7 @@ import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
     IonIcon,
     MatSelectModule,
     NgxSkeletonLoaderModule,
-    ReactiveFormsModule,
-    RouterModule
+    ReactiveFormsModule
   ],
   selector: 'gf-benchmark-comparator',
   styleUrls: ['./benchmark-comparator.component.scss'],
@@ -83,18 +79,19 @@ export class GfBenchmarkComparatorComponent implements OnChanges, OnDestroy {
 
   public chart: Chart<'line'>;
   public hasPermissionToAccessAdminControl: boolean;
-  public routerLinkAdminControlMarketData =
-    internalRoutes.adminControl.subRoutes.marketData.routerLink;
 
-  public constructor() {
+  public constructor(private dashboardIntentService: DashboardIntentService) {
+    // Controllers, elements and scales only - they hold no per-chart state, so
+    // registering them here keeps this component's bundle to the chart type it
+    // actually draws. Plugins and the date adapter belong to the shared chart
+    // registry, which installs them at module-evaluation time; see
+    // `registerChartConfiguration` for why that ordering is load-bearing.
     Chart.register(
-      annotationPlugin,
       LinearScale,
       LineController,
       LineElement,
       PointElement,
-      TimeScale,
-      Tooltip
+      TimeScale
     );
 
     registerChartConfiguration();
@@ -115,6 +112,19 @@ export class GfBenchmarkComparatorComponent implements OnChanges, OnDestroy {
 
   public onChangeBenchmark(symbolProfileId: string) {
     this.benchmarkChanged.next(symbolProfileId);
+  }
+
+  /**
+   * Surfaces the market data module, which is where benchmarks are managed. That
+   * module owns no URL, so the intent is published on the neutral bus and the
+   * canvas decides how to reveal it. Authorization is unaffected: the template
+   * gates the option behind `hasPermissionToAccessAdminControl` and the API
+   * enforces the permission independently.
+   */
+  public onOpenAdminMarketData() {
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ADMIN_MARKET_DATA);
   }
 
   public ngOnDestroy() {

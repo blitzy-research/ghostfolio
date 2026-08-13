@@ -18,6 +18,25 @@
   .evaluation {
     line-height: 1.2;
   }
+
+  // A rule's name sits underneath the heading of the category that groups it, so
+  // it has to read as subordinate to that heading.
+  //
+  // It carried Bootstrap's `.h6` utility, which states 1rem outright. Inside a
+  // module that put the name at 16px directly beneath a 15px category heading and
+  // beneath the 16px module title - the deepest thing in the hierarchy was tied
+  // with the loudest, and larger than the heading that introduced it, so the
+  // ladder ran backwards at its last step.
+  //
+  // The size is stated here rather than by neutralising half of a utility class,
+  // and the other two properties Bootstrap's heading utilities carry are restated
+  // so only the size changes. The weight is what now separates the name from the
+  // evaluation sentence below it, which shares its size but not its weight.
+  .rule-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.2;
+  }
 }
 
 :host-context(.theme-dark) {

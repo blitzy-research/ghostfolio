@@ -3,7 +3,8 @@
     color="primary"
     i18n
     mat-flat-button
-    [queryParams]="{ createPlatformDialog: true }"
+    queryParamsHandling="merge"
+    [queryParams]="createDialogQueryParams"
     [routerLink]="[]"
   >
     Add Platform
@@ -18,7 +19,13 @@
   [dataSource]="dataSource"
 >
   <ng-container matColumnDef="name">
-    <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header="name">
+    <th
+      *matHeaderCellDef
+      class="px-1"
+      mat-header-cell
+      mat-sort-header="name"
+      scope="col"
+    >
       <ng-container i18n>Name</ng-container>
     </th>
     <td *matCellDef="let element" class="px-1" mat-cell>
@@ -34,7 +41,13 @@
   >
 
   <ng-container matColumnDef="url">
-    <th *matHeaderCellDef class="px-1" mat-header-cell mat-sort-header="url">
+    <th
+      *matHeaderCellDef
+      class="px-1"
+      mat-header-cell
+      mat-sort-header="url"
+      scope="col"
+    >
       <ng-container i18n>Url</ng-container>
     </th>
     <td *matCellDef="let element" class="px-1" mat-cell>
@@ -48,6 +61,7 @@
       class="justify-content-end px-1"
       mat-header-cell
       mat-sort-header="accountCount"
+      scope="col"
     >
       <ng-container i18n>Accounts</ng-container>
     </th>
@@ -61,20 +75,24 @@
   </ng-container>
 
   <ng-container matColumnDef="actions" stickyEnd>
-    <th *matHeaderCellDef class="px-1 text-center" mat-header-cell></th>
+    <th *matHeaderCellDef class="px-1 text-center" mat-header-cell scope="col">
+      <span class="sr-only" i18n>Actions</span>
+    </th>
     <td *matCellDef="let element" class="px-1 text-center" mat-cell>
       <button
+        aria-label="Actions for this platform"
         class="mx-1 no-min-width px-2"
+        i18n-aria-label
         mat-button
         [matMenuTriggerFor]="platformMenu"
         (click)="$event.stopPropagation()"
       >
-        <ion-icon name="ellipsis-horizontal" />
+        <ion-icon aria-hidden="true" name="ellipsis-horizontal" />
       </button>
       <mat-menu #platformMenu="matMenu" xPosition="before">
         <button mat-menu-item (click)="onUpdatePlatform(element)">
           <span class="align-items-center d-flex">
-            <ion-icon class="mr-2" name="create-outline" />
+            <ion-icon aria-hidden="true" class="mr-2" name="create-outline" />
             <span><ng-container i18n>Edit</ng-container>...</span>
           </span>
         </button>
@@ -85,7 +103,7 @@
           (click)="onDeletePlatform(element.id)"
         >
           <span class="align-items-center d-flex">
-            <ion-icon class="mr-2" name="trash-outline" />
+            <ion-icon aria-hidden="true" class="mr-2" name="trash-outline" />
             <span i18n>Delete</span>
           </span>
         </button>
@@ -93,6 +111,6 @@
     </td>
   </ng-container>
 
-  <tr *matHeaderRowDef="displayedColumns" mat-header-row></tr>
+  <tr *matHeaderRowDef="displayedColumns; sticky: true" mat-header-row></tr>
   <tr *matRowDef="let row; columns: displayedColumns" mat-row></tr>
 </table>

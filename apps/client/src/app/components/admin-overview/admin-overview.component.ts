@@ -227,9 +227,25 @@ export class GfAdminOverviewComponent implements OnInit {
           .flush()
           .pipe(takeUntilDestroyed(this.destroyRef))
           .subscribe(() => {
-            setTimeout(() => {
-              window.location.reload();
-            }, 300);
+            // A destructive administrative action answered with nothing at all,
+            // leaving an operator unable to tell a completed flush from a request
+            // that never landed. The outcome is now stated in the same form the
+            // neighbouring administrative action uses.
+            this.snackBar.open(
+              '✅ ' + $localize`The cache has been flushed.`,
+              undefined,
+              {
+                duration: ms('3 seconds')
+              }
+            );
+
+            // Refreshed in place rather than by reloading the document, for two
+            // reasons. A reload discards the confirmation it was meant to follow,
+            // which is how the action came to be silent in the first place. And
+            // this is a module on a shared canvas: reloading tears down every other
+            // module and re-hydrates the whole layout, which is out of all
+            // proportion to emptying a cache and reads as an unexplained restart.
+            this.fetchAdminData();
           });
       },
       confirmType: ConfirmationDialogType.Warn,

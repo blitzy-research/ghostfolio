@@ -44,13 +44,23 @@ export interface PublicPortfolioResponse extends PublicPortfolioResponseV1 {
       | 'valueInPercentage'
     >;
   };
-  latestActivities: (Pick<
-    Order,
-    'currency' | 'date' | 'fee' | 'quantity' | 'type' | 'unitPrice'
-  > & {
+  /**
+   * The most recent trades behind a share link.
+   *
+   * Every monetary member is nullable because a share link that was not granted
+   * unrestricted read receives `null` in their place - this application's
+   * established redaction marker, which the value component renders as `*****`.
+   * The nullability is part of the contract rather than an implementation detail:
+   * a consumer that assumes a number here is assuming a permission the link may
+   * not carry, and the type is what says so.
+   */
+  latestActivities: (Pick<Order, 'currency' | 'date' | 'type'> & {
+    fee: number | null;
+    quantity: number | null;
     SymbolProfile?: EnhancedSymbolProfile;
-    value: number;
-    valueInBaseCurrency: number;
+    unitPrice: number | null;
+    value: number | null;
+    valueInBaseCurrency: number | null;
   })[];
   markets: {
     [key in Market]: Pick<

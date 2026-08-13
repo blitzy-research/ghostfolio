@@ -1,6 +1,7 @@
 import { GfFearAndGreedIndexComponent } from '@ghostfolio/client/components/fear-and-greed-index/fear-and-greed-index.component';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
-import { resetHours } from '@ghostfolio/common/helper';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
+import { reportSanitizedError, resetHours } from '@ghostfolio/common/helper';
 import {
   Benchmark,
   HistoricalDataItem,
@@ -24,6 +25,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DeviceDetectorService } from 'ngx-device-detector';
+import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -31,7 +33,8 @@ import { DeviceDetectorService } from 'ngx-device-detector';
     GfBenchmarkComponent,
     GfFearAndGreedIndexComponent,
     GfLineChartComponent,
-    GfToggleComponent
+    GfToggleComponent,
+    NgxSkeletonLoaderModule
   ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   selector: 'gf-markets',
@@ -39,13 +42,43 @@ import { DeviceDetectorService } from 'ngx-device-detector';
   templateUrl: './markets.html'
 })
 export class GfMarketsComponent implements OnInit {
+  /**
+   * The module this component stands for, passed to the benchmark table so that its
+   * detail dialog request names an owner.
+   *
+   * The benchmark table is mounted by three modules and all three can be on the
+   * canvas at once, all three observe the same query parameters, and
+   * `benchmarkDetailDialog` said nothing about which of them a request was for - so
+   * one click opened the dialog up to three times over.
+   */
+  public readonly benchmarkDialogModule = DashboardModuleType.MARKETS_PREMIUM;
+
   public benchmarks: Benchmark[];
   public deviceType: string;
   public fearAndGreedIndex: number;
+
+  /**
+   * Whether the selected mode of the Fear & Greed index has a value to plot, and
+   * whether its request has settled yet.
+   *
+   * Both are needed because the absence of a value means two different things at two
+   * different moments: before the request settles it means "not known yet", and after
+   * it means "not available". Collapsing them would either flash an empty state over a
+   * request which is about to succeed, or leave an empty chart frame standing in for a
+   * measurement which was never taken.
+   *
+   * The loading half is also handed to the Fear & Greed tile, which cannot tell an
+   * unanswered request from an answer that carried no index - a provider with none
+   * returns `{"STOCKS":{},"CRYPTOCURRENCIES":{}}`, so the value never arrives and,
+   * without this, the tile pulsed a skeleton over a response it already had.
+   */
+  public hasFearAndGreedIndex = false;
+  public isLoadingFearAndGreedIndex = true;
   public fearAndGreedIndexData: MarketDataOfMarketsResponse['fearAndGreedIndex'];
   public fearLabel = $localize`Fear`;
   public greedLabel = $localize`Greed`;
   public historicalDataItems: HistoricalDataItem[];
+
   public fearAndGreedIndexMode: FearAndGreedIndexMode = 'STOCKS';
   public fearAndGreedIndexModeOptions: ToggleOption[] = [
     { label: $localize`Stocks`, value: 'STOCKS' },
@@ -78,12 +111,28 @@ export class GfMarketsComponent implements OnInit {
     this.dataService
       .fetchMarketDataOfMarkets({ includeHistoricalData: this.numberOfDays })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ fearAndGreedIndex }) => {
-        this.fearAndGreedIndexData = fearAndGreedIndex;
+      .subscribe({
+        // Cleared on failure as well as on success, because the loading state
+        // answers "is a request outstanding", and a request that failed is not.
+        // Left set, a failed read would pulse the same indefinite skeleton this
+        // flag exists to stop. The failure is reported as a fixed event identifier
+        // and a status and nothing else - the shared sanitized channel - so it is
+        // not swallowed either.
+        error: (error: unknown) => {
+          this.isLoadingFearAndGreedIndex = false;
 
-        this.initialize();
+          reportSanitizedError('GF-MARKET-DATA-OF-MARKETS-FETCH-FAILED', error);
 
-        this.changeDetectorRef.markForCheck();
+          this.changeDetectorRef.markForCheck();
+        },
+        next: ({ fearAndGreedIndex }) => {
+          this.fearAndGreedIndexData = fearAndGreedIndex;
+          this.isLoadingFearAndGreedIndex = false;
+
+          this.initialize();
+
+          this.changeDetectorRef.markForCheck();
+        }
       });
 
     this.dataService
@@ -98,7 +147,17 @@ export class GfMarketsComponent implements OnInit {
 
   public initialize() {
     this.fearAndGreedIndex =
-      this.fearAndGreedIndexData[this.fearAndGreedIndexMode]?.marketPrice;
+      this.fearAndGreedIndexData?.[this.fearAndGreedIndexMode]?.marketPrice;
+
+    this.hasFearAndGreedIndex = Number.isFinite(this.fearAndGreedIndex);
+
+    if (!this.hasFearAndGreedIndex) {
+      // Left empty rather than carrying a single point with no value in it. That
+      // point is what let the chart draw a full frame around nothing.
+      this.historicalDataItems = [];
+
+      return;
+    }
 
     this.historicalDataItems = [
       ...(this.fearAndGreedIndexData[this.fearAndGreedIndexMode]

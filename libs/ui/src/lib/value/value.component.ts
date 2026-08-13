@@ -168,9 +168,7 @@ export class GfValueComponent implements AfterViewInit, OnChanges {
       }
     }
 
-    if (this.formattedValue === '0.00') {
-      this.useAbsoluteValue = true;
-    }
+    this.useAbsoluteValue = this.roundsToDisplayedZero();
   }
 
   public onCopyValueToClipboard() {
@@ -192,5 +190,45 @@ export class GfValueComponent implements AfterViewInit, OnChanges {
     this.isString = false;
     this.locale = this.locale || getLocale();
     this.useAbsoluteValue = false;
+  }
+
+  /**
+   * Whether the number will be drawn as zero once rounded to the digits on screen.
+   *
+   * This decides whether the algebraic sign is drawn at all, and it has to be decided
+   * from the number rather than from the text: a magnitude too small to survive rounding
+   * is displayed as zero, and a zero carrying a sign in front of it is simply wrong.
+   *
+   * The test it replaces compared the rendered string against the literal `'0.00'`,
+   * which held only for a two-digit value in a locale that separates decimals with a
+   * full stop. It therefore missed every case this component is actually configured
+   * for elsewhere: at `precision` 0 the same number renders `'0'`, at `precision` 4 it
+   * renders `'0.0000'`, and in a locale using a decimal comma it renders `'0,00'` - so a
+   * tiny loss came out as `-0`, `-0.0000` and `-0,00` respectively. The summary screen
+   * reaches two of those three on its own, because it drops to `precision` 0 for large
+   * totals on a phone and colourizes the sign of its percentage rows.
+   *
+   * Restricted to the two modes in which this component formats from the absolute value,
+   * since those are the only ones where it - rather than `toLocaleString` - owns the
+   * sign.
+   *
+   * @returns `true` when the sign must be suppressed.
+   */
+  private roundsToDisplayedZero() {
+    if (!isNumber(this.value) || !(this.isCurrency || this.isPercent)) {
+      return false;
+    }
+
+    // Read through the signal rather than through `hasPrecision`, so the narrowing
+    // the compiler needs happens on the value that is actually used. The test is the
+    // same one that getter applies.
+    const precision = this.precision();
+    const digits = precision !== undefined && precision >= 0 ? precision : 2;
+
+    // Percentages are scaled before they are formatted, so the rounding has to be
+    // judged against the scaled magnitude and not the stored fraction.
+    const magnitude = Math.abs(this.isPercent ? this.value * 100 : this.value);
+
+    return Math.round(magnitude * Math.pow(10, digits)) === 0;
   }
 }

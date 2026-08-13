@@ -1,7 +1,32 @@
-<a
-  class="align-items-center d-flex"
-  title="Upgrade to Ghostfolio Premium"
-  [ngStyle]="{ 'pointer-events': enableLink ? 'initial' : 'none' }"
-  [routerLink]="routerLinkPricing"
-  ><ion-icon class="text-muted" name="diamond-outline"
-/></a>
+<!--
+  Two mutually exclusive shapes rather than one anchor that is styled out of
+  action. `pointer-events: none` only takes the pointer away: the anchor stays in
+  the tab order and stays activatable from the keyboard, and where a consumer
+  nests this badge inside its own link - the plan row of the dashboard toolbar
+  does - it also puts a link inside a link, which is invalid and offers two
+  targets for one thing. Choosing the element instead means the disabled shape is
+  genuinely not interactive.
+
+  Both shapes are named by the same `title`, which is what the anchor has always
+  been announced by - it carries no text of its own - so nothing is lost when the
+  badge is decorative. `role="img"` is what keeps that name reachable on a bare
+  span, and the glyph is hidden from assistive technology in both shapes so the
+  name is never announced twice.
+-->
+@if (enableLink) {
+  <a
+    class="align-items-center d-flex"
+    rel="noopener noreferrer"
+    target="_blank"
+    title="Upgrade to Ghostfolio Premium"
+    [href]="pricingUrl"
+    ><ion-icon aria-hidden="true" class="text-muted" name="diamond-outline"
+  /></a>
+} @else {
+  <span
+    class="align-items-center d-flex"
+    role="img"
+    title="Upgrade to Ghostfolio Premium"
+    ><ion-icon aria-hidden="true" class="text-muted" name="diamond-outline"
+  /></span>
+}

@@ -19,7 +19,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatSort, MatSortModule } from '@angular/material/sort';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { IonIcon } from '@ionic/angular/standalone';
 import { Account } from '@prisma/client';
 import { addIcons } from 'ionicons';
@@ -113,6 +113,7 @@ export class GfAccountsTableComponent {
   protected readonly isLoading = computed(() => !this.accounts());
 
   private readonly notificationService = inject(NotificationService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   public constructor() {
@@ -151,15 +152,39 @@ export class GfAccountsTableComponent {
 
   protected onOpenAccountDetailDialog(accountId: string) {
     if (this.hasPermissionToOpenDetails()) {
-      this.router.navigate([], {
-        queryParams: { accountId, accountDetailDialog: true }
+      // Deliberately unqualified. This table is mounted by the accounts module,
+      // which is the default owner of this dialog and answers a request that names
+      // nobody; the allocations module hosts its own copy and answers only a
+      // request that names it. `dialogModule` is nulled rather than set so that a
+      // discriminator an earlier interaction left on the URL cannot make the
+      // default owner stand down as addressed elsewhere, which would leave a click
+      // on an account row doing nothing at all.
+      void this.router.navigate([], {
+        queryParams: {
+          accountId,
+          accountDetailDialog: true,
+          dialogModule: null
+        },
+        queryParamsHandling: 'merge',
+        relativeTo: this.route
       });
     }
   }
 
+  /**
+   * Shows one account's note.
+   *
+   * The note is passed as the MESSAGE and not as the heading, which matters for two
+   * independent reasons. It is content a person typed, so it is arbitrarily long and
+   * belongs in the region the dialog bounds and scrolls - a note passed as a heading
+   * grew the surface until the button that closes it left the viewport. And a dialog
+   * needs an accessible name that says what it is; the note itself cannot serve as
+   * one.
+   */
   protected onOpenComment(aComment: string) {
     this.notificationService.alert({
-      title: aComment
+      message: aComment,
+      title: $localize`Note`
     });
   }
 

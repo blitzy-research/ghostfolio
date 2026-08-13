@@ -1,8 +1,25 @@
-<div class="align-items-center container d-flex h-100 justify-content-center">
+<!--
+  A module-scale container, not a page-scale one. `container-fluid` keeps the
+  horizontal gutter that cancels the negative margins of the rows below - without
+  it they bleed past their cell - while dropping the responsive max-width that
+  made this content read as a page nested inside a grid cell.
+
+  The vertical centring is done with an auto margin on the row rather than with
+  `align-items-center` and a fixed `h-100`, and the difference only shows at this
+  module's minimum size. A centred flex item that is taller than its container
+  overflows equally in both directions, and block overflow before the container's
+  start edge is outside the scrollable region entirely - so the top of the
+  membership card was cut off and could not be scrolled back into view by any
+  means. An auto margin resolves to zero when there is no free space to absorb, so
+  the content falls back to starting at the top and every part of it stays
+  reachable.
+-->
+<div class="container-fluid d-flex gf-membership-layout">
   <div class="row w-100">
     <div class="col">
       <div class="align-items-center d-flex flex-column">
         <gf-membership-card
+          class="module-membership-card"
           [expiresAt]="user?.subscription?.expiresAt | date: defaultDateFormat"
           [hasPermissionToCreateApiKey]="hasPermissionToCreateApiKey"
           [hover3d]="true"
@@ -10,7 +27,14 @@
           (generateApiKeyClicked)="onGenerateApiKey()"
         />
         @if (user?.subscription?.type === 'Basic') {
-          <div class="d-flex flex-column mt-5">
+          <!--
+            Module-scale separation from the card above. The 3rem gap this replaces
+            was page-scale: against the roughly 364px of body a four-by-five cell
+            leaves, it alone accounted for an eighth of the height and pushed the
+            upgrade control - the only reason this module exists for a Basic
+            viewer - past the fold at the very size the module declares as usable.
+          -->
+          <div class="d-flex flex-column mt-4">
             @if (
               hasPermissionForSubscription && hasPermissionToUpdateUserSettings
             ) {
@@ -47,7 +71,15 @@
                 </div>
               }
             }
-            <div class="align-items-center d-flex justify-content-center mt-4">
+            <!--
+              Wrapping, because these two controls sit side by side and this module
+              is four columns wide: on a narrower canvas their combined width plus
+              the premium indicator exceeds the body, and a nowrap row would have
+              put the second one outside it rather than beneath the first.
+            -->
+            <div
+              class="align-items-center d-flex flex-wrap justify-content-center mt-3"
+            >
               @if (!user?.subscription?.expiresAt) {
                 <a class="mx-1" mat-stroked-button [href]="trySubscriptionMail"
                   ><span i18n>Try Premium</span>
@@ -58,14 +90,14 @@
                 </a>
               }
               @if (hasPermissionToUpdateUserSettings) {
-                <a
+                <button
                   class="mx-1"
-                  i18n
                   mat-stroked-button
-                  [routerLink]=""
+                  type="button"
                   (click)="onRedeemCoupon()"
-                  >Redeem Coupon</a
                 >
+                  <ng-container i18n>Redeem Coupon</ng-container>
+                </button>
               }
             </div>
           </div>

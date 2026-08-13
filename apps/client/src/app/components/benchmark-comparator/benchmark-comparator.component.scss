@@ -1,8 +1,19 @@
 :host {
   display: block;
 
+  // 2 / 1 rather than 16 / 9, for the reason set out in full on the sibling
+  // container in `portfolio-analysis.scss`: this canvas is a Chart.js line chart
+  // with no explicit `aspectRatio`, so its bitmap is `width / 2` tall, while
+  // Bootstrap's `.h-100` on the canvas forces its displayed height to this box.
+  // A 16 / 9 box therefore scaled the finished bitmap up by 1.125x vertically.
+  // Sizing the box to the ratio the chart is composed at removes the scaling
+  // without touching the chart's own configuration.
+  //
+  // The investment charts inside `portfolio-analysis` are drawn at the same ratio
+  // for the same reason, so the two values have to move together or this chart
+  // would stretch while its neighbours did not.
   .chart-container {
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 2 / 1;
 
     ngx-skeleton-loader {
       height: 100%;

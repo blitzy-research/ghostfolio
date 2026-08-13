@@ -1,6 +1,8 @@
 import { GfInvestmentChartComponent } from '@ghostfolio/client/components/investment-chart/investment-chart.component';
+import { DashboardIntentService } from '@ghostfolio/client/core/dashboard-intent.service';
 import { UserService } from '@ghostfolio/client/services/user/user.service';
 import { NUMERICAL_PRECISION_THRESHOLD_6_FIGURES } from '@ghostfolio/common/config';
+import { DashboardModuleType } from '@ghostfolio/common/dashboard';
 import { CreateAccountBalanceDto } from '@ghostfolio/common/dtos';
 import { DATE_FORMAT, downloadAsFile } from '@ghostfolio/common/helper';
 import {
@@ -11,7 +13,6 @@ import {
   User
 } from '@ghostfolio/common/interfaces';
 import { hasPermission, permissions } from '@ghostfolio/common/permissions';
-import { internalRoutes } from '@ghostfolio/common/routes/routes';
 import { GfAccountBalancesComponent } from '@ghostfolio/ui/account-balances';
 import { GfActivitiesTableComponent } from '@ghostfolio/ui/activities-table';
 import { GfDialogFooterComponent } from '@ghostfolio/ui/dialog-footer';
@@ -51,7 +52,10 @@ import { isNumber } from 'lodash';
 import { NgxSkeletonLoaderModule } from 'ngx-skeleton-loader';
 import { forkJoin } from 'rxjs';
 
-import { AccountDetailDialogParams } from './interfaces/interfaces';
+import {
+  AccountDetailDialogParams,
+  AccountDetailDialogResult
+} from './interfaces/interfaces';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -105,10 +109,24 @@ export class GfAccountDetailDialogComponent implements OnInit {
   protected readonly data = inject<AccountDetailDialogParams>(MAT_DIALOG_DATA);
 
   private readonly changeDetectorRef = inject(ChangeDetectorRef);
+  private readonly dashboardIntentService = inject(DashboardIntentService);
   private readonly dataService = inject(DataService);
   private readonly destroyRef = inject(DestroyRef);
+  /**
+   * Typed with its close result, not just with its own component type. The two
+   * hand-off paths below resolve with `{ hasHandedOver: true }` and every other
+   * close resolves with nothing, and the host relies on that difference to decide
+   * whether clearing this dialog's query parameters would take the hand-off's with
+   * them - so the union has to be part of the reference rather than something the
+   * host asserts about it.
+   */
   private readonly dialogRef =
-    inject<MatDialogRef<GfAccountDetailDialogComponent>>(MatDialogRef);
+    inject<
+      MatDialogRef<
+        GfAccountDetailDialogComponent,
+        AccountDetailDialogResult | undefined
+      >
+    >(MatDialogRef);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
 
@@ -136,14 +154,31 @@ export class GfAccountDetailDialogComponent implements OnInit {
   }
 
   protected onCloneActivity(aActivity: Activity) {
-    this.router.navigate(
-      internalRoutes.portfolio.subRoutes.activities.routerLink,
-      {
-        queryParams: { activityId: aActivity.id, createDialog: true }
-      }
-    );
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
 
-    this.dialogRef.close();
+    // The flag is addressed to the activities module by name, so no other
+    // co-mounted module consumes it, and the two keys that identify *this*
+    // dialog are cleared in the same navigation - without that the accounts
+    // module would see its own flag still standing and reopen this dialog on top
+    // of the one being asked for.
+    void this.router.navigate([], {
+      queryParams: {
+        accountDetailDialog: null,
+        accountId: null,
+        activityId: aActivity.id,
+        createDialog: true,
+        dialogModule: DashboardModuleType.ACTIVITIES
+      },
+      queryParamsHandling: 'merge'
+    });
+
+    // Reported as a hand-off, because the host's own cleanup would otherwise
+    // remove `createDialog` and `dialogModule` from the URL the navigation above
+    // just wrote them onto - and a lazily loaded activities module, which
+    // subscribes after that, would find nothing addressed to it.
+    this.dialogRef.close({ hasHandedOver: true });
   }
 
   protected onClose() {
@@ -198,14 +233,24 @@ export class GfAccountDetailDialogComponent implements OnInit {
   }
 
   protected onUpdateActivity(aActivity: Activity) {
-    this.router.navigate(
-      internalRoutes.portfolio.subRoutes.activities.routerLink,
-      {
-        queryParams: { activityId: aActivity.id, editDialog: true }
-      }
-    );
+    this.dashboardIntentService
+      .getRevealModuleSubject()
+      .next(DashboardModuleType.ACTIVITIES);
 
-    this.dialogRef.close();
+    void this.router.navigate([], {
+      queryParams: {
+        accountDetailDialog: null,
+        accountId: null,
+        activityId: aActivity.id,
+        dialogModule: DashboardModuleType.ACTIVITIES,
+        editDialog: true
+      },
+      queryParamsHandling: 'merge'
+    });
+
+    // See `onCloneActivity`: the same hand-off, with `editDialog` in place of
+    // `createDialog`, and the same reason for reporting it.
+    this.dialogRef.close({ hasHandedOver: true });
   }
 
   protected showValuesInPercentage() {
